@@ -9,12 +9,12 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-4);
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-8);
   font-family: inherit;
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-medium);
-  line-height: 1;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.4;
   color: var(--color-text-primary);
   background-color: var(--color-bg-elevated);
   border: 2px solid var(--color-border-default);
@@ -22,6 +22,12 @@
   cursor: pointer;
   transition: all var(--transition-fast);
   white-space: nowrap;
+  min-height: 42px;
+}
+
+.btn svg {
+  width: 18px;
+  height: 18px;
 }
 
 .btn:hover {
@@ -40,13 +46,25 @@
 }
 
 .btn-sm {
-  padding: var(--space-1) var(--space-2);
+  padding: var(--space-3) var(--space-5);
   font-size: var(--font-size-sm);
+  min-height: 36px;
+}
+
+.btn-sm svg {
+  width: 16px;
+  height: 16px;
 }
 
 .btn-lg {
-  padding: var(--space-3) var(--space-6);
+  padding: var(--space-5) var(--space-10);
   font-size: var(--font-size-lg);
+  min-height: 50px;
+}
+
+.btn-lg svg {
+  width: 20px;
+  height: 20px;
 }
 
 .btn-primary {
@@ -94,8 +112,15 @@
 }
 
 .btn-icon {
-  padding: var(--space-2);
+  padding: var(--space-4);
   aspect-ratio: 1;
+  min-width: 42px;
+  min-height: 42px;
+}
+
+.btn-icon svg {
+  width: 20px;
+  height: 20px;
 }
 
 /* Адаптивность для кнопок */
@@ -120,14 +145,15 @@
 .input {
   display: block;
   width: 100%;
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-4) var(--space-5);
   font-family: inherit;
-  font-size: var(--font-size-md);
+  font-size: var(--font-size-base);
   color: var(--color-text-primary);
   background-color: var(--color-bg-tertiary);
   border: 2px solid var(--color-border-default);
   border-radius: var(--radius-md);
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  min-height: 42px;
 }
 
 .input:focus {
@@ -146,28 +172,29 @@
 }
 
 .input-sm {
-  padding: var(--space-1) var(--space-2);
+  padding: var(--space-3) var(--space-4);
   font-size: var(--font-size-sm);
+  min-height: 36px;
 }
 
 /* === Labels === */
 .label {
   display: block;
-  margin-bottom: var(--space-1);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  color: var(--color-text-secondary);
+  margin-bottom: var(--space-2);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
 }
 
 /* === Form Group === */
 .form-group {
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-6);
 }
 
 .form-group .help-text {
-  margin-top: var(--space-1);
-  font-size: var(--font-size-xs);
-  color: var(--color-text-tertiary);
+  margin-top: var(--space-2);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
 }
 
 /* === Cards === */
@@ -184,23 +211,23 @@
 }
 
 .card-header {
-  padding: var(--space-4);
+  padding: var(--space-8);
   border-bottom: 2px solid var(--color-border-default);
 }
 
 .card-body {
-  padding: var(--space-4);
+  padding: var(--space-8);
 }
 
 .card-footer {
-  padding: var(--space-4);
+  padding: var(--space-8);
   border-top: 2px solid var(--color-border-default);
   background-color: var(--color-bg-tertiary);
 }
 
 /* === Progress Bar === */
 .progress {
-  height: 6px;
+  height: 8px;
   background-color: var(--color-bg-tertiary);
   border-radius: var(--radius-full);
   overflow: hidden;
@@ -229,23 +256,32 @@
 .badge {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-1) var(--space-2);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-medium);
-  line-height: 1;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.2;
   color: var(--color-text-secondary);
   background-color: var(--color-bg-tertiary);
   border: 1px solid var(--color-border-default);
   border-radius: var(--radius-full);
+  min-height: 28px;
+}
+
+.badge svg {
+  width: 14px;
+  height: 14px;
 }
 
 .status-badge {
-  padding: 4px 10px;
+  padding: var(--space-2) var(--space-4);
+  min-height: 28px;
 }
 
 .status-badge svg {
   flex-shrink: 0;
+  width: 16px;
+  height: 16px;
 }
 
 .badge-queued { 
@@ -288,11 +324,18 @@
 .alert {
   display: flex;
   align-items: flex-start;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-6);
   border: 2px solid;
-  border-radius: var(--radius-md);
-  font-size: var(--font-size-sm);
+  border-radius: var(--radius-lg);
+  font-size: var(--font-size-base);
+}
+
+.alert svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  margin-top: 2px;
 }
 
 .alert-success {
@@ -331,21 +374,28 @@
 }
 
 .empty-state-icon {
-  font-size: 48px;
-  margin-bottom: var(--space-4);
-  opacity: 0.5;
+  font-size: 64px;
+  margin-bottom: var(--space-6);
+  opacity: 0.6;
+}
+
+.empty-state-icon svg {
+  width: 64px;
+  height: 64px;
 }
 
 .empty-state-title {
-  font-size: var(--font-size-lg);
-  font-weight: var(--font-weight-medium);
-  color: var(--color-text-secondary);
-  margin-bottom: var(--space-2);
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  margin-bottom: var(--space-3);
 }
 
 .empty-state-description {
-  max-width: 400px;
-  margin-bottom: var(--space-6);
+  max-width: 500px;
+  font-size: var(--font-size-base);
+  line-height: 1.6;
+  margin-bottom: var(--space-8);
 }
 
 /* === Tooltips === */

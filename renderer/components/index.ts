@@ -37,3 +37,5 @@ export { ProxySettings } from './ProxySettings';
 export { AdvancedSettings } from './AdvancedSettings';
 export { SettingsBackup } from './SettingsBackup';
 export { AppStatistics } from './AppStatistics';
+export { SettingsSidebar } from './SettingsSidebar';
+export type { SettingsCategory } from './SettingsSidebar';

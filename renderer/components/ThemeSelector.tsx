@@ -9,35 +9,18 @@ interface ThemeSelectorProps {
   onThemeChange: (theme: Theme) => void;
 }
 
-import { IconName } from './Icon';
-
 export const ThemeSelector: React.FC<ThemeSelectorProps> = ({
   currentTheme,
   onThemeChange,
 }) => {
-  const themes: { id: Theme; label: string; icon: IconName; description: string }[] = [
-    {
-      id: 'light',
-      label: 'Светлая',
-      icon: 'sun',
-      description: 'Светлая тема для комфортной работы днем',
-    },
-    {
-      id: 'dark',
-      label: 'Тёмная',
-      icon: 'moon',
-      description: 'Тёмная тема для снижения нагрузки на глаза',
-    },
-    {
-      id: 'system',
-      label: 'Системная',
-      icon: 'monitor',
-      description: 'Следовать системным настройкам',
-    },
+  const themes: { id: Theme; label: string; icon: string }[] = [
+    { id: 'light', label: 'Light', icon: '☀️' },
+    { id: 'dark', label: 'Dark', icon: '🌙' },
+    { id: 'system', label: 'System', icon: '💻' },
   ];
 
   return (
-    <div className="theme-selector">
+    <div className="theme-selector-grid">
       {themes.map((theme) => (
         <button
           key={theme.id}
@@ -45,30 +28,42 @@ export const ThemeSelector: React.FC<ThemeSelectorProps> = ({
           onClick={() => onThemeChange(theme.id)}
         >
           <div className="theme-preview">
-            <div className={`theme-preview-content ${theme.id}`}>
-              <div className="theme-preview-header"></div>
+            <div className={`theme-preview-window ${theme.id}`}>
+              <div className="theme-preview-header">
+                <div className="theme-preview-dots">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </div>
+              </div>
               <div className="theme-preview-body">
-                <div className="theme-preview-sidebar"></div>
-                <div className="theme-preview-main">
-                  <div className="theme-preview-line"></div>
-                  <div className="theme-preview-line short"></div>
-                  <div className="theme-preview-line"></div>
+                <div className="theme-preview-sidebar">
+                  <div className="theme-preview-nav"></div>
+                  <div className="theme-preview-nav"></div>
+                  <div className="theme-preview-nav active"></div>
+                  <div className="theme-preview-nav"></div>
+                </div>
+                <div className="theme-preview-content">
+                  <div className="theme-preview-bar"></div>
+                  <div className="theme-preview-card">
+                    <div className="theme-preview-line"></div>
+                    <div className="theme-preview-line short"></div>
+                  </div>
+                  <div className="theme-preview-card">
+                    <div className="theme-preview-line"></div>
+                    <div className="theme-preview-line short"></div>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
           <div className="theme-info">
-            <div className="theme-icon">
-              <Icon name={theme.icon} size={20} />
-            </div>
-            <div className="theme-text">
-              <div className="theme-label">{theme.label}</div>
-              <div className="theme-description">{theme.description}</div>
-            </div>
+            <div className="theme-icon">{theme.icon}</div>
+            <div className="theme-label">{theme.label}</div>
           </div>
           {currentTheme === theme.id && (
             <div className="theme-check">
-              <Icon name="check" size={18} />
+              <Icon name="check" size={16} />
             </div>
           )}
         </button>

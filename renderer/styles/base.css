@@ -21,7 +21,7 @@ html, body {
 
 body {
   font-family: var(--font-family);
-  font-size: var(--font-size-md);
+  font-size: var(--font-size-base);
   line-height: var(--line-height-normal);
   color: var(--color-text-primary);
   background-color: var(--color-bg-primary);
@@ -83,8 +83,8 @@ code, pre {
 
 /* === Scrollbar (WebKit) === */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
@@ -98,6 +98,12 @@ code, pre {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-text-tertiary);
+}
+
+/* === SVG Icons === */
+svg {
+  display: block;
+  flex-shrink: 0;
 }
 
 /* === Utility Classes === */

@@ -1,7 +1,7 @@
 /**
- * Settings Page - Enhanced Version
+ * Settings Page - Professional Desktop Design 2026
  * 
- * Application configuration with tabs and new features.
+ * Complete redesign with sidebar navigation and semantic grouping.
  */
 
 import React, { useState, useEffect } from 'react';
@@ -10,8 +10,6 @@ import {
   Button,
   Icon,
   Alert,
-  Tabs,
-  TabItem,
   ThemeSelector,
   SpeedPresets,
   NotificationSettings,
@@ -22,6 +20,8 @@ import {
   AdvancedSettings,
   SettingsBackup,
   AppStatistics,
+  SettingsSidebar,
+  SettingsCategory,
 } from '../components';
 import './SettingsPage.css';
 import { v4 as uuidv4 } from 'uuid';
@@ -29,8 +29,8 @@ import { v4 as uuidv4 } from 'uuid';
 type Theme = 'light' | 'dark' | 'system';
 
 const SettingsPage: React.FC = () => {
-  // Active tab
-  const [activeTab, setActiveTab] = useState('general');
+  // Active category
+  const [activeCategory, setActiveCategory] = useState('general');
 
   // Settings state
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -95,13 +95,28 @@ const SettingsPage: React.FC = () => {
     uptime: '0h 0m',
   });
 
-  // Tabs definition
-  const tabs: TabItem[] = [
-    { id: 'general', label: 'Общие', icon: <Icon name="settings" size={16} /> },
-    { id: 'network', label: 'Сеть', icon: <Icon name="activity" size={16} /> },
-    { id: 'scheduler', label: 'Планировщик', icon: <Icon name="calendar" size={16} /> },
-    { id: 'advanced', label: 'Расширенные', icon: <Icon name="layers" size={16} /> },
-    { id: 'maintenance', label: 'Обслуживание', icon: <Icon name="database" size={16} /> },
+  // Categories definition with semantic grouping
+  const categories: SettingsCategory[] = [
+    // Core Settings
+    { id: 'general', label: 'General', icon: 'settings', group: 'core' },
+    { id: 'downloads', label: 'Downloads', icon: 'download', group: 'core' },
+    { id: 'network', label: 'Network', icon: 'activity', group: 'core' },
+    
+    // Advanced
+    { id: 'advanced', label: 'Advanced', icon: 'layers', group: 'advanced' },
+    { id: 'privacy', label: 'Privacy', icon: 'shield', group: 'advanced' },
+    { id: 'scheduler', label: 'Scheduler', icon: 'calendar', group: 'advanced' },
+    
+    // Appearance
+    { id: 'interface', label: 'Interface', icon: 'sun', group: 'appearance' },
+    { id: 'notifications', label: 'Notifications', icon: 'bell', group: 'appearance' },
+    
+    // System
+    { id: 'system', label: 'System', icon: 'power', group: 'system' },
+    { id: 'hotkeys', label: 'Hotkeys', icon: 'keyboard', group: 'system' },
+    
+    // Other
+    { id: 'about', label: 'About', icon: 'info', group: 'other' },
   ];
 
   const dayNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
@@ -372,449 +387,59 @@ const SettingsPage: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="settings-page">
-        <div className="settings-loading">
-          <Icon name="loader" size={32} />
-          <p>Загрузка настроек...</p>
-        </div>
+      <div className="settings-page settings-loading">
+        <Icon name="loader" size={32} />
+        <p>Загрузка настроек...</p>
       </div>
     );
   }
 
-  return (
-    <>
-      <div className="settings-page">
-        <div className="settings-header">
-          <h1>Настройки</h1>
-          <p>Настройка TorrentHunt под ваши нужды</p>
+  // Render setting group helper
+  const renderSettingItem = (
+    label: string,
+    description: string,
+    control: React.ReactNode,
+    icon?: React.ReactNode
+  ) => (
+    <div className="setting-item">
+      <div className="setting-info">
+        <div className="setting-label">
+          {icon}
+          {label}
         </div>
+        <p className="setting-description">{description}</p>
+      </div>
+      <div className="setting-control">{control}</div>
+    </div>
+  );
 
-        {message && (
+  const renderToggle = (active: boolean, onChange: () => void) => (
+    <button className={`toggle-switch ${active ? 'active' : ''}`} onClick={onChange}>
+      <span className="toggle-slider" />
+    </button>
+  );
+
+  return (
+    <div className="settings-page">
+      {message && (
+        <div className="settings-alert">
           <Alert variant={message.type === 'success' ? 'success' : 'error'} onClose={() => setMessage(null)}>
             {message.text}
           </Alert>
-        )}
-
-        <Tabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
-
-        <div className="settings-content">
-          <div className="settings-content-inner">
-            {/* General Tab */}
-            {activeTab === 'general' && (
-            <>
-              <section className="settings-section">
-                <h2 className="settings-section-title">
-                  <Icon name="sun" size={20} />
-                  Внешний вид
-                </h2>
-                <div className="settings-card">
-                  <ThemeSelector currentTheme={theme} onThemeChange={handleThemeChange} />
-                </div>
-              </section>
-
-              <section className="settings-section">
-                <h2 className="settings-section-title">
-                  <Icon name="folder" size={20} />
-                  Загрузки
-                </h2>
-                <div className="settings-card">
-                  <div className="setting-item">
-                    <div className="setting-info">
-                      <label className="setting-label">Папка загрузок</label>
-                      <p className="setting-description">Куда сохранять скачанные файлы</p>
-                    </div>
-                    <div className="setting-control">
-                      <Button
-                        variant="secondary"
-                        icon={<Icon name="folder-open" size={16} />}
-                        onClick={handleSelectDirectory}
-                      >
-                        Выбрать
-                      </Button>
-                    </div>
-                  </div>
-                  {defaultDownloadDir && (
-                    <div className="directory-path">{defaultDownloadDir}</div>
-                  )}
-                </div>
-              </section>
-
-              <section className="settings-section">
-                <h2 className="settings-section-title">
-                  <Icon name="bell" size={20} />
-                  Уведомления
-                </h2>
-                <div className="settings-card">
-                  <NotificationSettings
-                    enableNotifications={enableNotifications}
-                    enableSounds={enableSounds}
-                    notifyOnComplete={notifyOnComplete}
-                    notifyOnError={notifyOnError}
-                    onSettingsChange={handleNotificationChange}
-                  />
-                </div>
-              </section>
-
-              <section className="settings-section">
-                <h2 className="settings-section-title">
-                  <Icon name="keyboard" size={20} />
-                  Горячие клавиши
-                </h2>
-                <div className="settings-card">
-                  <HotkeySettings
-                    hotkeys={hotkeys}
-                    onHotkeyChange={handleHotkeyChange}
-                    onResetHotkeys={handleResetHotkeys}
-                  />
-                </div>
-              </section>
-
-              <section className="settings-section">
-                <h2 className="settings-section-title">
-                  <Icon name="power" size={20} />
-                  Система
-                </h2>
-                <div className="settings-card">
-                  <SystemSettings
-                    autoLaunch={autoLaunch}
-                    autoUpdate={autoUpdate}
-                    minimizeToTray={minimizeToTray}
-                    closeToTray={closeToTray}
-                    onAutoLaunchChange={setAutoLaunch}
-                    onAutoUpdateChange={setAutoUpdate}
-                    onMinimizeToTrayChange={setMinimizeToTray}
-                    onCloseToTrayChange={setCloseToTray}
-                    onCheckForUpdates={handleCheckForUpdates}
-                  />
-                </div>
-              </section>
-            </>
-          )}
-
-          {/* Network Tab */}
-          {activeTab === 'network' && (
-            <>
-              <section className="settings-section">
-                <h2 className="settings-section-title">
-                  <Icon name="activity" size={20} />
-                  Ограничение скорости
-                </h2>
-                <div className="settings-card">
-                  <SpeedPresets
-                    maxDownKbps={maxDownKbps}
-                    maxUpKbps={maxUpKbps}
-                    onSpeedChange={handleSpeedChange}
-                  />
-
-                  <div className="setting-divider" />
-
-                  <div className="setting-item">
-                    <div className="setting-info">
-                      <label className="setting-label">Максимальная скорость загрузки</label>
-                      <p className="setting-description">0 = без ограничений</p>
-                    </div>
-                    <div className="setting-control speed-control">
-                      <input
-                        type="number"
-                        className="input input-number"
-                        min="0"
-                        value={maxDownKbps}
-                        onChange={(e) => setMaxDownKbps(parseInt(e.target.value) || 0)}
-                      />
-                      <span className="speed-unit">KB/s</span>
-                    </div>
-                  </div>
-
-                  <div className="setting-divider" />
-
-                  <div className="setting-item">
-                    <div className="setting-info">
-                      <label className="setting-label">Максимальная скорость отдачи</label>
-                      <p className="setting-description">0 = без ограничений</p>
-                    </div>
-                    <div className="setting-control speed-control">
-                      <input
-                        type="number"
-                        className="input input-number"
-                        min="0"
-                        value={maxUpKbps}
-                        onChange={(e) => setMaxUpKbps(parseInt(e.target.value) || 0)}
-                      />
-                      <span className="speed-unit">KB/s</span>
-                    </div>
-                  </div>
-
-                  <div className="settings-notice">
-                    <Icon name="info" size={16} />
-                    <span>
-                      Speed limiting is best-effort due to WebTorrent limitations.
-                      Actual speeds may vary.
-                    </span>
-                  </div>
-                </div>
-              </section>
-
-              <section className="settings-section">
-                <h2 className="settings-section-title">
-                  <Icon name="download" size={20} />
-                  Одновременные загрузки
-                </h2>
-                <div className="settings-card">
-                  <div className="setting-item">
-                    <div className="setting-info">
-                      <label className="setting-label">Максимум активных загрузок</label>
-                      <p className="setting-description">Сколько торрентов могут загружаться одновременно</p>
-                    </div>
-                    <div className="setting-control">
-                      <input
-                        type="number"
-                        className="input input-number"
-                        min="1"
-                        max="10"
-                        value={maxActiveDownloads}
-                        onChange={(e) => setMaxActiveDownloads(parseInt(e.target.value) || 3)}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              <section className="settings-section">
-                <h2 className="settings-section-title">
-                  <Icon name="shield" size={20} />
-                  Прокси
-                </h2>
-                <div className="settings-card">
-                  <ProxySettings
-                    enabled={proxyEnabled}
-                    type={proxyType}
-                    host={proxyHost}
-                    port={proxyPort}
-                    username={proxyUsername}
-                    password={proxyPassword}
-                    onChange={handleProxyChange}
-                  />
-                </div>
-              </section>
-            </>
-          )}
-
-          {/* Scheduler Tab */}
-          {activeTab === 'scheduler' && (
-            <section className="settings-section">
-              <h2 className="settings-section-title">
-                <Icon name="calendar" size={20} />
-                Планировщик загрузок
-              </h2>
-              <div className="settings-card">
-                <div className="setting-item">
-                  <div className="setting-info">
-                    <label className="setting-label">Включить планировщик</label>
-                    <p className="setting-description">
-                      Загрузки будут активны только в указанное время.
-                    </p>
-                  </div>
-                  <div className="setting-control">
-                    <button
-                      className={`toggle-switch ${schedulerEnabled ? 'active' : ''}`}
-                      onClick={handleSchedulerToggle}
-                    >
-                      <span className="toggle-slider" />
-                    </button>
-                  </div>
-                </div>
-
-                {schedulerEnabled && (
-                  <>
-                    <div className="setting-divider" />
-                    <div className="scheduler-entries">
-                      <div className="scheduler-header">
-                        <span className="setting-label">Расписание</span>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          icon={<Icon name="plus" size={14} />}
-                          onClick={handleAddSchedule}
-                        >
-                          Добавить
-                        </Button>
-                      </div>
-
-                      {schedules.length === 0 ? (
-                        <div className="scheduler-empty">
-                          <Icon name="calendar" size={32} />
-                          <p>Нет расписаний. Добавьте первое!</p>
-                        </div>
-                      ) : (
-                        schedules.map((schedule) => (
-                          <div key={schedule.id} className="schedule-entry">
-                            <div className="schedule-days">
-                              {dayNames.map((day, idx) => (
-                                <button
-                                  key={idx}
-                                  className={`day-btn ${schedule.days.includes(idx) ? 'active' : ''}`}
-                                  onClick={() => {
-                                    const newDays = schedule.days.includes(idx)
-                                      ? schedule.days.filter((d) => d !== idx)
-                                      : [...schedule.days, idx].sort();
-                                    handleUpdateSchedule(schedule.id, { days: newDays });
-                                  }}
-                                >
-                                  {day}
-                                </button>
-                              ))}
-                            </div>
-                            <div className="schedule-time">
-                              <input
-                                type="time"
-                                value={schedule.startTime}
-                                onChange={(e) =>
-                                  handleUpdateSchedule(schedule.id, { startTime: e.target.value })
-                                }
-                              />
-                              <span>—</span>
-                              <input
-                                type="time"
-                                value={schedule.endTime}
-                                onChange={(e) =>
-                                  handleUpdateSchedule(schedule.id, { endTime: e.target.value })
-                                }
-                              />
-                            </div>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              iconOnly
-                              icon={<Icon name="trash" size={14} />}
-                              onClick={() => handleRemoveSchedule(schedule.id)}
-                            />
-                          </div>
-                        ))
-                      )}
-                    </div>
-
-                    <div className="settings-notice">
-                      <Icon name="info" size={16} />
-                      <span>
-                        Загрузки будут приостановлены вне указанного времени и автоматически возобновлены.
-                      </span>
-                    </div>
-                  </>
-                )}
-              </div>
-            </section>
-          )}
-
-          {/* Advanced Tab */}
-          {activeTab === 'advanced' && (
-            <>
-              <section className="settings-section">
-                <h2 className="settings-section-title">
-                  <Icon name="network" size={20} />
-                  Протоколы и соединения
-                </h2>
-                <div className="settings-card">
-                  <AdvancedSettings
-                    enableDHT={enableDHT}
-                    enablePEX={enablePEX}
-                    enableLSD={enableLSD}
-                    maxConnections={maxConnections}
-                    portMin={portMin}
-                    portMax={portMax}
-                    onChange={handleAdvancedChange}
-                  />
-                </div>
-              </section>
-
-              <section className="settings-section">
-                <h2 className="settings-section-title">
-                  <Icon name="download-cloud" size={20} />
-                  Резервное копирование
-                </h2>
-                <div className="settings-card">
-                  <SettingsBackup onExport={handleExportSettings} onImport={handleImportSettings} />
-                </div>
-              </section>
-            </>
-          )}
-
-          {/* Maintenance Tab */}
-          {activeTab === 'maintenance' && (
-            <>
-              <section className="settings-section">
-                <h2 className="settings-section-title">
-                  <Icon name="info" size={20} />
-                  About
-                </h2>
-                <div className="settings-card">
-                  <div className="about-info">
-                    <div className="about-logo">🔍</div>
-                    <div className="about-text">
-                      <h3>TorrentHunt</h3>
-                      <p>Version 1.0.0</p>
-                      <p className="about-tagline">
-                        A desktop torrent client focused on legal open-source software.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="setting-divider" />
-
-                  <AppStatistics
-                    totalDownloads={stats.totalDownloads}
-                    totalUploaded={stats.totalUploaded}
-                    totalDownloaded={stats.totalDownloaded}
-                    cacheSize={stats.cacheSize}
-                    diskUsage={stats.diskUsage}
-                    uptime={stats.uptime}
-                  />
-                </div>
-              </section>
-
-              <section className="settings-section">
-                <h2 className="settings-section-title">
-                  <Icon name="database" size={20} />
-                  Обслуживание
-                </h2>
-                <div className="settings-card">
-                  <div className="setting-item">
-                    <div className="setting-info">
-                      <label className="setting-label">Очистка кеша</label>
-                      <p className="setting-description">
-                        Удаляет временные файлы, кеш GPU и другие накопленные данные.
-                        Используйте при возникновении проблем с производительностью,
-                        ошибками отказа в доступе к кешу или зависаниями приложения.
-                      </p>
-                    </div>
-                    <div className="setting-control">
-                      <Button
-                        variant="secondary"
-                        icon={<Icon name="trash" size={16} />}
-                        onClick={handleClearCache}
-                        loading={clearingCache}
-                        disabled={clearingCache}
-                      >
-                        Очистить кеш
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="settings-notice">
-                    <Icon name="info" size={16} />
-                    <span>
-                      Очистка кеша безопасна и не удалит ваши загрузки или настройки.
-                      После очистки рекомендуется перезапустить приложение.
-                    </span>
-                  </div>
-                </div>
-              </section>
-            </>
-          )}
-          </div>
         </div>
+      )}
+
+      <SettingsSidebar
+        categories={categories}
+        activeCategory={activeCategory}
+        onCategoryChange={setActiveCategory}
+      />
+
+      <div className="settings-content">
+        <div className="settings-content-inner">{renderCategoryContent()}</div>
 
         {hasChanges && (
-          <div className="settings-footer">
+          <div className="settings-actions">
             <Button variant="secondary" onClick={handleReset}>
               Отменить
             </Button>
@@ -824,8 +449,608 @@ const SettingsPage: React.FC = () => {
           </div>
         )}
       </div>
-    </>
+    </div>
   );
+
+  function renderCategoryContent() {
+    switch (activeCategory) {
+      case 'general':
+        return renderGeneralSettings();
+      case 'downloads':
+        return renderDownloadSettings();
+      case 'network':
+        return renderNetworkSettings();
+      case 'advanced':
+        return renderAdvancedSettings();
+      case 'privacy':
+        return renderPrivacySettings();
+      case 'scheduler':
+        return renderSchedulerSettings();
+      case 'interface':
+        return renderInterfaceSettings();
+      case 'notifications':
+        return renderNotificationSettings();
+      case 'system':
+        return renderSystemSettings();
+      case 'hotkeys':
+        return renderHotkeySettings();
+      case 'about':
+        return renderAboutSettings();
+      default:
+        return null;
+    }
+  }
+
+  function renderGeneralSettings() {
+    return (
+      <>
+        <div className="settings-category-header">
+          <h1 className="settings-category-title">General</h1>
+          <p className="settings-category-subtitle">Basic application configuration</p>
+        </div>
+
+        <div className="settings-group">
+          <h3 className="settings-group-title">APPLICATION</h3>
+          {renderSettingItem(
+            'Auto Launch',
+            'Start TorrentHunt when system boots',
+            renderToggle(autoLaunch, () => setAutoLaunch(!autoLaunch))
+          )}
+          {renderSettingItem(
+            'Auto Update',
+            'Automatically download and install updates',
+            renderToggle(autoUpdate, () => setAutoUpdate(!autoUpdate))
+          )}
+        </div>
+
+        <div className="settings-divider" />
+
+        <div className="settings-group">
+          <h3 className="settings-group-title">BEHAVIOR</h3>
+          {renderSettingItem(
+            'Minimize to Tray',
+            'Keep app running in system tray when minimized',
+            renderToggle(minimizeToTray, () => setMinimizeToTray(!minimizeToTray))
+          )}
+          {renderSettingItem(
+            'Close to Tray',
+            'Hide window instead of quitting when closing',
+            renderToggle(closeToTray, () => setCloseToTray(!closeToTray))
+          )}
+        </div>
+      </>
+    );
+  }
+
+  function renderDownloadSettings() {
+    return (
+      <>
+        <div className="settings-category-header">
+          <h1 className="settings-category-title">Downloads</h1>
+          <p className="settings-category-subtitle">Manage download location and behavior</p>
+        </div>
+
+        <div className="settings-group">
+          <h3 className="settings-group-title">LOCATION</h3>
+          {renderSettingItem(
+            'Default Directory',
+            'Where to save downloaded files',
+            <Button variant="secondary" icon={<Icon name="folder-open" size={16} />} onClick={handleSelectDirectory}>
+              Choose
+            </Button>
+          )}
+          {defaultDownloadDir && <div className="setting-value-display">{defaultDownloadDir}</div>}
+        </div>
+
+        <div className="settings-divider" />
+
+        <div className="settings-group">
+          <h3 className="settings-group-title">LIMITS</h3>
+          {renderSettingItem(
+            'Maximum Active Downloads',
+            'How many torrents can download simultaneously',
+            <input
+              type="number"
+              className="input-compact"
+              min="1"
+              max="10"
+              value={maxActiveDownloads}
+              onChange={(e) => setMaxActiveDownloads(parseInt(e.target.value) || 3)}
+            />
+          )}
+        </div>
+      </>
+    );
+  }
+
+  function renderNetworkSettings() {
+    return (
+      <>
+        <div className="settings-category-header">
+          <h1 className="settings-category-title">Network</h1>
+          <p className="settings-category-subtitle">Download and upload speed, connections, ports</p>
+        </div>
+
+        <div className="settings-group">
+          <h3 className="settings-group-title">SPEED LIMITS</h3>
+          {renderSettingItem(
+            'Download Speed',
+            'Set maximum download speed (0 = unlimited)',
+            <div className="speed-input-compact">
+              <input
+                type="number"
+                className="input-compact input-mono"
+                min="0"
+                value={maxDownKbps}
+                onChange={(e) => setMaxDownKbps(parseInt(e.target.value) || 0)}
+              />
+              <span className="input-unit">KB/s</span>
+            </div>
+          )}
+          {renderSettingItem(
+            'Upload Speed',
+            'Set maximum upload speed (0 = unlimited)',
+            <div className="speed-input-compact">
+              <input
+                type="number"
+                className="input-compact input-mono"
+                min="0"
+                value={maxUpKbps}
+                onChange={(e) => setMaxUpKbps(parseInt(e.target.value) || 0)}
+              />
+              <span className="input-unit">KB/s</span>
+            </div>
+          )}
+        </div>
+
+        <div className="settings-notice-compact">
+          <Icon name="info" size={14} />
+          <span>Speed limiting is best-effort due to WebTorrent limitations</span>
+        </div>
+      </>
+    );
+  }
+
+  function renderAdvancedSettings() {
+    return (
+      <>
+        <div className="settings-category-header">
+          <h1 className="settings-category-title">Advanced</h1>
+          <p className="settings-category-subtitle">Protocols, connections, and technical settings</p>
+        </div>
+
+        <div className="settings-group">
+          <h3 className="settings-group-title">PROTOCOLS</h3>
+          {renderSettingItem(
+            'Enable DHT',
+            'Distributed Hash Table for peer discovery',
+            renderToggle(enableDHT, () => setEnableDHT(!enableDHT))
+          )}
+          {renderSettingItem(
+            'Enable PEX',
+            'Peer Exchange for peer discovery',
+            renderToggle(enablePEX, () => setEnablePEX(!enablePEX))
+          )}
+          {renderSettingItem(
+            'Enable LSD',
+            'Local Service Discovery',
+            renderToggle(enableLSD, () => setEnableLSD(!enableLSD))
+          )}
+        </div>
+
+        <div className="settings-divider" />
+
+        <div className="settings-group">
+          <h3 className="settings-group-title">CONNECTIONS</h3>
+          {renderSettingItem(
+            'Maximum Connections',
+            'Per torrent connection limit',
+            <input
+              type="number"
+              className="input-compact input-mono"
+              min="10"
+              max="500"
+              value={maxConnections}
+              onChange={(e) => setMaxConnections(parseInt(e.target.value) || 100)}
+            />
+          )}
+        </div>
+
+        <div className="settings-divider" />
+
+        <div className="settings-group">
+          <h3 className="settings-group-title">PORT CONFIGURATION</h3>
+          <div className="setting-item">
+            <div className="setting-info">
+              <div className="setting-label">Listening Port Range</div>
+              <p className="setting-description">Port range for incoming connections</p>
+            </div>
+            <div className="setting-control">
+              <div className="port-range-input">
+                <input
+                  type="number"
+                  className="input-compact input-mono"
+                  min="1024"
+                  max="65535"
+                  value={portMin}
+                  onChange={(e) => setPortMin(parseInt(e.target.value) || 6881)}
+                />
+                <span className="port-separator">—</span>
+                <input
+                  type="number"
+                  className="input-compact input-mono"
+                  min="1024"
+                  max="65535"
+                  value={portMax}
+                  onChange={(e) => setPortMax(parseInt(e.target.value) || 6889)}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  function renderPrivacySettings() {
+    return (
+      <>
+        <div className="settings-category-header">
+          <h1 className="settings-category-title">Privacy & Security</h1>
+          <p className="settings-category-subtitle">Proxy and anonymity settings</p>
+        </div>
+
+        <div className="settings-group">
+          <h3 className="settings-group-title">PROXY</h3>
+          {renderSettingItem(
+            'Enable Proxy',
+            'Route traffic through proxy server',
+            renderToggle(proxyEnabled, () => setProxyEnabled(!proxyEnabled))
+          )}
+          {proxyEnabled && (
+            <>
+              <div className="setting-item">
+                <div className="setting-info">
+                  <div className="setting-label">Proxy Type</div>
+                  <p className="setting-description">Protocol to use</p>
+                </div>
+                <div className="setting-control">
+                  <select
+                    className="select-compact"
+                    value={proxyType}
+                    onChange={(e) => setProxyType(e.target.value as 'http' | 'https' | 'socks5')}
+                  >
+                    <option value="http">HTTP</option>
+                    <option value="https">HTTPS</option>
+                    <option value="socks5">SOCKS5</option>
+                  </select>
+                </div>
+              </div>
+              <div className="setting-item">
+                <div className="setting-info">
+                  <div className="setting-label">Host</div>
+                  <p className="setting-description">Proxy server address</p>
+                </div>
+                <div className="setting-control">
+                  <input
+                    type="text"
+                    className="input-compact"
+                    placeholder="127.0.0.1"
+                    value={proxyHost}
+                    onChange={(e) => setProxyHost(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="setting-item">
+                <div className="setting-info">
+                  <div className="setting-label">Port</div>
+                  <p className="setting-description">Proxy server port</p>
+                </div>
+                <div className="setting-control">
+                  <input
+                    type="number"
+                    className="input-compact input-mono"
+                    min="1"
+                    max="65535"
+                    value={proxyPort}
+                    onChange={(e) => setProxyPort(parseInt(e.target.value) || 8080)}
+                  />
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </>
+    );
+  }
+
+  function renderSchedulerSettings() {
+    return (
+      <>
+        <div className="settings-category-header">
+          <h1 className="settings-category-title">Scheduler</h1>
+          <p className="settings-category-subtitle">Schedule when downloads are active</p>
+        </div>
+
+        <div className="settings-group">
+          <h3 className="settings-group-title">SCHEDULER</h3>
+          {renderSettingItem(
+            'Enable Scheduler',
+            'Downloads will only be active during specified times',
+            renderToggle(schedulerEnabled, () => handleSchedulerToggle())
+          )}
+        </div>
+
+        {schedulerEnabled && (
+          <>
+            <div className="settings-divider" />
+            <div className="settings-group">
+              <div className="settings-group-header">
+                <h3 className="settings-group-title">SCHEDULES</h3>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={<Icon name="plus" size={14} />}
+                  onClick={handleAddSchedule}
+                >
+                  Add
+                </Button>
+              </div>
+
+              {schedules.length === 0 ? (
+                <div className="empty-state-compact">
+                  <Icon name="calendar" size={24} />
+                  <p>No schedules yet. Add your first one!</p>
+                </div>
+              ) : (
+                <div className="schedule-list">
+                  {schedules.map((schedule) => (
+                    <div key={schedule.id} className="schedule-entry-compact">
+                      <div className="schedule-days-compact">
+                        {dayNames.map((day, idx) => (
+                          <button
+                            key={idx}
+                            className={`day-button ${schedule.days.includes(idx) ? 'active' : ''}`}
+                            onClick={() => {
+                              const newDays = schedule.days.includes(idx)
+                                ? schedule.days.filter((d) => d !== idx)
+                                : [...schedule.days, idx].sort();
+                              handleUpdateSchedule(schedule.id, { days: newDays });
+                            }}
+                          >
+                            {day}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="schedule-time-compact">
+                        <input
+                          type="time"
+                          className="time-input-compact"
+                          value={schedule.startTime}
+                          onChange={(e) =>
+                            handleUpdateSchedule(schedule.id, { startTime: e.target.value })
+                          }
+                        />
+                        <span className="time-separator">—</span>
+                        <input
+                          type="time"
+                          className="time-input-compact"
+                          value={schedule.endTime}
+                          onChange={(e) =>
+                            handleUpdateSchedule(schedule.id, { endTime: e.target.value })
+                          }
+                        />
+                      </div>
+                      <button
+                        className="button-icon-compact"
+                        onClick={() => handleRemoveSchedule(schedule.id)}
+                      >
+                        <Icon name="trash" size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </>
+    );
+  }
+
+  function renderInterfaceSettings() {
+    return (
+      <>
+        <div className="settings-category-header">
+          <h1 className="settings-category-title">Interface & Themes</h1>
+          <p className="settings-category-subtitle">Customize appearance and visual style</p>
+        </div>
+
+        <div className="settings-group">
+          <h3 className="settings-group-title">THEME</h3>
+          <div className="setting-item">
+            <div className="setting-info">
+              <div className="setting-label">Color Scheme</div>
+              <p className="setting-description">Choose your preferred theme</p>
+            </div>
+            <div className="setting-control">
+              <ThemeSelector currentTheme={theme} onThemeChange={handleThemeChange} />
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  function renderNotificationSettings() {
+    return (
+      <>
+        <div className="settings-category-header">
+          <h1 className="settings-category-title">Notifications</h1>
+          <p className="settings-category-subtitle">Configure notification preferences</p>
+        </div>
+
+        <div className="settings-group">
+          <h3 className="settings-group-title">NOTIFICATIONS</h3>
+          {renderSettingItem(
+            'Enable Notifications',
+            'Show desktop notifications',
+            renderToggle(enableNotifications, () => setEnableNotifications(!enableNotifications))
+          )}
+          {renderSettingItem(
+            'Enable Sounds',
+            'Play sound with notifications',
+            renderToggle(enableSounds, () => setEnableSounds(!enableSounds))
+          )}
+          {renderSettingItem(
+            'Notify on Complete',
+            'Alert when download completes',
+            renderToggle(notifyOnComplete, () => setNotifyOnComplete(!notifyOnComplete))
+          )}
+          {renderSettingItem(
+            'Notify on Error',
+            'Alert when error occurs',
+            renderToggle(notifyOnError, () => setNotifyOnError(!notifyOnError))
+          )}
+        </div>
+      </>
+    );
+  }
+
+  function renderSystemSettings() {
+    return (
+      <>
+        <div className="settings-category-header">
+          <h1 className="settings-category-title">System Integration</h1>
+          <p className="settings-category-subtitle">System-level settings and integration</p>
+        </div>
+
+        <div className="settings-group">
+          <h3 className="settings-group-title">UPDATES</h3>
+          <div className="setting-item">
+            <div className="setting-info">
+              <div className="setting-label">Check for Updates</div>
+              <p className="setting-description">Look for new versions</p>
+            </div>
+            <div className="setting-control">
+              <Button variant="secondary" onClick={handleCheckForUpdates}>
+                Check Now
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        <div className="settings-divider" />
+
+        <div className="settings-group">
+          <h3 className="settings-group-title">MAINTENANCE</h3>
+          <div className="setting-item">
+            <div className="setting-info">
+              <div className="setting-label">Clear Cache</div>
+              <p className="setting-description">Remove temporary files and cached data</p>
+            </div>
+            <div className="setting-control">
+              <Button
+                variant="secondary"
+                icon={<Icon name="trash" size={16} />}
+                onClick={handleClearCache}
+                loading={clearingCache}
+                disabled={clearingCache}
+              >
+                Clear
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        <div className="settings-divider" />
+
+        <div className="settings-group">
+          <h3 className="settings-group-title">BACKUP</h3>
+          <div className="setting-item">
+            <div className="setting-info">
+              <div className="setting-label">Export Settings</div>
+              <p className="setting-description">Save your configuration</p>
+            </div>
+            <div className="setting-control">
+              <Button variant="secondary" onClick={handleExportSettings}>
+                Export
+              </Button>
+            </div>
+          </div>
+          <div className="setting-item">
+            <div className="setting-info">
+              <div className="setting-label">Import Settings</div>
+              <p className="setting-description">Restore saved configuration</p>
+            </div>
+            <div className="setting-control">
+              <Button variant="secondary" onClick={handleImportSettings}>
+                Import
+              </Button>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  function renderHotkeySettings() {
+    return (
+      <>
+        <div className="settings-category-header">
+          <h1 className="settings-category-title">Keyboard Shortcuts</h1>
+          <p className="settings-category-subtitle">Customize keyboard hotkeys</p>
+        </div>
+
+        <div className="settings-group">
+          <h3 className="settings-group-title">HOTKEYS</h3>
+          <HotkeySettings
+            hotkeys={hotkeys}
+            onHotkeyChange={handleHotkeyChange}
+            onResetHotkeys={handleResetHotkeys}
+          />
+        </div>
+      </>
+    );
+  }
+
+  function renderAboutSettings() {
+    return (
+      <>
+        <div className="settings-category-header">
+          <h1 className="settings-category-title">About TorrentHunt</h1>
+          <p className="settings-category-subtitle">Application information and statistics</p>
+        </div>
+
+        <div className="about-section">
+          <div className="about-app">
+            <div className="about-icon">🔍</div>
+            <div className="about-info-text">
+              <h2 className="about-app-name">TorrentHunt</h2>
+              <p className="about-version">Version 1.0.0</p>
+              <p className="about-description">
+                A desktop torrent client focused on legal open-source software distribution.
+              </p>
+            </div>
+          </div>
+
+          <div className="settings-divider" />
+
+          <div className="settings-group">
+            <h3 className="settings-group-title">STATISTICS</h3>
+            <AppStatistics
+              totalDownloads={stats.totalDownloads}
+              totalUploaded={stats.totalUploaded}
+              totalDownloaded={stats.totalDownloaded}
+              cacheSize={stats.cacheSize}
+              diskUsage={stats.diskUsage}
+              uptime={stats.uptime}
+            />
+          </div>
+        </div>
+      </>
+    );
+  }
 };
 
 export default SettingsPage;

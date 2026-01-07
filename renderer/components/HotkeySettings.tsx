@@ -36,16 +36,23 @@ export const HotkeySettings: React.FC<HotkeySettingsProps> = ({
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (!isRecording) return;
     e.preventDefault();
+    e.stopPropagation();
 
     const keys: string[] = [];
+    
+    // Добавляем модификаторы
     if (e.ctrlKey) keys.push('Ctrl');
     if (e.shiftKey) keys.push('Shift');
     if (e.altKey) keys.push('Alt');
     if (e.metaKey) keys.push('Meta');
 
+    // Добавляем основную клавишу
     const key = e.key;
     if (!['Control', 'Shift', 'Alt', 'Meta'].includes(key)) {
-      keys.push(key.toUpperCase());
+      const normalizedKey = key.length === 1 ? key.toUpperCase() : key;
+      if (!keys.includes(normalizedKey)) {
+        keys.push(normalizedKey);
+      }
     }
 
     if (keys.length > 0) {
@@ -53,13 +60,17 @@ export const HotkeySettings: React.FC<HotkeySettingsProps> = ({
     }
   };
 
-  const handleKeyUp = () => {
+  const handleKeyUp = (e: React.KeyboardEvent) => {
     if (!isRecording || recordedKeys.length === 0) return;
+    e.preventDefault();
+    e.stopPropagation();
 
-    if (editingHotkey) {
+    // Сохраняем комбинацию только если есть записанные клавиши
+    if (recordedKeys.length > 0 && editingHotkey) {
       onHotkeyChange(editingHotkey, recordedKeys);
     }
 
+    // Сбрасываем состояние
     setIsRecording(false);
     setEditingHotkey(null);
     setRecordedKeys([]);
