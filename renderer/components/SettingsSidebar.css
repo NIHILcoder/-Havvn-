@@ -14,32 +14,32 @@
 }
 
 .settings-sidebar-inner {
-  padding: 24px 12px;
+  padding: 16px 8px;
 }
 
 .settings-sidebar-group {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 .settings-sidebar-divider {
   height: 1px;
   background: var(--color-border-subtle);
-  margin: 24px 8px;
+  margin: 16px 8px;
 }
 
 .settings-sidebar-item {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px 12px;
+  padding: 6px 12px;
   background: transparent;
   border: none;
   border-left: 2px solid transparent;
   border-radius: var(--radius-md);
   color: var(--color-text-secondary);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   cursor: pointer;
   transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);

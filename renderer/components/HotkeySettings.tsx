@@ -57,23 +57,22 @@ export const HotkeySettings: React.FC<HotkeySettingsProps> = ({
 
     if (keys.length > 0) {
       setRecordedKeys(keys);
+      
+      // Сразу сохраняем если есть хотя бы одна не-модификаторная клавиша
+      const hasMainKey = keys.some(k => !['Ctrl', 'Shift', 'Alt', 'Meta'].includes(k));
+      if (hasMainKey && editingHotkey) {
+        onHotkeyChange(editingHotkey, keys);
+        setIsRecording(false);
+        setEditingHotkey(null);
+        setRecordedKeys([]);
+      }
     }
   };
 
   const handleKeyUp = (e: React.KeyboardEvent) => {
-    if (!isRecording || recordedKeys.length === 0) return;
+    // Теперь не нужен, так как сохраняем в handleKeyDown
     e.preventDefault();
     e.stopPropagation();
-
-    // Сохраняем комбинацию только если есть записанные клавиши
-    if (recordedKeys.length > 0 && editingHotkey) {
-      onHotkeyChange(editingHotkey, recordedKeys);
-    }
-
-    // Сбрасываем состояние
-    setIsRecording(false);
-    setEditingHotkey(null);
-    setRecordedKeys([]);
   };
 
   const handleCancel = () => {
