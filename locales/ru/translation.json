@@ -321,7 +321,11 @@
     "uploadSpeed": "Отдача",
     "torrents": "Торренты",
     "peers": "Пиры",
-    "diskSpace": "Место на диске"
+    "diskSpace": "Место на диске",
+    "connected": "Подключено",
+    "active": "активно",
+    "showGraph": "Показать график скорости",
+    "hideGraph": "Скрыть график"
   },
   "contextMenu": {
     "cut": "Вырезать",

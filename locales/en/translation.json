@@ -321,7 +321,11 @@
     "uploadSpeed": "Upload",
     "torrents": "Torrents",
     "peers": "Peers",
-    "diskSpace": "Disk Space"
+    "diskSpace": "Disk Space",
+    "connected": "Connected",
+    "active": "active",
+    "showGraph": "Show speed graph",
+    "hideGraph": "Hide graph"
   },
   "contextMenu": {
     "cut": "Cut",

@@ -552,3 +552,38 @@
   color: var(--color-accent-primary);
   border-color: var(--color-border-subtle);
 }
+
+.status-language-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-1) var(--space-2);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 16px;
+  line-height: 1;
+  margin-left: var(--space-2);
+}
+
+.status-language-btn:hover {
+  background: var(--color-bg-hover);
+  border-color: var(--color-border-subtle);
+  transform: scale(1.1);
+}
+
+.status-language-btn:active {
+  transform: scale(0.95);
+}
+
+.status-language-flag {
+  display: inline-block;
+  filter: grayscale(0%);
+  transition: filter 0.2s ease;
+}
+
+.status-language-btn:hover .status-language-flag {
+  filter: grayscale(0%) brightness(1.2);
+}

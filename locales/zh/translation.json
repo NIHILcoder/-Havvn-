@@ -321,7 +321,11 @@
     "uploadSpeed": "上传",
     "torrents": "种子",
     "peers": "节点",
-    "diskSpace": "磁盘空间"
+    "diskSpace": "磁盘空间",
+    "connected": "已连接",
+    "active": "活跃",
+    "showGraph": "显示速度图表",
+    "hideGraph": "隐藏图表"
   },
   "contextMenu": {
     "cut": "剪切",
