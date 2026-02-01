@@ -5,7 +5,6 @@
  */
 
 import React, { useState } from 'react';
-import { useTranslation } from 'react-i18next';
 import { Icon, IconName } from '../components';
 
 export type PageId = 'downloads' | 'catalog' | 'settings' | 'create-torrent';
@@ -50,21 +49,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
   downloadCounts,
   activeDownloads = 0,
 }) => {
-  const { t } = useTranslation();
   const [isDownloadsExpanded, setIsDownloadsExpanded] = useState(currentPage === 'downloads');
 
   const navItems: NavItem[] = [
-    { id: 'downloads', label: t('sidebar.downloads'), icon: 'download', hasSubmenu: true },
-    { id: 'catalog', label: t('sidebar.catalog'), icon: 'book-open' },
-    { id: 'settings', label: t('sidebar.settings'), icon: 'settings' },
+    { id: 'downloads', label: 'Downloads', icon: 'download', hasSubmenu: true },
+    { id: 'catalog', label: 'Catalog', icon: 'book-open' },
+    { id: 'settings', label: 'Settings', icon: 'settings' },
   ];
 
   const filterItems: FilterItem[] = [
-    { id: 'all', label: t('downloads.all'), icon: 'list' },
-    { id: 'downloading', label: t('downloads.downloading'), icon: 'download', colorClass: 'downloading' },
-    { id: 'completed', label: t('downloads.completed'), icon: 'check-circle', colorClass: 'completed' },
-    { id: 'paused', label: t('downloads.paused'), icon: 'pause', colorClass: 'paused' },
-    { id: 'error', label: t('downloads.error'), icon: 'alert-triangle', colorClass: 'error' },
+    { id: 'all', label: 'All', icon: 'list' },
+    { id: 'downloading', label: 'Downloading', icon: 'download', colorClass: 'downloading' },
+    { id: 'completed', label: 'Completed', icon: 'check-circle', colorClass: 'completed' },
+    { id: 'paused', label: 'Paused', icon: 'pause', colorClass: 'paused' },
+    { id: 'error', label: 'Error', icon: 'alert-triangle', colorClass: 'error' },
   ];
 
   const handleNavClick = (item: NavItem) => {
@@ -145,12 +143,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <button 
             className={`sidebar-action-btn create-torrent-btn ${currentPage === 'create-torrent' ? 'active' : ''}`}
             onClick={() => onNavigate('create-torrent')}
-            title={t('downloads.createTorrent')}
+            title="Create Torrent"
           >
             <span className="sidebar-action-icon">
               <Icon name="file-plus" size={20} />
             </span>
-            <span className="sidebar-action-text">{t('sidebar.create')}</span>
+            <span className="sidebar-action-text">Create</span>
             <span className="sidebar-action-arrow">
               <Icon name="arrow-right" size={14} />
             </span>
@@ -159,7 +157,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         
         {/* Version */}
         <div className="sidebar-version">
-          {t('app.name')} v1.0.0
+          TorrentHunt v1.0.0
         </div>
       </div>
     </aside>
