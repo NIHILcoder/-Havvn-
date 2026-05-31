@@ -9,6 +9,38 @@ import path from 'path';
 import { logger } from './logger';
 
 /**
+ * Resolve the absolute path to the app icon (icon.ico), working in both dev and
+ * packaged builds. Returns null if no icon file is found. Result is cached.
+ */
+let cachedIconPath: string | null | undefined;
+export function getAppIconPath(): string | null {
+  if (cachedIconPath !== undefined) return cachedIconPath;
+
+  const candidates = [
+    // Packaged: shipped via electron-builder extraResources
+    path.join(process.resourcesPath || '', 'icon.ico'),
+    // Dev: probe a few depths up from the compiled location to the project root
+    path.join(__dirname, '../../../../build/icon.ico'),
+    path.join(__dirname, '../../../build/icon.ico'),
+    path.join(__dirname, '../../build/icon.ico'),
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      if (candidate && fs.existsSync(candidate)) {
+        cachedIconPath = candidate;
+        return cachedIconPath;
+      }
+    } catch {
+      // ignore and try next candidate
+    }
+  }
+
+  cachedIconPath = null;
+  return cachedIconPath;
+}
+
+/**
  * Format bytes to human-readable string
  */
 export function formatBytes(bytes: number, decimals: number = 2): string {

@@ -20,6 +20,8 @@ const AppContent: React.FC = () => {
   const [stats, setStats] = useState<DownloadStats[]>([]);
   const [downloads, setDownloads] = useState<Download[]>([]);
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
+  // Torrent/magnet handed to us by the OS — passed to DownloadsPage to open the add dialog
+  const [openTorrentUri, setOpenTorrentUri] = useState<string | null>(null);
 
   // Apply theme on mount
   useEffect(() => {
@@ -79,23 +81,18 @@ const AppContent: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
-  // Listen for opening torrent files/magnet links from OS
+  // Listen for opening torrent files/magnet links from OS.
+  // Don't add silently — switch to Downloads and hand the URI to DownloadsPage,
+  // which opens the same confirmation/file-picker dialog as a manual add.
   useEffect(() => {
-    const unsubscribe = window.api.onOpenTorrent(async (torrentUri) => {
-      try {
-        // Change page to downloads
-        setCurrentPage('downloads');
-
-        // Determine type and add directly
-        const isMagnet = torrentUri.startsWith('magnet:');
-        await window.api.addDownload({
-          sourceType: isMagnet ? 'magnet' : 'torrent_file',
-          sourceUri: torrentUri
-        });
-      } catch (error) {
-        console.error('Failed to add torrent from OS open:', error);
-      }
+    const unsubscribe = window.api.onOpenTorrent((torrentUri) => {
+      setCurrentPage('downloads');
+      setOpenTorrentUri(torrentUri);
     });
+
+    // Tell main our listener is attached so it can flush any URI buffered
+    // during a cold start (fixes "first double-click only opens the app").
+    window.api.notifyReady();
 
     return () => unsubscribe();
   }, []);
@@ -203,7 +200,7 @@ const AppContent: React.FC = () => {
       case 'create-torrent':
         return <CreateTorrentPage onNavigateBack={() => setCurrentPage('downloads')} />;
       case 'downloads':
-        return <DownloadsPage filterMode={filterMode} onFilterChange={setFilterMode} />;
+        return <DownloadsPage filterMode={filterMode} onFilterChange={setFilterMode} openTorrentUri={openTorrentUri} onOpenHandled={() => setOpenTorrentUri(null)} />;
       case 'settings':
         return <SettingsPage />;
       case 'search':
@@ -211,7 +208,7 @@ const AppContent: React.FC = () => {
       case 'rss':
         return <RSSPage />;
       default:
-        return <DownloadsPage filterMode={filterMode} onFilterChange={setFilterMode} />;
+        return <DownloadsPage filterMode={filterMode} onFilterChange={setFilterMode} openTorrentUri={openTorrentUri} onOpenHandled={() => setOpenTorrentUri(null)} />;
     }
   };
 

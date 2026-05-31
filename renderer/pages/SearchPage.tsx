@@ -3,9 +3,10 @@
  * Plugin-based torrent search using Jackett/Torznab/Custom providers.
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { SearchResult, SearchProvider } from '../../shared/types';
-import { Button, Icon, Input, EmptyState } from '../components';
+import { Button, Icon, EmptyState } from '../components';
+import { useTranslation } from '../utils/i18nContext';
 import './SearchPage.css';
 
 const formatBytes = (bytes: number): string => {
@@ -16,17 +17,17 @@ const formatBytes = (bytes: number): string => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 };
 
-const CATEGORIES = [
-  { value: '', label: 'All Categories' },
-  { value: '2000', label: 'Movies' },
-  { value: '5000', label: 'TV' },
-  { value: '3000', label: 'Music' },
-  { value: '4000', label: 'PC/Software' },
-  { value: '6000', label: 'XXX' },
-  { value: '8000', label: 'Other' },
-];
-
 const SearchPage: React.FC = () => {
+  const { t } = useTranslation();
+  const CATEGORIES = [
+    { value: '', label: t('search.category.all') },
+    { value: '2000', label: t('search.category.movies') },
+    { value: '5000', label: t('search.category.tv') },
+    { value: '3000', label: t('search.category.music') },
+    { value: '4000', label: t('search.category.software') },
+    { value: '6000', label: t('search.category.xxx') },
+    { value: '8000', label: t('search.category.other') },
+  ];
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -55,6 +56,14 @@ const SearchPage: React.FC = () => {
     }
   }, []);
 
+  // Load providers on mount so the empty-state hint reflects the built-in
+  // Internet Archive provider (no network — just reads the local store).
+  useEffect(() => {
+    loadProviders();
+  }, [loadProviders]);
+
+  const hasEnabledProvider = providers.some(p => p.enabled);
+
   const handleSearch = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!query.trim()) return;
@@ -68,7 +77,7 @@ const SearchPage: React.FC = () => {
       const res = await window.api.search.query(query.trim(), category || undefined);
       setResults(res);
     } catch (err: any) {
-      setError(err?.message || 'Search failed');
+      setError(err?.message || t('search.failed'));
     } finally {
       setLoading(false);
     }
@@ -80,7 +89,7 @@ const SearchPage: React.FC = () => {
 
     try {
       const uri = result.magnetUri || result.torrentUrl;
-      if (!uri) throw new Error('No downloadable link');
+      if (!uri) throw new Error(t('search.noLink'));
 
       await window.api.addDownload({
         sourceType: result.magnetUri ? 'magnet' : 'torrent_file',
@@ -115,7 +124,7 @@ const SearchPage: React.FC = () => {
   };
 
   const handleDeleteProvider = async (id: string) => {
-    if (!confirm('Remove this provider?')) return;
+    if (!confirm(t('search.provider.removeConfirm'))) return;
     try {
       await window.api.search.removeProvider(id);
       await loadProviders();
@@ -151,14 +160,14 @@ const SearchPage: React.FC = () => {
       <div className="page-header">
         <h1 className="page-title">
           <Icon name="search" size={22} />
-          Search Torrents
+          {t('search.title')}
         </h1>
         <button
           className={`tab-btn ${showProviders ? 'active' : ''}`}
           onClick={() => { setShowProviders(!showProviders); if (!showProviders) loadProviders(); }}
         >
           <Icon name="settings" size={16} />
-          Providers
+          {t('search.providers')}
         </button>
       </div>
 
@@ -172,7 +181,7 @@ const SearchPage: React.FC = () => {
                 <input
                   type="text"
                   className="search-input"
-                  placeholder="Search for torrents..."
+                  placeholder={t('search.input')}
                   value={query}
                   onChange={e => setQuery(e.target.value)}
                   autoFocus
@@ -194,7 +203,7 @@ const SearchPage: React.FC = () => {
                 disabled={loading || !query.trim()}
                 icon={<Icon name="search" size={16} />}
               >
-                Search
+                {t('search.btn')}
               </Button>
             </div>
           </form>
@@ -207,42 +216,38 @@ const SearchPage: React.FC = () => {
             </div>
           )}
 
-          {/* No providers hint */}
+          {/* Empty-state hint: differs depending on whether a provider is ready */}
           {!loading && !hasSearched && (
             <div className="search-hint">
-              <Icon name="info" size={40} />
-              <h3>Configure a search provider first</h3>
-              <p>
-                TorrentHunt uses a plugin-based search system. Add a{' '}
-                <strong>Jackett</strong>, <strong>Prowlarr</strong>, or custom provider
-                to start searching.
-              </p>
+              <Icon name={hasEnabledProvider ? 'search' : 'info'} size={40} />
+              <h3>{hasEnabledProvider ? t('search.hint.ready.title') : t('search.hint.title')}</h3>
+              <p>{hasEnabledProvider ? t('search.hint.ready.desc') : t('search.hint.desc')}</p>
               <Button
-                variant="primary"
+                variant={hasEnabledProvider ? 'ghost' : 'primary'}
                 onClick={() => { setShowProviders(true); loadProviders(); }}
                 icon={<Icon name="settings" size={16} />}
               >
-                Open Provider Settings
+                {hasEnabledProvider ? t('search.hint.ready.open') : t('search.hint.open')}
               </Button>
             </div>
           )}
 
           {/* Results */}
           {hasSearched && !loading && results.length === 0 && !error && (
-            <EmptyState icon="search" title="No results" description="Try a different query or check your providers." />
+            <EmptyState icon="search" title={t('search.noResults.title')} description={t('search.noResults.desc')} />
           )}
 
           {results.length > 0 && (
             <div className="search-results">
               <div className="search-results-header">
-                <span className="results-count">{results.length} results</span>
+                <span className="results-count">{results.length} {t('search.results')}</span>
               </div>
               <div className="results-table">
                 <div className="results-thead">
-                  <div className="results-th name-col">Name</div>
-                  <div className="results-th size-col">Size</div>
+                  <div className="results-th name-col">{t('table.name')}</div>
+                  <div className="results-th size-col">{t('table.size')}</div>
                   <div className="results-th seeds-col">S/L</div>
-                  <div className="results-th provider-col">Provider</div>
+                  <div className="results-th provider-col">{t('search.col.provider')}</div>
                   <div className="results-th action-col"></div>
                 </div>
                 {results.map((r, idx) => (
@@ -266,7 +271,7 @@ const SearchPage: React.FC = () => {
                     <div className="results-td action-col">
                       {addedIndices.has(idx) ? (
                         <span className="added-badge">
-                          <Icon name="check" size={14} /> Added
+                          <Icon name="check" size={14} /> {t('search.added')}
                         </span>
                       ) : (
                         <Button
@@ -277,7 +282,7 @@ const SearchPage: React.FC = () => {
                           onClick={() => handleDownload(r, idx)}
                           icon={<Icon name="download" size={14} />}
                         >
-                          Download
+                          {t('search.download')}
                         </Button>
                       )}
                     </div>
@@ -291,15 +296,12 @@ const SearchPage: React.FC = () => {
         /* Providers settings panel */
         <div className="page-content providers-panel">
           <div className="providers-section">
-            <h2>Search Providers</h2>
-            <p className="providers-desc">
-              Add Jackett, Prowlarr (Torznab), or custom JSON API providers.
-              Jackett & Prowlarr are self-hosted — enter your local URL + API key.
-            </p>
+            <h2>{t('search.providers.title')}</h2>
+            <p className="providers-desc">{t('search.providers.desc')}</p>
 
             {/* Provider list */}
             {providers.length === 0 ? (
-              <div className="providers-empty">No providers configured yet.</div>
+              <div className="providers-empty">{t('search.providers.empty')}</div>
             ) : (
               <div className="providers-list">
                 {providers.map(p => (
@@ -319,7 +321,7 @@ const SearchPage: React.FC = () => {
                       <button
                         className={`toggle-btn ${p.enabled ? 'on' : 'off'}`}
                         onClick={() => handleToggleProvider(p.id, !p.enabled)}
-                        title={p.enabled ? 'Disable' : 'Enable'}
+                        title={p.enabled ? t('search.disable') : t('search.enable')}
                       >
                         <Icon name={p.enabled ? 'eye' : 'eye-off'} size={14} />
                       </button>
@@ -330,14 +332,16 @@ const SearchPage: React.FC = () => {
                         onClick={() => handleTestProvider(p.id)}
                         icon={<Icon name="zap" size={14} />}
                       >
-                        Test
+                        {t('search.test')}
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDeleteProvider(p.id)}
-                        icon={<Icon name="trash" size={14} />}
-                      />
+                      {!p.builtIn && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDeleteProvider(p.id)}
+                          icon={<Icon name="trash" size={14} />}
+                        />
+                      )}
                     </div>
                   </div>
                 ))}
@@ -346,12 +350,12 @@ const SearchPage: React.FC = () => {
 
             {/* Add new provider */}
             <div className="add-provider-form">
-              <h3>Add Provider</h3>
+              <h3>{t('search.addProvider')}</h3>
               <div className="form-row">
                 <input
                   type="text"
                   className="form-input"
-                  placeholder="Provider name"
+                  placeholder={t('search.provider.name')}
                   value={newProvider.name}
                   onChange={e => setNewProvider(p => ({ ...p, name: e.target.value }))}
                 />
@@ -382,7 +386,7 @@ const SearchPage: React.FC = () => {
                 <input
                   type="text"
                   className="form-input api-key-input"
-                  placeholder="API Key (optional)"
+                  placeholder={t('search.provider.apiKey')}
                   value={newProvider.apiKey}
                   onChange={e => setNewProvider(p => ({ ...p, apiKey: e.target.value }))}
                 />
@@ -394,17 +398,17 @@ const SearchPage: React.FC = () => {
                 onClick={handleAddProvider}
                 icon={<Icon name="plus" size={16} />}
               >
-                Add Provider
+                {t('search.addProvider')}
               </Button>
             </div>
 
             {/* Help box */}
             <div className="provider-help">
-              <h4><Icon name="help-circle" size={16} /> Setup Guide</h4>
+              <h4><Icon name="help-circle" size={16} /> {t('search.guide.title')}</h4>
               <ul>
-                <li><strong>Jackett:</strong> Download from <code>github.com/Jackett/Jackett</code>, start it, then add <code>http://localhost:9117</code> with your API key from the Jackett dashboard.</li>
-                <li><strong>Prowlarr:</strong> Use Torznab type, URL <code>http://localhost:9696</code>, API key from Prowlarr Settings → Security.</li>
-                <li><strong>Custom:</strong> Any JSON API that accepts <code>?q={`{query}`}</code> and returns <code>{"{ results: [{title, magnetUri, size, seeds, leechers}] }"}</code>.</li>
+                <li><strong>Jackett:</strong> {t('search.guide.jackett')}</li>
+                <li><strong>Prowlarr:</strong> {t('search.guide.prowlarr')}</li>
+                <li><strong>Custom:</strong> {t('search.guide.custom')}</li>
               </ul>
             </div>
           </div>

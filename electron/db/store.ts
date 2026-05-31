@@ -22,6 +22,7 @@ interface StoreSchema {
   searchProviders: SearchProvider[];
   ipBlocklists: IPBlocklist[];
   blocklistData: Record<string, string>; // id -> packed IP ranges as CSV
+  defaultsSeeded: boolean;               // First-run seeding of built-in provider / suggested feeds
 }
 
 const defaultCategories: Category[] = [
@@ -41,8 +42,8 @@ const store = new Store<StoreSchema>({
       maxDownKbps: 0,
       maxUpKbps: 0,
       maxActiveDownloads: 3,
-      minimizeToTray: false,
-      closeToTray: false,
+      minimizeToTray: true,
+      closeToTray: true,
       autoLaunch: false,
       autoUpdate: false,
       // Advanced
@@ -89,6 +90,7 @@ const store = new Store<StoreSchema>({
     searchProviders: [],
     ipBlocklists: [],
     blocklistData: {},
+    defaultsSeeded: false,
   },
 });
 
@@ -215,6 +217,62 @@ export async function updateDownloadProgress(
 
   downloads[id] = download;
   store.set('downloads', downloads);
+}
+
+export interface DownloadProgressUpdate {
+  id: string;
+  progress: number;
+  downloadedBytes: number;
+  uploadedBytes: number;
+  downSpeedBps: number;
+  upSpeedBps: number;
+  etaSeconds: number | null;
+  peers: number;
+  seeds: number;
+  name?: string;
+  totalSize?: number;
+}
+
+/**
+ * Persist progress for many downloads with a SINGLE disk write.
+ *
+ * The stats loop runs several times per second; calling updateDownloadProgress()
+ * per download would serialize the entire store to disk N times per tick. This
+ * batches all updates into one store.set() so the file is written only once.
+ * Unknown ids are skipped silently (a torrent may have been removed mid-tick).
+ */
+export async function updateDownloadsProgressBatch(
+  updates: DownloadProgressUpdate[]
+): Promise<void> {
+  if (updates.length === 0) return;
+
+  const downloads = store.get('downloads');
+  let changed = false;
+
+  for (const data of updates) {
+    const download = downloads[data.id];
+    if (!download) continue;
+
+    download.progress = data.progress;
+    download.downloadedBytes = data.downloadedBytes;
+    download.uploadedBytes = data.uploadedBytes;
+    download.downSpeedBps = data.downSpeedBps;
+    download.upSpeedBps = data.upSpeedBps;
+    download.etaSeconds = data.etaSeconds;
+    download.peers = data.peers;
+    download.seeds = data.seeds;
+    download.updatedAt = new Date();
+
+    if (data.name) download.name = data.name;
+    if (data.totalSize !== undefined && data.totalSize > 0) {
+      download.totalSize = data.totalSize;
+    }
+
+    downloads[data.id] = download;
+    changed = true;
+  }
+
+  if (changed) store.set('downloads', downloads);
 }
 
 export async function markDownloadRemoved(id: string): Promise<void> {
@@ -533,6 +591,25 @@ export async function saveRSSItems(items: RSSItem[]): Promise<void> {
   store.set('rssItems', trimmed);
 }
 
+/**
+ * Remove stored RSS items to keep the list from piling up.
+ * - feedId omitted → applies across all feeds; provided → only that feed.
+ * - onlyDownloaded true → keep undownloaded items, drop the already-grabbed ones.
+ * Returns how many items were removed.
+ */
+export async function clearRSSItems(feedId?: string, onlyDownloaded = false): Promise<number> {
+  const items: RSSItem[] = store.get('rssItems') ?? [];
+  const kept = items.filter(i => {
+    const inScope = feedId ? i.feedId === feedId : true;
+    if (!inScope) return true;                  // out of scope → keep
+    if (onlyDownloaded) return !i.downloaded;   // scoped + only-downloaded → drop downloaded
+    return false;                               // scoped, clear everything → drop
+  });
+  const removed = items.length - kept.length;
+  if (removed > 0) store.set('rssItems', kept);
+  return removed;
+}
+
 export async function markRSSItemDownloaded(guid: string): Promise<void> {
   const items: RSSItem[] = store.get('rssItems') ?? [];
   const idx = items.findIndex(i => i.guid === guid);
@@ -568,6 +645,69 @@ export async function updateSearchProvider(id: string, updates: Partial<SearchPr
 export async function removeSearchProvider(id: string): Promise<void> {
   const providers = (store.get('searchProviders') ?? []).filter((p: SearchProvider) => p.id !== id);
   store.set('searchProviders', providers);
+}
+
+// === First-run defaults ===
+
+/**
+ * Curated, fully-legal suggested RSS feeds (FOSS Torrents — Linux distros,
+ * open-source games & software). Seeded DISABLED so nothing touches the network
+ * until the user explicitly enables a feed or hits "Check".
+ */
+const SUGGESTED_RSS_FEEDS: Omit<RSSFeed, 'id'>[] = [
+  {
+    name: 'FOSS Torrents — Linux Distributions',
+    url: 'https://fosstorrents.com/feed/distribution.xml',
+    enabled: false,
+    autoDownload: false,
+    intervalMinutes: 360,
+  },
+  {
+    name: 'FOSS Torrents — Open-Source Games',
+    url: 'https://fosstorrents.com/feed/game.xml',
+    enabled: false,
+    autoDownload: false,
+    intervalMinutes: 360,
+  },
+  {
+    name: 'FOSS Torrents — Open-Source Software',
+    url: 'https://fosstorrents.com/feed/software.xml',
+    enabled: false,
+    autoDownload: false,
+    intervalMinutes: 360,
+  },
+];
+
+/**
+ * Seed first-run defaults exactly once (guarded by a persistent flag, so it also
+ * runs for existing installs upgrading to this version, and never re-adds items
+ * the user later deletes).
+ *
+ * - Internet Archive: a built-in search provider, ENABLED. It's pull-only —
+ *   no network traffic until the user actually runs a search.
+ * - Suggested RSS feeds: added DISABLED — opt-in, zero background traffic.
+ */
+export async function seedDefaultsIfNeeded(): Promise<void> {
+  if (store.get('defaultsSeeded')) return;
+  store.set('defaultsSeeded', true);
+
+  const providers = store.get('searchProviders') ?? [];
+  if (!providers.some((p: SearchProvider) => p.type === 'archive')) {
+    providers.push({
+      id: uuidv4(),
+      name: 'Internet Archive',
+      url: 'https://archive.org',
+      enabled: true,
+      type: 'archive',
+      builtIn: true,
+    });
+    store.set('searchProviders', providers);
+  }
+
+  const feeds = store.get('rssFeeds') ?? [];
+  if (feeds.length === 0) {
+    store.set('rssFeeds', SUGGESTED_RSS_FEEDS.map(f => ({ ...f, id: uuidv4() })));
+  }
 }
 
 // === IP Blocklists ===

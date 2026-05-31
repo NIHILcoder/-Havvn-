@@ -31,11 +31,17 @@ export class SearchService {
     );
 
     const allResults: SearchResult[] = [];
-    for (const result of results) {
+    results.forEach((result, idx) => {
       if (result.status === 'fulfilled') {
         allResults.push(...result.value);
+      } else {
+        // Resilient aggregate: one bad provider shouldn't fail the whole search
+        log.warn('Provider search failed', {
+          provider: enabled[idx]?.name,
+          error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+        });
       }
-    }
+    });
 
     // Sort by seeds descending
     allResults.sort((a, b) => b.seeds - a.seeds);
@@ -64,9 +70,58 @@ export class SearchService {
         return this.searchTorznab(provider, query, category);
       case 'custom':
         return this.searchCustom(provider, query, category);
+      case 'archive':
+        return this.searchArchiveOrg(provider, query);
       default:
         return [];
     }
+  }
+
+  /**
+   * Internet Archive — open public JSON API, no API key required.
+   * Returns public-domain / Creative-Commons content. Every item exposes a
+   * generated .torrent that also carries HTTP web seeds, so downloads work
+   * even with zero peers.
+   *   https://archive.org/advancedsearch.php?q=...&output=json
+   *   https://archive.org/download/{id}/{id}_archive.torrent
+   */
+  private async searchArchiveOrg(provider: SearchProvider, query: string): Promise<SearchResult[]> {
+    const params = new URLSearchParams({
+      q: query,
+      rows: '60',
+      output: 'json',
+      sort: 'downloads desc',
+    });
+    // fl[] is repeated per field
+    for (const field of ['identifier', 'title', 'item_size', 'downloads', 'mediatype', 'publicdate']) {
+      params.append('fl[]', field);
+    }
+
+    const url = `https://archive.org/advancedsearch.php?${params}`;
+    const response = await this.fetchJSON(url);
+
+    const docs = response?.response?.docs;
+    if (!Array.isArray(docs)) {
+      throw new Error('Unexpected Internet Archive response');
+    }
+
+    return docs
+      .filter((d: any) => d.identifier)
+      .map((d: any): SearchResult => {
+        const id = d.identifier;
+        const title = Array.isArray(d.title) ? d.title[0] : (d.title || id);
+        return {
+          title,
+          torrentUrl: `https://archive.org/download/${id}/${id}_archive.torrent`,
+          size: typeof d.item_size === 'number' ? d.item_size : 0,
+          // Archive doesn't expose swarm stats; web-seeded so peers aren't required.
+          seeds: typeof d.downloads === 'number' ? d.downloads : 0,
+          leechers: 0,
+          provider: provider.name,
+          publishDate: d.publicdate || undefined,
+          category: d.mediatype || undefined,
+        };
+      });
   }
 
   /**
@@ -74,38 +129,32 @@ export class SearchService {
    * GET /api/v2.0/indexers/all/results?apikey=XXX&Query=XXX&Category[]=XXX
    */
   private async searchJackett(provider: SearchProvider, query: string, category?: string): Promise<SearchResult[]> {
-    try {
-      const baseUrl = provider.url.replace(/\/$/, '');
-      const params = new URLSearchParams({
-        apikey: provider.apiKey || '',
-        Query: query,
-      });
-      if (category) params.append('Category[]', category);
+    const baseUrl = provider.url.replace(/\/$/, '');
+    const params = new URLSearchParams({
+      apikey: provider.apiKey || '',
+      Query: query,
+    });
+    if (category) params.append('Category[]', category);
 
-      const url = `${baseUrl}/api/v2.0/indexers/all/results?${params}`;
-      const response = await this.fetchJSON(url);
+    const url = `${baseUrl}/api/v2.0/indexers/all/results?${params}`;
+    const response = await this.fetchJSON(url);
 
-      if (!response || !Array.isArray(response.Results)) {
-        log.warn('Jackett response missing Results array', { provider: provider.name });
-        return [];
-      }
-
-      return response.Results.map((r: any): SearchResult => ({
-        title: r.Title || '',
-        magnetUri: r.MagnetUri || undefined,
-        torrentUrl: r.Link || undefined,
-        size: r.Size || 0,
-        seeds: r.Seeders || 0,
-        leechers: r.Peers || 0,
-        provider: provider.name,
-        publishDate: r.PublishDate || undefined,
-        category: r.CategoryDesc || undefined,
-        infoHash: r.InfoHash || undefined,
-      }));
-    } catch (err) {
-      log.error('Jackett search failed', { provider: provider.name, error: err });
-      return [];
+    if (!response || !Array.isArray(response.Results)) {
+      throw new Error('Unexpected Jackett response (missing Results array)');
     }
+
+    return response.Results.map((r: any): SearchResult => ({
+      title: r.Title || '',
+      magnetUri: r.MagnetUri || undefined,
+      torrentUrl: r.Link || undefined,
+      size: r.Size || 0,
+      seeds: r.Seeders || 0,
+      leechers: r.Peers || 0,
+      provider: provider.name,
+      publishDate: r.PublishDate || undefined,
+      category: r.CategoryDesc || undefined,
+      infoHash: r.InfoHash || undefined,
+    }));
   }
 
   /**
@@ -113,23 +162,18 @@ export class SearchService {
    * GET /api?apikey=XXX&t=search&q=XXX&cat=XXX
    */
   private async searchTorznab(provider: SearchProvider, query: string, category?: string): Promise<SearchResult[]> {
-    try {
-      const baseUrl = provider.url.replace(/\/$/, '');
-      const params = new URLSearchParams({
-        apikey: provider.apiKey || '',
-        t: 'search',
-        q: query,
-      });
-      if (category) params.append('cat', category);
+    const baseUrl = provider.url.replace(/\/$/, '');
+    const params = new URLSearchParams({
+      apikey: provider.apiKey || '',
+      t: 'search',
+      q: query,
+    });
+    if (category) params.append('cat', category);
 
-      const url = `${baseUrl}/api?${params}`;
-      const xml = await this.fetchText(url);
+    const url = `${baseUrl}/api?${params}`;
+    const xml = await this.fetchText(url);
 
-      return this.parseTorznabXML(xml, provider.name);
-    } catch (err) {
-      log.error('Torznab search failed', { provider: provider.name, error: err });
-      return [];
-    }
+    return this.parseTorznabXML(xml, provider.name);
   }
 
   private parseTorznabXML(xml: string, providerName: string): SearchResult[] {
@@ -194,34 +238,28 @@ export class SearchService {
    * Expects JSON response: { results: [{ title, magnetUri, size, seeds, leechers }] }
    */
   private async searchCustom(provider: SearchProvider, query: string, _category?: string): Promise<SearchResult[]> {
-    try {
-      const url = provider.url
-        .replace('{query}', encodeURIComponent(query))
-        .replace('{apikey}', provider.apiKey || '');
+    const url = provider.url
+      .replace('{query}', encodeURIComponent(query))
+      .replace('{apikey}', provider.apiKey || '');
 
-      const response = await this.fetchJSON(url);
+    const response = await this.fetchJSON(url);
 
-      if (!response || !Array.isArray(response.results)) {
-        log.warn('Custom provider response missing results array', { provider: provider.name });
-        return [];
-      }
-
-      return response.results.map((r: any): SearchResult => ({
-        title: r.title || '',
-        magnetUri: r.magnetUri || r.magnet || undefined,
-        torrentUrl: r.torrentUrl || r.url || undefined,
-        size: r.size || 0,
-        seeds: r.seeds || r.seeders || 0,
-        leechers: r.leechers || r.peers || 0,
-        provider: provider.name,
-        publishDate: r.publishDate || r.date || undefined,
-        category: r.category || undefined,
-        infoHash: r.infoHash || r.hash || undefined,
-      }));
-    } catch (err) {
-      log.error('Custom search provider failed', { provider: provider.name, error: err });
-      return [];
+    if (!response || !Array.isArray(response.results)) {
+      throw new Error('Unexpected response (missing results array)');
     }
+
+    return response.results.map((r: any): SearchResult => ({
+      title: r.title || '',
+      magnetUri: r.magnetUri || r.magnet || undefined,
+      torrentUrl: r.torrentUrl || r.url || undefined,
+      size: r.size || 0,
+      seeds: r.seeds || r.seeders || 0,
+      leechers: r.leechers || r.peers || 0,
+      provider: provider.name,
+      publishDate: r.publishDate || r.date || undefined,
+      category: r.category || undefined,
+      infoHash: r.infoHash || r.hash || undefined,
+    }));
   }
 
   private extractXMLTag(xml: string, tag: string): string | null {

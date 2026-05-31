@@ -1,6 +1,10 @@
 import WebTorrent, { Torrent } from 'webtorrent';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
+import https from 'https';
+import http from 'http';
+import { URL } from 'url';
 import { app } from 'electron';
 import {
   Download,
@@ -64,6 +68,10 @@ export class TorrentManager {
   private infoHashIndex: Map<string, string> = new Map();
     private addingTorrents: Set<string> = new Set();
   private statsInterval: NodeJS.Timeout | null = null;
+  // Stats are broadcast to the UI every tick, but persisted to disk only every
+  // PERSIST_INTERVAL_MS to avoid serializing the whole store many times a second.
+  private lastPersistAt = 0;
+  private static readonly PERSIST_INTERVAL_MS = 5000;
   private statsCallbacks: Set<StatsCallback> = new Set();
   private completionCallbacks: Set<CompletionCallback> = new Set();
   private maxActiveDownloads = 3;
@@ -372,6 +380,64 @@ export class TorrentManager {
   /**
    * Add a new download with duplicate prevention
    */
+  /**
+   * Download a remote .torrent file to a temp path so the rest of the add flow
+   * (infoHash extraction, copy into app data) can treat it like a local file.
+   * Reads the body as binary and follows redirects (archive.org/download/...
+   * redirects to a CDN host). Used for search/RSS results that expose an HTTP
+   * .torrent URL rather than a magnet link.
+   */
+  private downloadTorrentToTemp(url: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const get = (current: string, redirects: number): void => {
+        if (redirects > 5) {
+          reject(new Error('Too many redirects fetching .torrent'));
+          return;
+        }
+        const parsed = new URL(current);
+        const lib = parsed.protocol === 'https:' ? https : http;
+        const req = lib.get(current, {
+          headers: { 'User-Agent': 'TorrentHunt', 'Accept': 'application/x-bittorrent, */*' },
+          timeout: 30000,
+        }, (res) => {
+          if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+            res.resume();
+            get(new URL(res.headers.location, current).toString(), redirects + 1);
+            return;
+          }
+          if (res.statusCode && res.statusCode >= 400) {
+            res.resume();
+            reject(new Error(`HTTP ${res.statusCode} fetching .torrent file`));
+            return;
+          }
+          const chunks: Buffer[] = [];
+          res.on('data', (c: Buffer) => chunks.push(c));
+          res.on('end', () => {
+            try {
+              const buf = Buffer.concat(chunks);
+              // Bencoded .torrent files start with 'd' (a dictionary)
+              if (buf.length === 0 || buf[0] !== 0x64) {
+                reject(new Error('Downloaded file is not a valid .torrent'));
+                return;
+              }
+              let base = path.basename(parsed.pathname) || 'download.torrent';
+              if (!base.toLowerCase().endsWith('.torrent')) base += '.torrent';
+              const file = path.join(os.tmpdir(), `th_${Date.now()}_${base}`);
+              fs.writeFileSync(file, buf);
+              resolve(file);
+            } catch (e) {
+              reject(e);
+            }
+          });
+          res.on('error', reject);
+        });
+        req.on('error', reject);
+        req.on('timeout', () => { req.destroy(); reject(new Error('Timeout fetching .torrent file')); });
+      };
+      get(url, 0);
+    });
+  }
+
   async addDownload(params: {
     sourceType: SourceType;
     sourceUri: string;
@@ -381,15 +447,25 @@ export class TorrentManager {
   }): Promise<Download> {
     log.info('Adding new download', { sourceType: params.sourceType, name: params.name });
 
+    // For torrent files given as an HTTP(S) URL (search/RSS results), fetch the
+    // .torrent to a temp file first so the rest of the flow can read it locally.
+    let localTorrentPath = params.sourceUri;
+    let tempTorrentToCleanup: string | null = null;
+    if (params.sourceType === 'torrent_file' && /^https?:\/\//i.test(params.sourceUri)) {
+      localTorrentPath = await this.downloadTorrentToTemp(params.sourceUri);
+      tempTorrentToCleanup = localTorrentPath;
+      log.debug('Fetched remote .torrent to temp', { url: params.sourceUri, temp: localTorrentPath });
+    }
+
     // 1. Extract infoHash early to check for duplicates BEFORE adding
     let infoHashToCheck: string | null = null;
-    
+
     if (params.sourceType === 'magnet') {
       infoHashToCheck = this.extractInfoHashFromMagnet(params.sourceUri);
       log.debug('Extracted infoHash from magnet', { infoHash: infoHashToCheck });
     } else if (params.sourceType === 'torrent_file') {
-      infoHashToCheck = await this.extractInfoHashFromFile(params.sourceUri);
-      log.debug('Extracted infoHash from torrent file', { infoHash: infoHashToCheck, filePath: params.sourceUri });
+      infoHashToCheck = await this.extractInfoHashFromFile(localTorrentPath);
+      log.debug('Extracted infoHash from torrent file', { infoHash: infoHashToCheck, filePath: localTorrentPath });
     }
     
     log.info('Checking for duplicates', { 
@@ -519,17 +595,17 @@ export class TorrentManager {
       let torrentFilePath: string | undefined;
       const sourceUri = params.sourceUri;
 
-      // If it's a torrent file, copy it to app data
+      // If it's a torrent file, copy it (local path or freshly-fetched temp) to app data
       if (params.sourceType === 'torrent_file') {
         const appDataDir = path.join(app.getPath('userData'), 'torrents');
         if (!fs.existsSync(appDataDir)) {
           fs.mkdirSync(appDataDir, { recursive: true });
         }
 
-        const fileName = path.basename(params.sourceUri);
+        const fileName = path.basename(localTorrentPath);
         torrentFilePath = path.join(appDataDir, `${Date.now()}_${fileName}`);
-        fs.copyFileSync(params.sourceUri, torrentFilePath);
-        log.debug('Torrent file copied', { from: params.sourceUri, to: torrentFilePath });
+        fs.copyFileSync(localTorrentPath, torrentFilePath);
+        log.debug('Torrent file copied', { from: localTorrentPath, to: torrentFilePath });
       }
 
       // Create database record
@@ -570,9 +646,17 @@ export class TorrentManager {
         this.addingTorrents.delete(infoHashToCheck);
         log.debug('Removed torrent from adding set', { infoHash: infoHashToCheck });
       }
+      // Remove the temp .torrent we fetched (it's been copied into app data)
+      if (tempTorrentToCleanup) {
+        try {
+          fs.unlinkSync(tempTorrentToCleanup);
+        } catch {
+          // best-effort cleanup
+        }
+      }
     }
   }
-  
+
   /**
    * Internal method to add torrent to WebTorrent client
    */
@@ -1220,11 +1304,23 @@ export class TorrentManager {
     
     this.statsInterval = setInterval(async () => {
       const stats = this.getStats();
-      
-      // Update database with current stats
-      for (const stat of stats) {
+
+      // Broadcast to callbacks every tick (in-memory, cheap) so the UI stays smooth
+      for (const callback of this.statsCallbacks) {
         try {
-          await db.updateDownloadProgress(stat.id, {
+          callback(stats);
+        } catch (e) {
+          log.error('Stats callback error', { error: e instanceof Error ? e.message : String(e) });
+        }
+      }
+
+      // Persist to disk only every PERSIST_INTERVAL_MS, batched into one write
+      const now = Date.now();
+      if (now - this.lastPersistAt >= TorrentManager.PERSIST_INTERVAL_MS) {
+        this.lastPersistAt = now;
+        try {
+          await db.updateDownloadsProgressBatch(stats.map(stat => ({
+            id: stat.id,
             progress: stat.progress,
             downloadedBytes: stat.downloadedBytes,
             uploadedBytes: stat.uploadedBytes,
@@ -1233,23 +1329,14 @@ export class TorrentManager {
             etaSeconds: stat.etaSeconds,
             peers: stat.peers,
             seeds: stat.seeds,
-          });
+          })));
         } catch (e) {
-          // Ignore update errors
+          log.error('Failed to persist download progress', { error: e instanceof Error ? e.message : String(e) });
         }
       }
 
       // Check seeding limits (ratio + time)
       await this.checkSeedingLimits();
-      
-      // Broadcast to callbacks
-      for (const callback of this.statsCallbacks) {
-        try {
-          callback(stats);
-        } catch (e) {
-          log.error('Stats callback error', { error: e instanceof Error ? e.message : String(e) });
-        }
-      }
     }, 750);
  // 750ms interval
 
@@ -1500,23 +1587,22 @@ export class TorrentManager {
     // Clear all stats callbacks to prevent memory leaks
     this.statsCallbacks.clear();
     
-    // Save final stats
-    const stats = this.getStats();
-    for (const stat of stats) {
-      try {
-        await db.updateDownloadProgress(stat.id, {
-          progress: stat.progress,
-          downloadedBytes: stat.downloadedBytes,
-          uploadedBytes: stat.uploadedBytes,
-          downSpeedBps: 0,
-          upSpeedBps: 0,
-          etaSeconds: null,
-          peers: 0,
-          seeds: 0,
-        });
-      } catch (e) {
-        // Ignore
-      }
+    // Save final stats (single batched write, speeds zeroed since we're stopping)
+    try {
+      const stats = this.getStats();
+      await db.updateDownloadsProgressBatch(stats.map(stat => ({
+        id: stat.id,
+        progress: stat.progress,
+        downloadedBytes: stat.downloadedBytes,
+        uploadedBytes: stat.uploadedBytes,
+        downSpeedBps: 0,
+        upSpeedBps: 0,
+        etaSeconds: null,
+        peers: 0,
+        seeds: 0,
+      })));
+    } catch (e) {
+      log.error('Failed to persist final progress', { error: e instanceof Error ? e.message : String(e) });
     }
     
     // Clear all managed torrents and indices

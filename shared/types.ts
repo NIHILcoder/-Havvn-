@@ -299,7 +299,8 @@ export interface SearchProvider {
   url: string;                  // Jackett base URL or custom API URL
   apiKey?: string;
   enabled: boolean;
-  type: 'jackett' | 'torznab' | 'custom';
+  type: 'jackett' | 'torznab' | 'custom' | 'archive';
+  builtIn?: boolean;            // Pre-seeded provider (e.g. Internet Archive) — not user-removable
 }
 
 export interface SearchResult {
@@ -432,6 +433,8 @@ export interface IpcApi {
 
   // App events
   onOpenTorrent: (callback: (torrentUri: string) => void) => () => void;
+  // Renderer announces its IPC listeners are attached (flushes buffered OS opens)
+  notifyReady: () => void;
   // Tray events from main
   onPauseAll: (callback: () => void) => () => void;
   onResumeAll: (callback: () => void) => () => void;
@@ -446,6 +449,7 @@ export interface IpcApi {
     checkAll: () => Promise<void>;
     getItems: (feedId: string) => Promise<RSSItem[]>;
     markDownloaded: (guid: string) => Promise<void>;
+    clearItems: (feedId?: string, onlyDownloaded?: boolean) => Promise<{ removed: number }>;
   };
 
   // Search

@@ -6,6 +6,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { RSSFeed, RSSItem } from '../../shared/types';
 import { Button, Icon, EmptyState } from '../components';
+import { useTranslation } from '../utils/i18nContext';
 import './RSSPage.css';
 
 const formatDate = (dateStr?: string): string => {
@@ -28,6 +29,7 @@ const formatBytes = (bytes?: number): string => {
 type Tab = 'feeds' | 'items' | 'add';
 
 const RSSPage: React.FC = () => {
+  const { t } = useTranslation();
   const [feeds, setFeeds] = useState<RSSFeed[]>([]);
   const [items, setItems] = useState<RSSItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,7 +78,7 @@ const RSSPage: React.FC = () => {
   const handleCheckFeed = async (id: string) => {
     setCheckingId(id);
     try {
-      const newItems = await window.api.rss.checkFeed(id);
+      await window.api.rss.checkFeed(id);
       await loadFeeds();
       if (tab === 'items') await loadItems(selectedFeed || undefined);
     } catch (err: any) {
@@ -108,7 +110,7 @@ const RSSPage: React.FC = () => {
   };
 
   const handleDeleteFeed = async (id: string) => {
-    if (!confirm('Delete this RSS feed and all its items?')) return;
+    if (!confirm(t('rss.deleteConfirm'))) return;
     try {
       await window.api.rss.removeFeed(id);
       await loadFeeds();
@@ -168,6 +170,22 @@ const RSSPage: React.FC = () => {
     }
   };
 
+  const [clearing, setClearing] = useState(false);
+
+  const handleClearItems = async () => {
+    if (!confirm(t('rss.clearConfirm'))) return;
+    setClearing(true);
+    try {
+      // Clears the current scope: the selected feed, or all feeds when none is selected
+      await window.api.rss.clearItems(selectedFeed || undefined, false);
+      await loadItems(selectedFeed || undefined);
+    } catch (err: any) {
+      alert(`Failed: ${err?.message}`);
+    } finally {
+      setClearing(false);
+    }
+  };
+
   const displayedItems = selectedFeed
     ? items.filter(i => i.feedId === selectedFeed)
     : items;
@@ -176,7 +194,7 @@ const RSSPage: React.FC = () => {
     return (
       <div className="page-loading">
         <span className="spinner spinner-lg" />
-        <p>Loading RSS feeds...</p>
+        <p>{t('rss.loading')}</p>
       </div>
     );
   }
@@ -187,7 +205,7 @@ const RSSPage: React.FC = () => {
         <div className="rss-title-row">
           <h1 className="page-title">
             <Icon name="rss" size={20} />
-            RSS Feeds
+            {t('rss.title')}
           </h1>
           <div className="rss-header-actions">
             <Button
@@ -197,7 +215,7 @@ const RSSPage: React.FC = () => {
               onClick={handleCheckAll}
               icon={<Icon name="refresh" size={14} />}
             >
-              Check All
+              {t('rss.checkAll')}
             </Button>
             <Button
               variant="primary"
@@ -205,20 +223,20 @@ const RSSPage: React.FC = () => {
               onClick={() => { setEditingFeed({ enabled: true, autoDownload: false, intervalMinutes: 30 }); setTab('add'); }}
               icon={<Icon name="plus" size={14} />}
             >
-              Add Feed
+              {t('rss.addFeed')}
             </Button>
           </div>
         </div>
         <div className="rss-tabs">
           <button className={`rss-tab ${tab === 'feeds' ? 'active' : ''}`} onClick={() => setTab('feeds')}>
-            Feeds ({feeds.length})
+            {t('rss.tab.feeds')} ({feeds.length})
           </button>
           <button className={`rss-tab ${tab === 'items' ? 'active' : ''}`} onClick={() => { setTab('items'); loadItems(selectedFeed || undefined); }}>
-            Items {displayedItems.length > 0 && `(${displayedItems.length})`}
+            {t('rss.tab.items')} {displayedItems.length > 0 && `(${displayedItems.length})`}
           </button>
           {editingFeed !== null && (
             <button className={`rss-tab ${tab === 'add' ? 'active' : ''}`} onClick={() => setTab('add')}>
-              {editingFeed.id ? 'Edit Feed' : 'Add Feed'}
+              {editingFeed.id ? t('rss.tab.edit') : t('rss.tab.add')}
             </button>
           )}
         </div>
@@ -231,8 +249,8 @@ const RSSPage: React.FC = () => {
             {feeds.length === 0 ? (
               <EmptyState
                 icon="rss"
-                title="No RSS feeds"
-                description="Add an RSS feed to auto-download new torrents."
+                title={t('rss.empty.title')}
+                description={t('rss.empty.desc')}
               />
             ) : (
               <div className="feeds-list">
@@ -253,18 +271,18 @@ const RSSPage: React.FC = () => {
                         )}
                         <span className="feed-meta-item">
                           <Icon name="refresh" size={11} />
-                          Every {feed.intervalMinutes}m
+                          {t('rss.every')} {feed.intervalMinutes}{t('rss.minutesShort')}
                         </span>
                         {feed.autoDownload && (
                           <span className="feed-meta-item auto-dl">
                             <Icon name="download" size={11} />
-                            Auto-download
+                            {t('rss.autoDownload')}
                           </span>
                         )}
                         {feed.filter && (
                           <span className="feed-meta-item filter">
                             <Icon name="filter" size={11} />
-                            Filter: <code>{feed.filter}</code>
+                            {t('rss.filter')} <code>{feed.filter}</code>
                           </span>
                         )}
                       </div>
@@ -275,36 +293,36 @@ const RSSPage: React.FC = () => {
                         size="sm"
                         loading={checkingId === feed.id}
                         onClick={() => handleCheckFeed(feed.id)}
-                        title="Check now"
+                        title={t('rss.checkNow')}
                         icon={<Icon name="refresh-cw" size={14} />}
                       >
-                        Check
+                        {t('rss.check')}
                       </Button>
                       <button
                         className={`feed-view-btn ${selectedFeed === feed.id && currentTab === 'items' ? 'active' : ''}`}
                         onClick={() => { setSelectedFeed(feed.id); setTab('items'); }}
-                        title="View items"
+                        title={t('rss.viewItems')}
                       >
                         <Icon name="list" size={14} />
                       </button>
                       <button
                         className="feed-edit-btn"
                         onClick={() => { setEditingFeed({ ...feed }); setTab('add'); }}
-                        title="Edit"
+                        title={t('rss.edit')}
                       >
                         <Icon name="edit-2" size={14} />
                       </button>
                       <button
                         className={`feed-toggle-btn ${feed.enabled ? 'on' : 'off'}`}
                         onClick={() => handleToggleFeed(feed)}
-                        title={feed.enabled ? 'Disable' : 'Enable'}
+                        title={feed.enabled ? t('rss.disable') : t('rss.enable')}
                       >
                         <Icon name={feed.enabled ? 'eye' : 'eye-off'} size={14} />
                       </button>
                       <button
                         className="feed-delete-btn"
                         onClick={() => handleDeleteFeed(feed.id)}
-                        title="Delete"
+                        title={t('rss.delete')}
                       >
                         <Icon name="trash" size={14} />
                       </button>
@@ -325,7 +343,7 @@ const RSSPage: React.FC = () => {
                   className={`filter-chip ${selectedFeed === null ? 'active' : ''}`}
                   onClick={() => { setSelectedFeed(null); loadItems(); }}
                 >
-                  All feeds
+                  {t('rss.allFeeds')}
                 </button>
                 {feeds.map(f => (
                   <button
@@ -339,8 +357,23 @@ const RSSPage: React.FC = () => {
               </div>
             )}
 
+            {displayedItems.length > 0 && (
+              <div className="items-toolbar">
+                <span className="items-count">{displayedItems.length}</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  loading={clearing}
+                  onClick={handleClearItems}
+                  icon={<Icon name="trash" size={14} />}
+                >
+                  {selectedFeed ? t('rss.clearItems') : t('rss.clearAll')}
+                </Button>
+              </div>
+            )}
+
             {displayedItems.length === 0 ? (
-              <EmptyState icon="inbox" title="No items" description="Check a feed to load items." />
+              <EmptyState icon="inbox" title={t('rss.items.empty.title')} description={t('rss.items.empty.desc')} />
             ) : (
               <div className="items-list">
                 {displayedItems.map(item => (
@@ -362,7 +395,7 @@ const RSSPage: React.FC = () => {
                         )}
                         {item.downloaded && (
                           <span className="item-downloaded-badge">
-                            <Icon name="check" size={11} /> Downloaded
+                            <Icon name="check" size={11} /> {t('rss.downloaded')}
                           </span>
                         )}
                       </div>
@@ -376,7 +409,7 @@ const RSSPage: React.FC = () => {
                           onClick={() => handleDownloadItem(item)}
                           icon={<Icon name="download" size={13} />}
                         >
-                          Download
+                          {t('rss.download')}
                         </Button>
                       ) : (
                         <span className="check-done"><Icon name="check-circle" size={16} /></span>
@@ -392,21 +425,21 @@ const RSSPage: React.FC = () => {
         {/* ADD/EDIT TAB */}
         {tab === 'add' && editingFeed !== null && (
           <div className="feed-form">
-            <h2>{editingFeed.id ? 'Edit Feed' : 'Add RSS Feed'}</h2>
+            <h2>{editingFeed.id ? t('rss.form.editTitle') : t('rss.form.addTitle')}</h2>
 
             <div className="form-field">
-              <label>Feed Name *</label>
+              <label>{t('rss.form.name')}</label>
               <input
                 type="text"
                 className="field-input"
-                placeholder="e.g. Ubuntu Releases"
+                placeholder={t('rss.form.namePlaceholder')}
                 value={editingFeed.name || ''}
                 onChange={e => setEditingFeed(f => ({ ...f, name: e.target.value }))}
               />
             </div>
 
             <div className="form-field">
-              <label>RSS URL *</label>
+              <label>{t('rss.form.url')}</label>
               <input
                 type="url"
                 className="field-input"
@@ -418,7 +451,7 @@ const RSSPage: React.FC = () => {
 
             <div className="form-row-2">
               <div className="form-field">
-                <label>Check interval (minutes)</label>
+                <label>{t('rss.form.interval')}</label>
                 <input
                   type="number"
                   className="field-input"
@@ -429,11 +462,11 @@ const RSSPage: React.FC = () => {
                 />
               </div>
               <div className="form-field">
-                <label>Save path (optional)</label>
+                <label>{t('rss.form.savePath')}</label>
                 <input
                   type="text"
                   className="field-input"
-                  placeholder="Default save path"
+                  placeholder={t('rss.form.savePathPlaceholder')}
                   value={editingFeed.savePath || ''}
                   onChange={e => setEditingFeed(f => ({ ...f, savePath: e.target.value || undefined }))}
                 />
@@ -442,13 +475,13 @@ const RSSPage: React.FC = () => {
 
             <div className="form-field">
               <label>
-                Title filter (regex, optional)
-                <span className="field-hint">Case-insensitive. e.g. <code>S\d+E\d+</code> for TV episodes</span>
+                {t('rss.form.filter')}
+                <span className="field-hint">{t('rss.form.filterHint')}</span>
               </label>
               <input
                 type="text"
                 className="field-input"
-                placeholder="e.g. 1080p|2160p"
+                placeholder={t('rss.form.filterPlaceholder')}
                 value={editingFeed.filter || ''}
                 onChange={e => setEditingFeed(f => ({ ...f, filter: e.target.value || undefined }))}
               />
@@ -456,24 +489,30 @@ const RSSPage: React.FC = () => {
 
             <div className="form-toggles">
               <label className="toggle-field">
-                <span>Enabled</span>
+                <span>{t('rss.form.enabled')}</span>
                 <button
-                  className={`toggle-switch ${editingFeed.enabled ? 'on' : 'off'}`}
+                  type="button"
+                  className={`toggle-switch ${editingFeed.enabled ? 'active' : ''}`}
+                  role="switch"
+                  aria-checked={!!editingFeed.enabled}
                   onClick={() => setEditingFeed(f => ({ ...f, enabled: !f?.enabled }))}
                 >
-                  <span className="toggle-knob" />
+                  <span className="toggle-slider" />
                 </button>
               </label>
               <label className="toggle-field">
                 <div>
-                  <span>Auto-download new items</span>
-                  <span className="field-hint">Automatically adds matching items to downloads</span>
+                  <span>{t('rss.form.autoDl')}</span>
+                  <span className="field-hint">{t('rss.form.autoDlHint')}</span>
                 </div>
                 <button
-                  className={`toggle-switch ${editingFeed.autoDownload ? 'on' : 'off'}`}
+                  type="button"
+                  className={`toggle-switch ${editingFeed.autoDownload ? 'active' : ''}`}
+                  role="switch"
+                  aria-checked={!!editingFeed.autoDownload}
                   onClick={() => setEditingFeed(f => ({ ...f, autoDownload: !f?.autoDownload }))}
                 >
-                  <span className="toggle-knob" />
+                  <span className="toggle-slider" />
                 </button>
               </label>
             </div>
@@ -483,7 +522,7 @@ const RSSPage: React.FC = () => {
                 variant="ghost"
                 onClick={() => { setEditingFeed(null); setTab('feeds'); }}
               >
-                Cancel
+                {t('rss.form.cancel')}
               </Button>
               <Button
                 variant="primary"
@@ -492,7 +531,7 @@ const RSSPage: React.FC = () => {
                 onClick={handleSaveFeed}
                 icon={<Icon name="check" size={16} />}
               >
-                {editingFeed.id ? 'Save Changes' : 'Add Feed'}
+                {editingFeed.id ? t('rss.form.save') : t('rss.form.add')}
               </Button>
             </div>
           </div>

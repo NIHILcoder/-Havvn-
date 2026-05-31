@@ -10,7 +10,7 @@ import fsSync from 'fs';
 import path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { logger, detectVPN, showVPNWarning } from '../utils';
+import { logger, detectVPN, showVPNWarning, getAppIconPath } from '../utils';
 import { getRSSService } from '../services/rss-service';
 import { getSearchService } from '../services/search-service';
 import { getIPBlocklistService } from '../services/ip-blocklist';
@@ -277,9 +277,12 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): void {
     }
   ));
 
-  // Stats subscription - send via main window
+  // Stats subscription - send via main window.
+  // Skip sending when the window is hidden (e.g. minimized to tray): the renderer
+  // can't display anything and would just waste IPC/CPU. Live values are still
+  // kept in the main process and pushed on the next tick after the window shows.
   torrentManager.onStats((stats: DownloadStats[]) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
       mainWindow.webContents.send('downloads:stats', stats);
     }
   });
@@ -287,10 +290,11 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): void {
   // Download completion — OS notification
   torrentManager.onComplete(({ name }) => {
     if (Notification.isSupported()) {
+      const iconPath = getAppIconPath();
       const notification = new Notification({
         title: 'Download Complete',
         body: `${name} has finished downloading`,
-        icon: undefined, // Uses app icon by default
+        ...(iconPath ? { icon: iconPath } : {}),
       });
       notification.show();
     }
@@ -798,6 +802,13 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle('rss:markDownloaded', wrapHandler('rss:markDownloaded',
     async (_event, guid: string) => db.markRSSItemDownloaded(guid)
+  ));
+
+  ipcMain.handle('rss:clearItems', wrapHandler('rss:clearItems',
+    async (_event, feedId?: string, onlyDownloaded?: boolean) => {
+      const removed = await db.clearRSSItems(feedId, onlyDownloaded);
+      return { removed };
+    }
   ));
 
   // ============================================================

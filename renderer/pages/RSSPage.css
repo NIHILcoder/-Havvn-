@@ -206,6 +206,19 @@
   border-color: var(--color-accent);
 }
 
+/* Items toolbar (count + clear) */
+.items-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.6rem;
+}
+
+.items-count {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
 /* Items list */
 .items-list {
   display: flex;
@@ -362,33 +375,8 @@
   color: var(--color-text-primary);
 }
 
-.toggle-switch {
-  position: relative;
-  width: 44px;
-  height: 24px;
-  border-radius: 999px;
-  border: none;
-  cursor: pointer;
-  transition: background 0.2s ease;
-  flex-shrink: 0;
-}
-
-.toggle-switch.on { background: var(--color-accent); }
-.toggle-switch.off { background: var(--color-border); }
-
-.toggle-knob {
-  position: absolute;
-  top: 2px;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: white;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-  transition: left 0.2s ease;
-}
-
-.toggle-switch.on .toggle-knob { left: 22px; }
-.toggle-switch.off .toggle-knob { left: 2px; }
+/* Toggle switches here intentionally reuse the global .toggle-switch /
+   .toggle-slider styling from the Settings pages for visual consistency. */
 
 .form-actions {
   display: flex;
@@ -396,4 +384,43 @@
   gap: 0.6rem;
   padding-top: 0.5rem;
   border-top: 1px solid var(--color-border);
+}
+
+/* ============================================================
+   Polish & contrast fixes
+   Accent is white (dark) / black (light); anything sitting on an
+   accent fill uses --color-bg-primary so it stays readable.
+   ============================================================ */
+.filter-chip.active,
+.filter-chip:hover {
+  color: var(--color-bg-primary);
+}
+
+.rss-tab.active {
+  box-shadow: inset 0 -2px 0 var(--color-accent);
+}
+
+/* Cards lift slightly on hover */
+.feed-card {
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.feed-card:hover {
+  border-color: var(--color-border-hover);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+
+/* Accent bar on the hovered RSS item */
+.item-row:hover {
+  box-shadow: inset 3px 0 0 var(--color-accent);
+}
+
+.field-input {
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.field-input:focus {
+  border-color: var(--color-border-focus);
+  box-shadow: var(--shadow-focus);
 }

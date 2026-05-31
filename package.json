@@ -1,6 +1,6 @@
 {
   "name": "torrenthunt",
-  "version": "1.3.5b",
+  "version": "1.4-beta",
   "description": "A modern, agent-built BitTorrent client",
   "main": "dist/electron/electron/main.js",
   "scripts": {
@@ -107,6 +107,12 @@
       {
         "from": "build/icon2.ico",
         "to": "icon2.ico"
+      }
+    ],
+    "extraResources": [
+      {
+        "from": "build/icon.ico",
+        "to": "icon.ico"
       }
     ],
     "nsis": {

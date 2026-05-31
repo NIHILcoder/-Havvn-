@@ -279,6 +279,10 @@ const api: IpcApi = {
     return () => { ipcRenderer.removeListener('app:openTorrent', handler); };
   },
 
+  notifyReady: (): void => {
+    ipcRenderer.send('app:rendererReady');
+  },
+
   onPauseAll: (callback: () => void): (() => void) => {
     const handler = () => callback();
     ipcRenderer.on('app:pauseAll', handler);
@@ -334,6 +338,7 @@ const api: IpcApi = {
     checkAll: () => ipcRenderer.invoke('rss:checkAll'),
     getItems: (feedId: string) => ipcRenderer.invoke('rss:getItems', feedId),
     markDownloaded: (guid: string) => ipcRenderer.invoke('rss:markDownloaded', guid),
+    clearItems: (feedId?: string, onlyDownloaded?: boolean) => ipcRenderer.invoke('rss:clearItems', feedId, onlyDownloaded),
   },
 
   // Priority 2: Search

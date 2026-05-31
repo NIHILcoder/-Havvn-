@@ -511,11 +511,16 @@ const DownloadItem: React.FC<DownloadItemProps> = ({
 interface DownloadsPageProps {
   filterMode?: FilterMode;
   onFilterChange?: (filter: FilterMode) => void;
+  // A torrent file path / magnet URI opened from the OS; opens the add dialog
+  openTorrentUri?: string | null;
+  onOpenHandled?: () => void;
 }
 
 const DownloadsPage: React.FC<DownloadsPageProps> = ({
   filterMode: externalFilterMode = 'all',
-  onFilterChange
+  onFilterChange,
+  openTorrentUri,
+  onOpenHandled
 }) => {
   const [downloads, setDownloads] = useState<Download[]>([]);
   const [stats, setStats] = useState<Map<string, DownloadStats>>(new Map());
@@ -638,6 +643,16 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
   useEffect(() => {
     loadDownloads();
   }, []);
+
+  // A torrent opened from the OS (double-click / magnet link): open the same
+  // file-picker dialog as a manual add instead of adding silently.
+  useEffect(() => {
+    if (!openTorrentUri) return;
+    const isMagnet = openTorrentUri.startsWith('magnet:');
+    setPendingTorrent(isMagnet ? { magnetUri: openTorrentUri } : { path: openTorrentUri });
+    setShowFileSelector(true);
+    onOpenHandled?.();
+  }, [openTorrentUri]);
 
   // Subscribe to stats updates
   useEffect(() => {

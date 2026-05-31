@@ -1,12 +1,12 @@
-import { app, BrowserWindow, Tray, Menu, nativeImage } from 'electron';
+import { app, BrowserWindow, Tray, Menu, nativeImage, Notification, shell, session, ipcMain } from 'electron';
 import path from 'path';
 import dotenv from 'dotenv';
 import { getTorrentManager } from './torrent';
 import { getCollaborativeSeedingManager } from './seeding';
 import { getSchedulerEngine } from './scheduler/scheduler-engine';
 import { setupIpcHandlers } from './ipc';
-import { logger, detectVPN, showVPNWarning } from './utils';
-import { store } from './db/store';
+import { logger, detectVPN, showVPNWarning, getAppIconPath } from './utils';
+import { store, seedDefaultsIfNeeded } from './db/store';
 import { getRSSService } from './services/rss-service';
 import { getIPBlocklistService } from './services/ip-blocklist';
 import { getWatchFolderService } from './torrent/watch-folder';
@@ -18,6 +18,34 @@ dotenv.config();
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
+
+// Torrent/magnet handed to us by the OS (file double-click or magnet: link).
+// On a cold start the renderer isn't listening yet, so we buffer the URI and
+// flush it once the renderer signals it's ready (see 'app:rendererReady').
+let rendererReady = false;
+let pendingOpenUri: string | null = null;
+
+function deliverOpenTorrent(uri: string): void {
+  if (mainWindow && !mainWindow.isDestroyed() && rendererReady) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+    mainWindow.webContents.send('app:openTorrent', uri);
+  } else {
+    // Renderer not ready yet (cold start) — remember it and flush on ready
+    pendingOpenUri = uri;
+  }
+}
+
+// Renderer tells us its IPC listeners are attached; flush any buffered open.
+ipcMain.on('app:rendererReady', () => {
+  rendererReady = true;
+  if (pendingOpenUri) {
+    const uri = pendingOpenUri;
+    pendingOpenUri = null;
+    deliverOpenTorrent(uri);
+  }
+});
 
 // === Single Instance Lock ===
 const gotTheLock = app.requestSingleInstanceLock();
@@ -35,8 +63,8 @@ if (!gotTheLock) {
 
     // Handle protocol/file arguments from second instance
     const arg = commandLine.find(a => a.startsWith('magnet:') || a.endsWith('.torrent'));
-    if (arg && mainWindow) {
-      mainWindow.webContents.send('app:openTorrent', arg);
+    if (arg) {
+      deliverOpenTorrent(arg);
     }
   });
 }
@@ -50,35 +78,55 @@ if (process.defaultApp) {
   app.setAsDefaultProtocolClient('magnet');
 }
 
-// === Tray Icon ===
-function createTray(): void {
-  // Create a simple 16x16 tray icon programmatically
-  const iconSize = 16;
-  
-  // Use a simple colored square as tray icon — or load from file if available
-  const iconPath = path.join(__dirname, '../../assets/tray-icon.png');
-  let trayIcon: Electron.NativeImage;
-  
+// Shows a one-time hint when the app first hides into the tray, so users
+// don't think it crashed. Persisted via store so it appears only once ever.
+function showTrayHintOnce(): void {
   try {
-    const fs = require('fs');
-    if (fs.existsSync(iconPath)) {
-      trayIcon = nativeImage.createFromPath(iconPath);
+    if ((store as any).get('trayHintShown')) return;
+    (store as any).set('trayHintShown', true);
+
+    const title = 'TorrentHunt продолжает работать в фоне';
+    const body = 'Загрузки активны. Откройте окно или выйдите через значок в системном трее.';
+
+    if (Notification.isSupported()) {
+      const iconPath = getAppIconPath();
+      const notification = new Notification({
+        title,
+        body,
+        ...(iconPath ? { icon: iconPath } : {}),
+        silent: true,
+      });
+      notification.on('click', () => {
+        mainWindow?.show();
+        mainWindow?.focus();
+      });
+      notification.show();
     } else {
-      // Fallback: create a small colored icon programmatically
-      trayIcon = nativeImage.createFromBuffer(
-        Buffer.from(createTrayIconPNG()),
-        { width: iconSize, height: iconSize }
-      );
+      // Fallback for older Windows: balloon from the tray icon
+      tray?.displayBalloon({ title, content: body });
     }
   } catch {
-    // Final fallback
+    // Notifications are best-effort — never block hiding to tray
+  }
+}
+
+// === Tray Icon ===
+function createTray(): void {
+  let trayIcon: Electron.NativeImage;
+
+  const iconPath = getAppIconPath();
+  if (iconPath) {
+    trayIcon = nativeImage.createFromPath(iconPath);
+  } else {
+    // Final fallback: draw a small icon programmatically
     trayIcon = nativeImage.createFromBuffer(
       Buffer.from(createTrayIconPNG()),
-      { width: iconSize, height: iconSize }
+      { width: 16, height: 16 }
     );
   }
 
-  tray = new Tray(trayIcon.resize({ width: 16, height: 16 }));
+  // On Windows a 16x16 tray icon renders crispest; .ico is multi-resolution so resize picks the right frame
+  tray = new Tray(trayIcon.isEmpty() ? trayIcon : trayIcon.resize({ width: 16, height: 16 }));
   tray.setToolTip('TorrentHunt — Running in background');
 
   const buildContextMenu = () => Menu.buildFromTemplate([
@@ -174,11 +222,14 @@ async function createWindow(): Promise<void> {
   const loginSettings = app.getLoginItemSettings();
   const startHidden = loginSettings.wasOpenedAsHidden === true;
 
+  const appIconPath = getAppIconPath();
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     minWidth: 800,
     minHeight: 600,
+    ...(appIconPath ? { icon: appIconPath } : {}),
     show: !startHidden, // Don't show window if launched hidden at startup
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -193,8 +244,30 @@ async function createWindow(): Promise<void> {
   // Setup IPC handlers
   setupIpcHandlers(mainWindow);
 
-  // In development, load from webpack dev server
+  // === Security: navigation & new-window guards ===
+  // Torrent names, RSS content and search results are untrusted data rendered in
+  // the UI. Prevent the window from ever navigating away from the app, and route
+  // any external link to the user's default browser instead of opening it in-app.
   const isDev = process.env.NODE_ENV === 'development';
+  const allowedOrigin = isDev ? 'http://localhost:3000' : 'file://';
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('https://') || url.startsWith('http://')) {
+      void shell.openExternal(url);
+    }
+    return { action: 'deny' };
+  });
+
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (!url.startsWith(allowedOrigin)) {
+      event.preventDefault();
+      if (url.startsWith('https://') || url.startsWith('http://')) {
+        void shell.openExternal(url);
+      }
+    }
+  });
+
+  // In development, load from webpack dev server
   
   if (isDev) {
     await mainWindow.loadURL('http://localhost:3000');
@@ -218,6 +291,7 @@ async function createWindow(): Promise<void> {
     if (settings?.minimizeToTray) {
       event.preventDefault();
       mainWindow?.hide();
+      showTrayHintOnce();
     }
   });
 
@@ -230,6 +304,7 @@ async function createWindow(): Promise<void> {
         mainWindow?.hide();
         // Update tray tooltip to indicate background mode
         tray?.setToolTip('TorrentHunt — Running in background');
+        showTrayHintOnce();
       }
     }
   });
@@ -240,32 +315,81 @@ async function createWindow(): Promise<void> {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+    rendererReady = false;
   });
 
-  // Handle startup arguments (magnet links, .torrent files)
+  // If the window is reloaded, the renderer must re-announce readiness
+  mainWindow.webContents.on('did-start-loading', () => {
+    rendererReady = false;
+  });
+
+  // Handle startup arguments (magnet links, .torrent files).
+  // Buffered until the renderer signals readiness — avoids losing the first
+  // open on a cold start (the classic "first click just opens the app" bug).
   const startupArg = process.argv.find(a => a.startsWith('magnet:') || a.endsWith('.torrent'));
   if (startupArg) {
-    mainWindow.webContents.once('did-finish-load', () => {
-      mainWindow?.webContents.send('app:openTorrent', startupArg);
-    });
+    pendingOpenUri = startupArg;
   }
+}
+
+// Apply a Content-Security-Policy to the renderer. Only enabled in production —
+// the webpack dev server relies on eval/websocket which a strict CSP would break.
+// This mitigates XSS from untrusted strings (torrent names, RSS/search results).
+function applyContentSecurityPolicy(): void {
+  if (process.env.NODE_ENV === 'development') return;
+
+  const csp = [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'", // CSS-in-JS / framer-motion inject inline styles
+    "img-src 'self' data: https: http:", // posters, QR codes, remote thumbnails
+    "font-src 'self' data:",
+    "connect-src 'self'",
+    "object-src 'none'",
+    "frame-src 'none'",
+  ].join('; ');
+
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [csp],
+      },
+    });
+  });
 }
 
 async function initializeApp(): Promise<void> {
   // Disable GPU shader disk cache to prevent cache access errors
   app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
-  
+
+  // Identify the app to Windows so notifications/toasts are attributed correctly
+  // (otherwise they appear to come from "electron.exe", and may be suppressed).
+  app.setAppUserModelId('com.torrenthunt.app');
+
   // Initialize logger first
   logger.initialize({
     minLevel: process.env.NODE_ENV === 'development' ? 'debug' : 'info',
   });
-  
+
   logger.info('App', 'TorrentHunt starting...');
+
+  // Apply CSP before any window loads content
+  applyContentSecurityPolicy();
 
   // Initialize torrent manager (which will use electron-store)
   const torrentManager = getTorrentManager();
   await torrentManager.initialize();
   logger.info('App', 'Torrent manager initialized with electron-store.');
+
+  // Seed first-run defaults (built-in Internet Archive provider + suggested
+  // disabled RSS feeds). Runs once; no network traffic results from this.
+  try {
+    await seedDefaultsIfNeeded();
+    logger.info('App', 'First-run defaults ensured.');
+  } catch (e) {
+    logger.error('App', 'Failed to seed defaults', { error: e });
+  }
 
   // Initialize collaborative seeding manager
   const seedingManager = getCollaborativeSeedingManager();

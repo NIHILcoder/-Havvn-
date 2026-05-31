@@ -21,6 +21,17 @@
   --color-bg-base: #000000;
   --color-bg-subtle: #141416;
 
+  /* Compatibility aliases — used by Search/RSS/Select/TorrentControlModal,
+     which were authored against older token names. Mapped to real tokens so
+     they stay theme-aware. */
+  --color-border: var(--color-border-default);
+  --color-border-hover: var(--color-border-strong);
+  --color-accent: var(--color-accent-primary);
+  --color-accent-hover: var(--color-accent-primary-hover);
+  --color-accent-rgb: 255, 255, 255;
+  --color-text-muted: var(--color-text-tertiary);
+  --font-primary: var(--font-family);
+
   /* Glass effect */
   --glass-bg: rgba(11, 11, 12, 0.85);
   --glass-border: rgba(255, 255, 255, 0.06);
@@ -171,6 +182,9 @@
 
   --color-bg-base: #FBFBFC;
   --color-bg-subtle: #F1F1F3;
+
+  /* Accent is black in light mode — update the RGB triplet used by rgba() shadows */
+  --color-accent-rgb: 0, 0, 0;
 
   --glass-bg: rgba(255, 255, 255, 0.85);
   --glass-border: rgba(0, 0, 0, 0.08);
