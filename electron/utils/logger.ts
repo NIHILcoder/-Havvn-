@@ -33,6 +33,9 @@ class Logger {
   private writeStream: fs.WriteStream | null = null;
   private minLevel: LogLevel = 'info';
   private initialized = false;
+  // Privacy controls (wired from PrivacyConfig at startup / on change)
+  private fileLoggingDisabled = false;
+  private sanitize = false;
 
   constructor() {
     // Will be initialized when app is ready
@@ -42,11 +45,14 @@ class Logger {
   /**
    * Initialize the logger (call after app is ready)
    */
-  initialize(options?: { minLevel?: LogLevel }): void {
+  initialize(options?: { minLevel?: LogLevel; disableFileLogging?: boolean; sanitize?: boolean }): void {
     if (this.initialized) return;
 
+    this.fileLoggingDisabled = options?.disableFileLogging ?? false;
+    this.sanitize = options?.sanitize ?? false;
+
     this.logDir = path.join(app.getPath('userData'), 'logs');
-    
+
     // Ensure log directory exists
     if (!fs.existsSync(this.logDir)) {
       fs.mkdirSync(this.logDir, { recursive: true });
@@ -65,6 +71,41 @@ class Logger {
     this.initialized = true;
 
     this.info('Logger', 'Logger initialized', { logDir: this.logDir, minLevel: this.minLevel });
+  }
+
+  /**
+   * Update privacy-related logging behavior at runtime (from PrivacyConfig).
+   */
+  setPrivacyOptions(options: { disableFileLogging?: boolean; sanitize?: boolean }): void {
+    if (options.disableFileLogging !== undefined) {
+      this.fileLoggingDisabled = options.disableFileLogging;
+    }
+    if (options.sanitize !== undefined) {
+      this.sanitize = options.sanitize;
+    }
+  }
+
+  /**
+   * Strip/anonymize sensitive values (IPv4/IPv6, magnet infohashes, peer IDs)
+   * from log payloads when sanitize mode is on.
+   */
+  private sanitizeData(data: unknown): unknown {
+    if (!this.sanitize || data == null) return data;
+    try {
+      let json = JSON.stringify(data);
+      json = json
+        // IPv4
+        .replace(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, '[ip]')
+        // IPv6 (rough)
+        .replace(/\b(?:[a-f0-9]{1,4}:){2,}[a-f0-9]{1,4}\b/gi, '[ip6]')
+        // 40-char hex infohashes
+        .replace(/\b[a-f0-9]{40}\b/gi, '[infohash]')
+        // magnet xt
+        .replace(/urn:btih:[a-z0-9]+/gi, 'urn:btih:[hash]');
+      return JSON.parse(json);
+    } catch {
+      return data;
+    }
   }
 
   /**
@@ -116,14 +157,14 @@ class Logger {
       level,
       module,
       message,
-      data,
+      data: this.sanitizeData(data),
     };
 
     // Console output (always)
     this.writeToConsole(entry);
 
-    // File output (if initialized)
-    if (this.initialized) {
+    // File output (unless disabled via privacy settings)
+    if (this.initialized && !this.fileLoggingDisabled) {
       this.writeToFile(entry);
     }
   }

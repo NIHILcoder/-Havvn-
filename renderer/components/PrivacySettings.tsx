@@ -9,34 +9,8 @@ import { Icon } from './Icon';
 import { Toggle } from './Toggle';
 import { Button } from './Button';
 import { Alert } from './Alert';
+import { PrivacyConfig, VPNDetectionResult } from '../../shared/types';
 import './PrivacySettings.css';
-
-interface PrivacyConfig {
-  anonymousMode: boolean;
-  encryptStorage: boolean;
-  disableLogs: boolean;
-  vpnCheck: boolean;
-  clearDataOnExit: boolean;
-  ephemeralPeerId: boolean;
-  sanitizeLogs: boolean;
-}
-
-interface VPNDetectionResult {
-  isVPNActive: boolean;
-  confidence: 'high' | 'medium' | 'low' | 'unknown';
-  indicators: {
-    vpnInterface: boolean;
-    ipMismatch: boolean;
-    vpnDNS: boolean;
-    vpnRoutes: boolean;
-  };
-  details: {
-    detectedInterfaces: string[];
-    publicIP?: string;
-    localIP?: string;
-    vpnProvider?: string;
-  };
-}
 
 export const PrivacySettings: React.FC = () => {
   const [config, setConfig] = useState<PrivacyConfig>({
@@ -47,16 +21,18 @@ export const PrivacySettings: React.FC = () => {
     clearDataOnExit: false,
     ephemeralPeerId: true,
     sanitizeLogs: true,
+    vpnKillSwitch: false,
   });
 
   const [vpnStatus, setVpnStatus] = useState<'unknown' | 'connected' | 'disconnected'>('unknown');
   const [vpnDetails, setVpnDetails] = useState<VPNDetectionResult | null>(null);
   const [isCheckingVPN, setIsCheckingVPN] = useState(false);
-  const [encryptionAvailable] = useState(true);
+  const [encryptionAvailable, setEncryptionAvailable] = useState(true);
 
   useEffect(() => {
     void loadPrivacySettings();
     void checkVPNStatus();
+    void window.api.isEncryptionAvailable().then(setEncryptionAvailable).catch(() => {});
   }, []);
 
   const loadPrivacySettings = async () => {
@@ -71,7 +47,8 @@ export const PrivacySettings: React.FC = () => {
   const checkVPNStatus = async () => {
     setIsCheckingVPN(true);
     try {
-      const result = await window.api.getPrivacyConfig() as unknown as VPNDetectionResult;
+      // Was incorrectly calling getPrivacyConfig(); use the real VPN detector
+      const result = await window.api.checkVPN();
       setVpnDetails(result);
       setVpnStatus(result.isVPNActive ? 'connected' : 'disconnected');
     } catch (error) {
@@ -202,27 +179,9 @@ export const PrivacySettings: React.FC = () => {
         </Alert>
       )}
 
-      {/* Anonymous Mode */}
+      {/* Anonymity */}
       <div className="settings-group">
         <h3 className="settings-group-title">ANONYMITY</h3>
-
-        <div className="setting-item">
-          <div className="setting-info">
-            <label className="setting-label">
-              <Icon name="eye-off" size={16} />
-              Anonymous Mode
-            </label>
-            <p className="setting-description">
-              Use ephemeral User ID that rotates daily. Prevents long-term tracking.
-            </p>
-          </div>
-          <div className="setting-control">
-            <Toggle
-              checked={config.anonymousMode}
-              onChange={(checked) => handleChange('anonymousMode', checked)}
-            />
-          </div>
-        </div>
 
         <div className="setting-item">
           <div className="setting-info">
@@ -231,14 +190,12 @@ export const PrivacySettings: React.FC = () => {
               Ephemeral Peer ID
             </label>
             <p className="setting-description">
-              Generate new Peer ID every 24 hours for DHT network anonymity.
+              The BitTorrent peer ID is randomized every launch (no machine-identifying
+              data), so peers can&apos;t correlate your sessions over time.
             </p>
           </div>
           <div className="setting-control">
-            <Toggle
-              checked={config.ephemeralPeerId}
-              onChange={(checked) => handleChange('ephemeralPeerId', checked)}
-            />
+            <span className="privacy-status on"><Icon name="check-circle" size={14} /> Always on</span>
           </div>
         </div>
 
@@ -249,13 +206,33 @@ export const PrivacySettings: React.FC = () => {
               VPN Detection
             </label>
             <p className="setting-description">
-              Show warning if VPN is not detected on startup.
+              Show a warning on startup if no VPN is detected. A VPN is the only way
+              to actually hide your IP from peers.
             </p>
           </div>
           <div className="setting-control">
             <Toggle
               checked={config.vpnCheck}
               onChange={(checked) => handleChange('vpnCheck', checked)}
+            />
+          </div>
+        </div>
+
+        <div className="setting-item">
+          <div className="setting-info">
+            <label className="setting-label">
+              <Icon name="shield" size={16} />
+              VPN Kill-Switch
+            </label>
+            <p className="setting-description">
+              Continuously monitor the VPN and automatically pause all torrents if it
+              drops, so your real IP is never exposed. Resume is manual.
+            </p>
+          </div>
+          <div className="setting-control">
+            <Toggle
+              checked={config.vpnKillSwitch}
+              onChange={(checked) => handleChange('vpnKillSwitch', checked)}
             />
           </div>
         </div>
@@ -269,19 +246,19 @@ export const PrivacySettings: React.FC = () => {
           <div className="setting-info">
             <label className="setting-label">
               <Icon name="lock" size={16} />
-              Encrypt Storage
+              Encrypted Secrets
             </label>
             <p className="setting-description">
-              Encrypt sensitive data using OS-level encryption (Keychain/DPAPI).
-              {encryptionAvailable ? ' ✅ Available' : ' ⚠️ Not available on this system'}
+              Proxy password and search-provider API keys are encrypted at rest using
+              OS-level encryption (Keychain / DPAPI / libsecret).
             </p>
           </div>
           <div className="setting-control">
-            <Toggle
-              checked={config.encryptStorage}
-              onChange={(checked) => handleChange('encryptStorage', checked)}
-              disabled={!encryptionAvailable}
-            />
+            {encryptionAvailable ? (
+              <span className="privacy-status on"><Icon name="check-circle" size={14} /> Active</span>
+            ) : (
+              <span className="privacy-status off"><Icon name="alert-triangle" size={14} /> Unavailable</span>
+            )}
           </div>
         </div>
 
@@ -407,12 +384,14 @@ export const PrivacySettings: React.FC = () => {
 function calculatePrivacyScore(config: PrivacyConfig, vpnStatus: string): number {
   let score = 0;
 
-  if (config.anonymousMode) score += 20;
-  if (config.ephemeralPeerId) score += 20;
-  if (config.encryptStorage) score += 15;
-  if (config.sanitizeLogs) score += 10;
+  // Always-on protections (encrypted secrets + ephemeral peer id)
+  score += 25;
+  // VPN is the biggest factor for real network anonymity
+  if (vpnStatus === 'connected') score += 45;
+  // Opt-in hygiene
+  if (config.sanitizeLogs) score += 12;
   if (config.clearDataOnExit) score += 10;
-  if (vpnStatus === 'connected') score += 25;
+  if (config.disableLogs) score += 8;
 
   return Math.min(100, score);
 }

@@ -81,13 +81,26 @@ export class TorrentManager {
   private defaultSeedTimeLimitMinutes = 0;
   
   constructor() {
-    this.client = new WebTorrent();
-    
+    // Use an ephemeral, non-identifying BitTorrent peer ID. It carries the
+    // TorrentHunt client prefix (-TH<version>-) followed by random bytes that
+    // rotate every launch, so peers can't correlate sessions long-term.
+    this.client = new WebTorrent({ peerId: this.generateEphemeralPeerId() } as any);
+
     this.client.on('error', (err: string | Error) => {
       log.error('WebTorrent client error', { error: err });
     });
 
     log.debug('TorrentManager instance created');
+  }
+
+  /**
+   * Generate a BitTorrent peer ID in Azureus-style format: -TH0140-<random>.
+   * 20 bytes total, no machine-identifying data.
+   */
+  private generateEphemeralPeerId(): Buffer {
+    const prefix = '-TH0140-'; // TH client, v1.4.0
+    const random = require('crypto').randomBytes(20 - prefix.length).toString('hex').slice(0, 20 - prefix.length);
+    return Buffer.from(prefix + random);
   }
   
   /**
@@ -1200,6 +1213,28 @@ export class TorrentManager {
    */
   async getDownloads(): Promise<Download[]> {
     return db.getAllDownloads();
+  }
+
+  /**
+   * Pause every active torrent (downloading / queued / seeding).
+   * Used by the VPN kill-switch and the tray "Pause All" action.
+   * Returns the number of torrents that were paused.
+   */
+  async pauseAllActive(): Promise<number> {
+    let paused = 0;
+    for (const [id, managed] of this.managedTorrents) {
+      const status = managed.download.status;
+      if (status === 'downloading' || status === 'queued' || status === 'seeding') {
+        try {
+          await this.pauseDownload(id);
+          paused++;
+        } catch (e) {
+          log.warn('pauseAllActive: failed to pause one torrent', { id, error: String(e) });
+        }
+      }
+    }
+    log.info('Paused all active torrents', { count: paused });
+    return paused;
   }
 
   /**

@@ -34,7 +34,7 @@ export const SettingsSidebar: React.FC<SettingsSidebarProps> = ({
     grouped[group].push(cat);
   });
 
-  const groupOrder = ['core', 'advanced', 'appearance', 'system', 'other'];
+  const groupOrder = ['core', 'advanced', 'security', 'appearance', 'system', 'other'];
   const sortedGroups = groupOrder.filter((g) => grouped[g]);
 
   return (

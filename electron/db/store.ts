@@ -8,6 +8,7 @@ import { Download, AppSettings, SourceType, Category, SchedulerConfig, UserReput
 import { v4 as uuidv4 } from 'uuid';
 import { app } from 'electron';
 import path from 'path';
+import { encryptSecret, decryptSecret } from './secrets';
 
 interface StoreSchema {
   downloads: Record<string, Download>;
@@ -74,6 +75,9 @@ const store = new Store<StoreSchema>({
       enableSounds: true,
       notifyOnComplete: true,
       notifyOnError: true,
+      // Disk-space guard
+      diskGuardEnabled: true,
+      diskGuardMinFreeMB: 2048,
       updatedAt: new Date(),
     },
     categories: defaultCategories,
@@ -91,6 +95,7 @@ const store = new Store<StoreSchema>({
       clearDataOnExit: false,
       ephemeralPeerId: true,
       sanitizeLogs: true,
+      vpnKillSwitch: false,
     },
     rssFeeds: [],
     rssItems: [],
@@ -343,7 +348,9 @@ export async function updateDownloadFields(
 // === Settings ===
 
 export async function getSettings(): Promise<AppSettings> {
-  return store.get('settings');
+  const s = store.get('settings');
+  // Decrypt secrets transparently so callers always see plaintext
+  return { ...s, proxyPassword: decryptSecret(s.proxyPassword) };
 }
 
 export async function updateSettings(
@@ -351,8 +358,13 @@ export async function updateSettings(
 ): Promise<AppSettings> {
   const current = store.get('settings');
   const updated = { ...current, ...settings };
+  // Encrypt the proxy password at rest (only re-encrypt when it actually changed)
+  if (settings.proxyPassword !== undefined) {
+    updated.proxyPassword = encryptSecret(settings.proxyPassword);
+  }
   store.set('settings', updated);
-  return updated;
+  // Return plaintext view to the caller
+  return { ...updated, proxyPassword: decryptSecret(updated.proxyPassword) };
 }
 
 // === Cleanup ===
@@ -631,24 +643,32 @@ export async function markRSSItemDownloaded(guid: string): Promise<void> {
 // === Search Providers ===
 
 export async function getSearchProviders(): Promise<SearchProvider[]> {
-  return store.get('searchProviders') ?? [];
+  const providers = store.get('searchProviders') ?? [];
+  // Decrypt API keys transparently for callers (search service, UI)
+  return providers.map(p => ({ ...p, apiKey: p.apiKey ? decryptSecret(p.apiKey) : p.apiKey }));
 }
 
 export async function addSearchProvider(provider: Omit<SearchProvider, 'id'>): Promise<SearchProvider> {
   const providers = store.get('searchProviders') ?? [];
   const newProvider: SearchProvider = { ...provider, id: uuidv4() };
-  providers.push(newProvider);
+  // Encrypt the API key at rest
+  const stored = { ...newProvider, apiKey: encryptSecret(newProvider.apiKey) };
+  providers.push(stored);
   store.set('searchProviders', providers);
-  return newProvider;
+  return newProvider; // return plaintext view
 }
 
 export async function updateSearchProvider(id: string, updates: Partial<SearchProvider>): Promise<SearchProvider> {
   const providers = store.get('searchProviders') ?? [];
   const idx = providers.findIndex((p: SearchProvider) => p.id === id);
   if (idx === -1) throw new Error(`Search provider not found: ${id}`);
-  providers[idx] = { ...providers[idx], ...updates };
+  const merged = { ...providers[idx], ...updates };
+  if (updates.apiKey !== undefined) {
+    merged.apiKey = encryptSecret(updates.apiKey);
+  }
+  providers[idx] = merged;
   store.set('searchProviders', providers);
-  return providers[idx];
+  return { ...merged, apiKey: merged.apiKey ? decryptSecret(merged.apiKey) : merged.apiKey };
 }
 
 export async function removeSearchProvider(id: string): Promise<void> {

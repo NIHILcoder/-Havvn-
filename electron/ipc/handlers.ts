@@ -137,6 +137,12 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): void {
         maxUpKbps: updated.maxUpKbps,
       });
 
+      // Restart the disk-space guard if its settings changed
+      if (settings.diskGuardEnabled !== undefined || settings.diskGuardMinFreeMB !== undefined) {
+        const { restartGuardFromConfig } = await import('../utils/disk-guard');
+        await restartGuardFromConfig();
+      }
+
       return updated;
     }
   ));
@@ -495,9 +501,29 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): void {
     }
   ));
 
+  ipcMain.handle('privacy:isEncryptionAvailable', wrapHandler('privacy:isEncryptionAvailable',
+    async () => {
+      const { isEncryptionAvailable } = await import('../db/secrets');
+      return isEncryptionAvailable();
+    }
+  ));
+
   ipcMain.handle('privacy:updateConfig', wrapHandler('privacy:updateConfig',
     async (_event, updates: Partial<any>) => {
-      return await db.updatePrivacyConfig(updates);
+      const result = await db.updatePrivacyConfig(updates);
+      // Apply logging-related privacy changes live
+      if (updates.disableLogs !== undefined || updates.sanitizeLogs !== undefined) {
+        logger.setPrivacyOptions({
+          disableFileLogging: result.disableLogs,
+          sanitize: result.sanitizeLogs,
+        });
+      }
+      // Restart the VPN kill-switch guard when its toggle changes
+      if (updates.vpnKillSwitch !== undefined) {
+        const { restartGuardFromConfig } = await import('../utils/vpn-guard');
+        await restartGuardFromConfig();
+      }
+      return result;
     }
   ));
 

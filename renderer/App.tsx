@@ -12,6 +12,7 @@ import DownloadsPage from './pages/DownloadsPage';
 import SettingsPage from './pages/SettingsPage';
 import SearchPage from './pages/SearchPage';
 import RSSPage from './pages/RSSPage';
+import { formatBytes } from './utils/format-helpers';
 import { I18nProvider } from './utils/i18nContext';
 
 
@@ -22,6 +23,10 @@ const AppContent: React.FC = () => {
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   // Torrent/magnet handed to us by the OS — passed to DownloadsPage to open the add dialog
   const [openTorrentUri, setOpenTorrentUri] = useState<string | null>(null);
+  // VPN kill-switch warning banner (set when the guard auto-pauses on VPN drop)
+  const [vpnAlert, setVpnAlert] = useState<{ paused: number; publicIP?: string } | null>(null);
+  // Disk-space guard warning banner
+  const [diskAlert, setDiskAlert] = useState<{ paused: number; freeBytes: number; thresholdBytes: number } | null>(null);
 
   // Apply theme on mount
   useEffect(() => {
@@ -95,6 +100,20 @@ const AppContent: React.FC = () => {
     window.api.notifyReady();
 
     return () => unsubscribe();
+  }, []);
+
+  // VPN kill-switch: show a warning banner when the guard auto-pauses torrents
+  useEffect(() => {
+    const offDropped = window.api.onVpnDropped((info) => setVpnAlert(info));
+    const offRestored = window.api.onVpnRestored(() => setVpnAlert(null));
+    return () => { offDropped(); offRestored(); };
+  }, []);
+
+  // Disk-space guard: warning banner when free space is low
+  useEffect(() => {
+    const offLow = window.api.onDiskLow((info) => setDiskAlert(info));
+    const offRecovered = window.api.onDiskRecovered(() => setDiskAlert(null));
+    return () => { offLow(); offRecovered(); };
   }, []);
 
   // Global navigation shortcuts (fixed, layout-independent via event.code)
@@ -220,6 +239,34 @@ const AppContent: React.FC = () => {
         />
 
         <main className="main-content">
+          {vpnAlert && (
+            <div className="vpn-alert-banner" role="alert">
+              <span className="vpn-alert-icon">⚠</span>
+              <div className="vpn-alert-text">
+                <strong>VPN connection lost — torrents paused.</strong>{' '}
+                {vpnAlert.paused > 0
+                  ? `${vpnAlert.paused} torrent${vpnAlert.paused === 1 ? '' : 's'} were paused to protect your IP.`
+                  : 'Your VPN appears to be down.'}
+                {vpnAlert.publicIP ? ` Current public IP: ${vpnAlert.publicIP}.` : ''}
+                {' '}Reconnect your VPN, then resume downloads manually.
+              </div>
+              <button className="vpn-alert-close" onClick={() => setVpnAlert(null)} aria-label="Dismiss">×</button>
+            </div>
+          )}
+          {diskAlert && (
+            <div className="vpn-alert-banner" role="alert">
+              <span className="vpn-alert-icon">⚠</span>
+              <div className="vpn-alert-text">
+                <strong>Low disk space — torrents paused.</strong>{' '}
+                {`Only ${formatBytes(diskAlert.freeBytes)} free (threshold ${formatBytes(diskAlert.thresholdBytes)}).`}
+                {diskAlert.paused > 0
+                  ? ` ${diskAlert.paused} torrent${diskAlert.paused === 1 ? '' : 's'} paused.`
+                  : ''}
+                {' '}Free up space, then resume downloads manually.
+              </div>
+              <button className="vpn-alert-close" onClick={() => setDiskAlert(null)} aria-label="Dismiss">×</button>
+            </div>
+          )}
           {renderPage()}
 
           <StatusBar

@@ -84,6 +84,10 @@ const SettingsPage: React.FC = () => {
   const [watchFolderPath, setWatchFolderPath] = useState('');
   const [watchFolderDeleteAfterAdd, setWatchFolderDeleteAfterAdd] = useState(false);
 
+  // Disk-space guard
+  const [diskGuardEnabled, setDiskGuardEnabled] = useState(true);
+  const [diskGuardMinFreeMB, setDiskGuardMinFreeMB] = useState(2048);
+
   // Default seeding limits
   const [defaultSeedRatioLimit, setDefaultSeedRatioLimit] = useState(0);
   const [defaultSeedTimeLimitMinutes, setDefaultSeedTimeLimitMinutes] = useState(0);
@@ -182,6 +186,9 @@ const SettingsPage: React.FC = () => {
       watchFolderEnabled !== s.watchFolderEnabled ||
       watchFolderPath !== s.watchFolderPath ||
       watchFolderDeleteAfterAdd !== s.watchFolderDeleteAfterAdd ||
+      // Disk guard
+      diskGuardEnabled !== (s.diskGuardEnabled ?? true) ||
+      diskGuardMinFreeMB !== (s.diskGuardMinFreeMB ?? 2048) ||
       // Seeding
       defaultSeedRatioLimit !== s.defaultSeedRatioLimit ||
       defaultSeedTimeLimitMinutes !== s.defaultSeedTimeLimitMinutes ||
@@ -197,6 +204,7 @@ const SettingsPage: React.FC = () => {
     enableDHT, enablePEX, enableLSD, maxConnections, portMin, portMax,
     proxyEnabled, proxyType, proxyHost, proxyPort, proxyUsername, proxyPassword,
     watchFolderEnabled, watchFolderPath, watchFolderDeleteAfterAdd,
+    diskGuardEnabled, diskGuardMinFreeMB,
     defaultSeedRatioLimit, defaultSeedTimeLimitMinutes,
     enableNotifications, enableSounds, notifyOnComplete, notifyOnError,
   ]);
@@ -247,6 +255,10 @@ const SettingsPage: React.FC = () => {
       setWatchFolderEnabled(s.watchFolderEnabled ?? false);
       setWatchFolderPath(s.watchFolderPath ?? '');
       setWatchFolderDeleteAfterAdd(s.watchFolderDeleteAfterAdd ?? false);
+
+      // Disk-space guard
+      setDiskGuardEnabled(s.diskGuardEnabled ?? true);
+      setDiskGuardMinFreeMB(s.diskGuardMinFreeMB ?? 2048);
 
       // Default seeding limits
       setDefaultSeedRatioLimit(s.defaultSeedRatioLimit ?? 0);
@@ -360,6 +372,9 @@ const SettingsPage: React.FC = () => {
         watchFolderEnabled,
         watchFolderPath,
         watchFolderDeleteAfterAdd,
+        // Disk guard
+        diskGuardEnabled,
+        diskGuardMinFreeMB,
         // Seeding limits
         defaultSeedRatioLimit,
         defaultSeedTimeLimitMinutes,
@@ -720,6 +735,38 @@ const SettingsPage: React.FC = () => {
                 </button>
               )}
             </>
+          )}
+        </div>
+
+        <div className="settings-divider" />
+
+        {/* Disk-space guard */}
+        <div className="settings-group">
+          <h3 className="settings-group-title">DISK-SPACE GUARD</h3>
+          {renderSettingItem(
+            'Auto-pause on low disk space',
+            'Continuously watch free space on the download drive and pause all torrents before the disk fills up. Resume is manual.',
+            <button
+              className={`toggle-switch ${diskGuardEnabled ? 'active' : ''}`}
+              onClick={() => setDiskGuardEnabled(!diskGuardEnabled)}
+            >
+              <span className="toggle-slider" />
+            </button>
+          )}
+          {diskGuardEnabled && renderSettingItem(
+            'Minimum free space',
+            'Pause everything when free space drops below this value.',
+            <div className="speed-input-compact">
+              <input
+                type="number"
+                className="input-compact input-mono"
+                min="100"
+                step="256"
+                value={diskGuardMinFreeMB}
+                onChange={(e) => setDiskGuardMinFreeMB(parseInt(e.target.value) || 2048)}
+              />
+              <span className="input-unit">MB</span>
+            </div>
           )}
         </div>
       </>

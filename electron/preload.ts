@@ -222,6 +222,14 @@ const api: IpcApi = {
     return ipcRenderer.invoke('privacy:updateConfig', updates);
   },
 
+  checkVPN: () => {
+    return ipcRenderer.invoke('privacy:checkVPN');
+  },
+
+  isEncryptionAvailable: () => {
+    return ipcRenderer.invoke('privacy:isEncryptionAvailable');
+  },
+
   clearAllData: () => {
     return ipcRenderer.invoke('privacy:clearAllData');
   },
@@ -321,6 +329,30 @@ const api: IpcApi = {
     const handler = () => callback();
     ipcRenderer.on('app:resumeAll', handler);
     return () => { ipcRenderer.removeListener('app:resumeAll', handler); };
+  },
+
+  onVpnDropped: (callback: (info: { paused: number; publicIP?: string }) => void): (() => void) => {
+    const handler = (_e: IpcRendererEvent, info: { paused: number; publicIP?: string }) => callback(info);
+    ipcRenderer.on('app:vpnDropped', handler);
+    return () => { ipcRenderer.removeListener('app:vpnDropped', handler); };
+  },
+
+  onVpnRestored: (callback: () => void): (() => void) => {
+    const handler = () => callback();
+    ipcRenderer.on('app:vpnRestored', handler);
+    return () => { ipcRenderer.removeListener('app:vpnRestored', handler); };
+  },
+
+  onDiskLow: (callback: (info: { paused: number; freeBytes: number; thresholdBytes: number }) => void): (() => void) => {
+    const handler = (_e: IpcRendererEvent, info: { paused: number; freeBytes: number; thresholdBytes: number }) => callback(info);
+    ipcRenderer.on('app:diskLow', handler);
+    return () => { ipcRenderer.removeListener('app:diskLow', handler); };
+  },
+
+  onDiskRecovered: (callback: () => void): (() => void) => {
+    const handler = () => callback();
+    ipcRenderer.on('app:diskRecovered', handler);
+    return () => { ipcRenderer.removeListener('app:diskRecovered', handler); };
   },
 
   // Priority 1: New torrent controls

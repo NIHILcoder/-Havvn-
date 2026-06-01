@@ -38,6 +38,7 @@
 }
 
 .sidebar-logo {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -45,17 +46,59 @@
   height: 38px;
   background: var(--gradient-primary);
   border-radius: var(--radius-lg);
-  color: #fff;
+  /* Icon contrasts against the monochrome accent fill (black in dark theme) */
+  color: var(--color-bg-primary);
   font-size: 18px;
-  transition: all var(--transition-normal);
+  transition: transform var(--transition-normal), box-shadow var(--transition-normal);
   cursor: pointer;
   box-shadow: var(--shadow-glow-sm);
   flex-shrink: 0;
+  overflow: hidden;
+}
+
+/* Diagonal sheen that periodically sweeps across the tile */
+.sidebar-logo::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    115deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.55) 48%,
+    rgba(255, 255, 255, 0.55) 52%,
+    transparent 70%
+  );
+  transform: translateX(-130%);
+  animation: logoSheen 5s ease-in-out infinite;
+  animation-delay: 1.2s;
+  pointer-events: none;
+}
+
+/* The download arrow gently bobs down, hinting at "downloading" */
+.sidebar-logo .logo-arrow {
+  animation: logoArrowBob 2.6s ease-in-out infinite;
+  transform-origin: center;
 }
 
 .sidebar-logo:hover {
-  transform: scale(1.05);
+  transform: scale(1.06) rotate(-3deg);
   box-shadow: var(--shadow-glow);
+}
+
+/* Speed up the bob on hover for a little "burst" of activity */
+.sidebar-logo:hover .logo-arrow {
+  animation-duration: 0.9s;
+}
+
+@keyframes logoArrowBob {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(2px); }
+}
+
+@keyframes logoSheen {
+  0%, 18%  { transform: translateX(-130%); }
+  38%      { transform: translateX(130%); }
+  100%     { transform: translateX(130%); }
 }
 
 .sidebar-title {
@@ -63,6 +106,35 @@
   font-weight: var(--font-weight-bold);
   color: var(--color-text-primary);
   letter-spacing: -0.02em;
+  cursor: default;
+}
+
+/* Subtle shimmer on the wordmark when hovering the header */
+.sidebar-header:hover .sidebar-title {
+  background: linear-gradient(
+    90deg,
+    var(--color-text-primary) 0%,
+    var(--color-text-tertiary) 50%,
+    var(--color-text-primary) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: titleShimmer 1.6s linear infinite;
+}
+
+@keyframes titleShimmer {
+  to { background-position: -200% 0; }
+}
+
+/* Respect reduced-motion: keep it calm */
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-logo::after,
+  .sidebar-logo .logo-arrow,
+  .sidebar-header:hover .sidebar-title {
+    animation: none;
+  }
 }
 
 /* Sidebar Navigation */
@@ -553,4 +625,52 @@
   background: var(--color-bg-hover);
   color: var(--color-accent-primary);
   border-color: var(--color-border-subtle);
+}
+
+/* VPN kill-switch warning banner */
+.vpn-alert-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  background: rgba(239, 68, 68, 0.12);
+  border-bottom: 1px solid rgba(239, 68, 68, 0.35);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  line-height: 1.4;
+  flex-shrink: 0;
+  animation: vpnAlertIn 0.25s ease;
+}
+
+@keyframes vpnAlertIn {
+  from { transform: translateY(-100%); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+.vpn-alert-icon {
+  font-size: 18px;
+  color: #ef4444;
+  flex-shrink: 0;
+}
+
+.vpn-alert-text { flex: 1; }
+.vpn-alert-text strong { color: #ef4444; }
+
+.vpn-alert-close {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  font-size: 20px;
+  line-height: 1;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.vpn-alert-close:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
 }

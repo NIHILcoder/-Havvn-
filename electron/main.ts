@@ -367,9 +367,12 @@ async function initializeApp(): Promise<void> {
   // (otherwise they appear to come from "electron.exe", and may be suppressed).
   app.setAppUserModelId('com.torrenthunt.app');
 
-  // Initialize logger first
+  // Initialize logger first, honoring privacy settings (disable/sanitize logs)
+  const privacyCfg = (store.get('privacyConfig') as any) || {};
   logger.initialize({
     minLevel: process.env.NODE_ENV === 'development' ? 'debug' : 'info',
+    disableFileLogging: privacyCfg.disableLogs === true,
+    sanitize: privacyCfg.sanitizeLogs === true,
   });
 
   logger.info('App', 'TorrentHunt starting...');
@@ -408,6 +411,26 @@ async function initializeApp(): Promise<void> {
   // Create main window
   await createWindow();
   logger.info('App', 'Main window created.');
+
+  // Start the VPN kill-switch guard (no-op unless enabled in privacy settings)
+  try {
+    if (mainWindow) {
+      const { initVpnGuard } = await import('./utils/vpn-guard');
+      initVpnGuard(mainWindow);
+    }
+  } catch (e) {
+    logger.error('App', 'Failed to init VPN guard', { error: e });
+  }
+
+  // Start the disk-space guard (auto-pauses torrents when free space is low)
+  try {
+    if (mainWindow) {
+      const { initDiskGuard } = await import('./utils/disk-guard');
+      initDiskGuard(mainWindow);
+    }
+  } catch (e) {
+    logger.error('App', 'Failed to init disk guard', { error: e });
+  }
 
   // Apply auto-launch setting (registered as "TorrentHunt", not electron.exe)
   const settings = store.get('settings') as any;
@@ -578,6 +601,18 @@ async function cleanup(): Promise<void> {
   } catch (e) {
     logger.error('App', 'Error stopping watch folder', { error: e });
   }
+
+  // Stop the VPN guard timer
+  try {
+    const { stopVpnGuard } = await import('./utils/vpn-guard');
+    stopVpnGuard();
+  } catch { /* ignore */ }
+
+  // Stop the disk-space guard timer
+  try {
+    const { stopDiskGuard } = await import('./utils/disk-guard');
+    stopDiskGuard();
+  } catch { /* ignore */ }
 
   // Destroy tray
   if (tray) {

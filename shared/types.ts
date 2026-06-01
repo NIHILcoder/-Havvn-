@@ -119,6 +119,9 @@ export interface AppSettings {
   enableSounds: boolean;
   notifyOnComplete: boolean;
   notifyOnError: boolean;
+  // Disk-space guard
+  diskGuardEnabled: boolean;       // Auto-pause all torrents when free space is low
+  diskGuardMinFreeMB: number;      // Threshold in MB (default 2048)
   updatedAt: Date;
 }
 
@@ -131,6 +134,24 @@ export interface PrivacyConfig {
   clearDataOnExit: boolean;
   ephemeralPeerId: boolean;
   sanitizeLogs: boolean;
+  vpnKillSwitch: boolean;   // Auto-pause all torrents if the VPN drops
+}
+
+export interface VPNDetectionResult {
+  isVPNActive: boolean;
+  confidence: 'high' | 'medium' | 'low' | 'unknown';
+  indicators: {
+    vpnInterface: boolean;
+    ipMismatch: boolean;
+    vpnDNS: boolean;
+    vpnRoutes: boolean;
+  };
+  details: {
+    detectedInterfaces: string[];
+    publicIP?: string;
+    localIP?: string;
+    vpnProvider?: string;
+  };
 }
 
 // Scheduler types
@@ -436,6 +457,8 @@ export interface IpcApi {
   // Privacy & Security
   getPrivacyConfig: () => Promise<PrivacyConfig>;
   updatePrivacyConfig: (updates: Partial<PrivacyConfig>) => Promise<PrivacyConfig>;
+  checkVPN: () => Promise<VPNDetectionResult>;
+  isEncryptionAvailable: () => Promise<boolean>;
   clearAllData: () => Promise<{ success: boolean }>;
 
   // App events
@@ -447,6 +470,10 @@ export interface IpcApi {
   // Tray events from main
   onPauseAll: (callback: () => void) => () => void;
   onResumeAll: (callback: () => void) => () => void;
+  onVpnDropped: (callback: (info: { paused: number; publicIP?: string }) => void) => () => void;
+  onVpnRestored: (callback: () => void) => () => void;
+  onDiskLow: (callback: (info: { paused: number; freeBytes: number; thresholdBytes: number }) => void) => () => void;
+  onDiskRecovered: (callback: () => void) => () => void;
 
   // RSS
   rss: {

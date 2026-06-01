@@ -13,6 +13,7 @@ import {
   Input,
   ProgressBar,
   StatusBadge,
+  HealthBadge,
   ToastContainer,
   EmptyState,
   FilePreview,
@@ -150,6 +151,19 @@ const DownloadItem: React.FC<DownloadItemProps> = ({
             <span className="download-item-name truncate">{download.name}</span>
             <div className="download-compact-meta">
               <span className="progress-text">{(progress * 100).toFixed(1)}%</span>
+              {(status === 'downloading' || status === 'queued') && (
+                <>
+                  <span className="meta-separator">•</span>
+                  <HealthBadge
+                    status={status}
+                    seeds={currentStats.seeds}
+                    peers={currentStats.peers}
+                    downSpeedBps={currentStats.downSpeedBps}
+                    progress={progress}
+                    variant="full"
+                  />
+                </>
+              )}
               {download.totalSize > 0 && (
                 <>
                   <span className="meta-separator">•</span>
@@ -473,6 +487,23 @@ const DownloadItem: React.FC<DownloadItemProps> = ({
                 <div className="stat-content">
                   <span className="stat-label">Peers</span>
                   <span className="stat-value">{currentStats.peers}</span>
+                </div>
+              </div>
+
+              <div className="stat-item">
+                <Icon name="activity" size={12} />
+                <div className="stat-content">
+                  <span className="stat-label">Health</span>
+                  <span className="stat-value">
+                    <HealthBadge
+                      status={status}
+                      seeds={currentStats.seeds}
+                      peers={currentStats.peers}
+                      downSpeedBps={currentStats.downSpeedBps}
+                      progress={progress}
+                      variant="full"
+                    />
+                  </span>
                 </div>
               </div>
             </>

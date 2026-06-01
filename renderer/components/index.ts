@@ -10,6 +10,7 @@ export { Input } from './Input';
 export { Select } from './Select';
 export { Toggle } from './Toggle';
 export { ProgressBar } from './ProgressBar';
+export { HealthBadge } from './HealthBadge';
 export { FilePreview } from './FilePreview';
 export { Badge, StatusBadge } from './Badge';
 export { Alert } from './Alert';
