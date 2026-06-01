@@ -624,13 +624,14 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
         // Clear any leftover state from a previous drop
         setSelectedFile(null);
 
-        // Use the file path directly to open the file selector
-        const filePath = (file as any).path;
+        // Resolve the dropped file's path (webUtils / legacy File.path) and open
+        // the file selector dialog.
+        const filePath = window.api.getPathForFile(file);
         if (filePath) {
           setPendingTorrent({ path: filePath });
           setShowFileSelector(true);
         } else {
-          // Fallback: show preview if path isn't available (shouldn't happen in Electron)
+          // Fallback: keep the file for the "Add Selected Torrent" button
           setSelectedFile(file);
         }
       } else {
@@ -883,9 +884,10 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
       let torrentPath: string | undefined;
 
       // Use dropped/selected file path without opening file dialog again if it exists
-      if (selectedFile && (selectedFile as any).path) {
-        torrentPath = (selectedFile as any).path;
-      } else {
+      if (selectedFile) {
+        torrentPath = window.api.getPathForFile(selectedFile) || undefined;
+      }
+      if (!torrentPath) {
         const result = await window.api.selectTorrentFile();
         if (!result) {
           setIsAddingTorrent(false);

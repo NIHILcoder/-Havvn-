@@ -70,58 +70,11 @@ export class SearchService {
         return this.searchTorznab(provider, query, category);
       case 'custom':
         return this.searchCustom(provider, query, category);
-      case 'archive':
-        return this.searchArchiveOrg(provider, query);
       default:
+        // 'archive' (Internet Archive) was removed: archive.org disabled public
+        // .torrent downloads in late 2024 (HTTP 401), so it can't serve torrents.
         return [];
     }
-  }
-
-  /**
-   * Internet Archive — open public JSON API, no API key required.
-   * Returns public-domain / Creative-Commons content. Every item exposes a
-   * generated .torrent that also carries HTTP web seeds, so downloads work
-   * even with zero peers.
-   *   https://archive.org/advancedsearch.php?q=...&output=json
-   *   https://archive.org/download/{id}/{id}_archive.torrent
-   */
-  private async searchArchiveOrg(provider: SearchProvider, query: string): Promise<SearchResult[]> {
-    const params = new URLSearchParams({
-      q: query,
-      rows: '60',
-      output: 'json',
-      sort: 'downloads desc',
-    });
-    // fl[] is repeated per field
-    for (const field of ['identifier', 'title', 'item_size', 'downloads', 'mediatype', 'publicdate']) {
-      params.append('fl[]', field);
-    }
-
-    const url = `https://archive.org/advancedsearch.php?${params}`;
-    const response = await this.fetchJSON(url);
-
-    const docs = response?.response?.docs;
-    if (!Array.isArray(docs)) {
-      throw new Error('Unexpected Internet Archive response');
-    }
-
-    return docs
-      .filter((d: any) => d.identifier)
-      .map((d: any): SearchResult => {
-        const id = d.identifier;
-        const title = Array.isArray(d.title) ? d.title[0] : (d.title || id);
-        return {
-          title,
-          torrentUrl: `https://archive.org/download/${id}/${id}_archive.torrent`,
-          size: typeof d.item_size === 'number' ? d.item_size : 0,
-          // Archive doesn't expose swarm stats; web-seeded so peers aren't required.
-          seeds: typeof d.downloads === 'number' ? d.downloads : 0,
-          leechers: 0,
-          provider: provider.name,
-          publishDate: d.publicdate || undefined,
-          category: d.mediatype || undefined,
-        };
-      });
   }
 
   /**

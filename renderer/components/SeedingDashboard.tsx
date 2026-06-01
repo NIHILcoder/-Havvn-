@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Icon, ProgressBar } from '../components';
+import { Icon, ProgressBar, Toggle } from '../components';
 import { UserReputation, SeedingPlan, ReputationTransaction, Badge } from '../../shared/types';
 import './SeedingDashboard.css';
 
@@ -25,17 +25,19 @@ export const SeedingDashboard: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [rep, recs, txs, bdgs] = await Promise.all([
+      const [rep, recs, txs, bdgs, isEnabled] = await Promise.all([
         window.api.getReputation(),
         window.api.getSeedingRecommendations(5),
         window.api.getRecentTransactions(10),
         window.api.getBadges(),
+        window.api.isCollaborativeSeedingEnabled(),
       ]);
 
       setReputation(rep);
       setRecommendations(recs);
       setTransactions(txs);
       setBadges(bdgs);
+      setEnabled(isEnabled);
     } catch (error) {
       console.error('Failed to load seeding data:', error);
     } finally {
@@ -43,12 +45,14 @@ export const SeedingDashboard: React.FC = () => {
     }
   };
 
-  const handleToggleEnabled = async () => {
+  const handleToggleEnabled = async (next: boolean) => {
+    // Optimistic update with rollback on failure
+    setEnabled(next);
     try {
-      await window.api.enableCollaborativeSeeding(!enabled);
-      setEnabled(!enabled);
+      await window.api.enableCollaborativeSeeding(next);
     } catch (error) {
       console.error('Failed to toggle collaborative seeding:', error);
+      setEnabled(!next);
     }
   };
 
@@ -97,20 +101,39 @@ export const SeedingDashboard: React.FC = () => {
     <div className="seeding-dashboard">
       {/* Header */}
       <div className="dashboard-header">
-        <h1>🌐 Collaborative Seeding Network</h1>
-        <p className="dashboard-subtitle">
-          Earn points by seeding rare torrents and help the community
-        </p>
+        <div className="dashboard-title-row">
+          <div className="dashboard-title-text">
+            <h2 className="dashboard-title">
+              <Icon name="share-2" size={20} />
+              Collaborative Seeding Network
+              <span className="dashboard-badge">Local Beta</span>
+            </h2>
+            <p className="dashboard-subtitle">
+              Earn points by seeding rare torrents and help the community
+            </p>
+          </div>
+          <div className="enable-toggle">
+            <span className={`enable-status ${enabled ? 'on' : 'off'}`}>
+              {enabled ? 'Active' : 'Off'}
+            </span>
+            <Toggle checked={enabled} onChange={handleToggleEnabled} />
+          </div>
+        </div>
 
-        <div className="enable-toggle">
-          <label>
-            <input
-              type="checkbox"
-              checked={enabled}
-              onChange={handleToggleEnabled}
-            />
-            <span>Enable Collaborative Seeding</span>
-          </label>
+        {!enabled && (
+          <div className="seeding-disabled-banner">
+            <Icon name="info" size={16} />
+            <span>Enable the network to start earning points by seeding rare torrents. Your stats below are preserved while it&apos;s off.</span>
+          </div>
+        )}
+
+        <div className="seeding-soon-banner">
+          <Icon name="clock" size={16} />
+          <span>
+            <strong>Network sync coming soon.</strong> Points, levels and recommendations
+            work locally today. Sharing reputation and seeder discovery across the P2P
+            network is in development.
+          </span>
         </div>
       </div>
 
@@ -175,7 +198,10 @@ export const SeedingDashboard: React.FC = () => {
 
       {/* Seeding Recommendations */}
       <div className="recommendations-section">
-        <h2>💡 Recommended for Seeding</h2>
+        <h3 className="section-title">
+          <Icon name="zap" size={16} />
+          Recommended for Seeding
+        </h3>
         <p className="section-subtitle">
           These torrents will earn you the most points
         </p>
@@ -217,7 +243,10 @@ export const SeedingDashboard: React.FC = () => {
 
       {/* Recent Transactions */}
       <div className="transactions-section">
-        <h2>📜 Recent Transactions</h2>
+        <h3 className="section-title">
+          <Icon name="activity" size={16} />
+          Recent Transactions
+        </h3>
 
         {transactions.length > 0 ? (
           <div className="transactions-list">

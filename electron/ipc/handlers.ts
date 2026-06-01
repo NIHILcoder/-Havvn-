@@ -468,6 +468,10 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): void {
     }
   ));
 
+  ipcMain.handle('seeding:isEnabled', wrapHandler('seeding:isEnabled',
+    async () => seedingManager.isEnabled()
+  ));
+
   // Privacy & Security handlers
   ipcMain.handle('privacy:checkVPN', wrapHandler('privacy:checkVPN',
     async () => {
@@ -508,11 +512,14 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): void {
   // Auto-launch
   ipcMain.handle('app:setAutoLaunch', wrapHandler('app:setAutoLaunch',
     async (_event, enabled: boolean) => {
-      // In packaged app the registry key is set automatically by electron-builder.
-      // openAsHidden: start minimised to tray when auto-launched at login.
+      // Register under a friendly name ("TorrentHunt") instead of the raw
+      // executable, so Task Manager / Startup lists it as TorrentHunt rather
+      // than electron.exe. openAsHidden: start minimised to tray at login.
       app.setLoginItemSettings({
         openAtLogin: enabled,
         openAsHidden: enabled,
+        name: 'TorrentHunt',
+        path: process.execPath,
       });
 
       await db.updateSettings({ autoLaunch: enabled } as any);
@@ -526,6 +533,11 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): void {
       const loginSettings = app.getLoginItemSettings();
       return loginSettings.openAtLogin;
     }
+  ));
+
+  // App version (single source of truth: package.json via Electron)
+  ipcMain.handle('app:getVersion', wrapHandler('app:getVersion',
+    async () => app.getVersion()
   ));
 
   // Default client

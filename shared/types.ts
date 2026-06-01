@@ -114,6 +114,11 @@ export interface AppSettings {
   // Default seeding limits
   defaultSeedRatioLimit: number;     // 0 = unlimited
   defaultSeedTimeLimitMinutes: number; // 0 = unlimited
+  // Notifications
+  enableNotifications: boolean;
+  enableSounds: boolean;
+  notifyOnComplete: boolean;
+  notifyOnError: boolean;
   updatedAt: Date;
 }
 
@@ -372,6 +377,7 @@ export interface IpcApi {
   setAutoLaunch: (enabled: boolean) => Promise<{ success: boolean }>;
   setCloseToTray: (enabled: boolean) => Promise<{ success: boolean }>;
   setMinimizeToTray: (enabled: boolean) => Promise<{ success: boolean }>;
+  getAppVersion: () => Promise<string>;
   isDefaultClient: () => Promise<boolean>;
   setDefaultClient: () => Promise<{ success: boolean }>;
 
@@ -425,6 +431,7 @@ export interface IpcApi {
   getRecentTransactions: (limit?: number) => Promise<ReputationTransaction[]>;
   getBadges: () => Promise<Badge[]>;
   enableCollaborativeSeeding: (enabled: boolean) => Promise<void>;
+  isCollaborativeSeedingEnabled: () => Promise<boolean>;
 
   // Privacy & Security
   getPrivacyConfig: () => Promise<PrivacyConfig>;
@@ -435,6 +442,8 @@ export interface IpcApi {
   onOpenTorrent: (callback: (torrentUri: string) => void) => () => void;
   // Renderer announces its IPC listeners are attached (flushes buffered OS opens)
   notifyReady: () => void;
+  // Resolve the absolute path of a dropped/selected File (webUtils.getPathForFile)
+  getPathForFile: (file: File) => string;
   // Tray events from main
   onPauseAll: (callback: () => void) => () => void;
   onResumeAll: (callback: () => void) => () => void;

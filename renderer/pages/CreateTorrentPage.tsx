@@ -234,16 +234,20 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
     
     const files = Array.from(e.dataTransfer.files);
     if (files.length > 0) {
-      // Use first item's path
-      const paths = files.map(f => (f as any).path || f.name);
+      // Resolve real filesystem paths (webUtils / legacy File.path)
+      const paths = files.map(f => window.api.getPathForFile(f)).filter(Boolean);
+      if (paths.length === 0) {
+        addToast('Could not read the dropped path. Use the Select button instead.', 'error');
+        return;
+      }
       setSourcePaths(paths);
       setSourceFileCount(paths.length);
-      
+
       if (!name && paths[0]) {
         const fileName = paths[0].split(/[/\\]/).pop() || '';
         setName(fileName.replace(/\.[^/.]+$/, ''));
       }
-      addToast(`Added ${files.length} item(s)`, 'success');
+      addToast(`Added ${paths.length} item(s)`, 'success');
     }
   }, [name, addToast]);
 

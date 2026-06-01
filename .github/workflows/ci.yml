@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [TorrentHunt1.2, feature/new-design]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Required gates — must pass for the build to be green
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      # Advisory — surfaces existing lint debt without blocking the pipeline
+      - name: Lint
+        run: npm run lint
+        continue-on-error: true

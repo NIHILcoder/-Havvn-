@@ -177,6 +177,7 @@
 .results-thead {
   display: grid;
   grid-template-columns: 1fr 90px 80px 110px 130px;
+  column-gap: 1rem;
   background: var(--color-bg-secondary);
   border-bottom: 1px solid var(--color-border);
   padding: 0.5rem 1rem;
@@ -190,6 +191,7 @@
 .results-row {
   display: grid;
   grid-template-columns: 1fr 90px 80px 110px 130px;
+  column-gap: 1rem;
   padding: 0.65rem 1rem;
   border-bottom: 1px solid var(--color-border);
   align-items: center;
@@ -264,6 +266,12 @@
   color: #22c55e;
   font-size: 0.8rem;
   font-weight: 600;
+}
+
+/* Keep the download / added action pinned to the right of its column */
+.results-td.action-col {
+  display: flex;
+  justify-content: flex-end;
 }
 
 /* Providers panel */

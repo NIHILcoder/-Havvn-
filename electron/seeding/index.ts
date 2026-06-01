@@ -11,6 +11,7 @@ import { SeedingCoordinator } from './coordinator';
 import { SeedingOptimizer } from './optimizer';
 import { logger } from '../utils';
 import { getTorrentManager } from '../torrent/manager';
+import { store } from '../db/store';
 
 const log = logger.child('CollaborativeSeeding');
 
@@ -26,10 +27,18 @@ export class CollaborativeSeedingManager {
     // Generate or load user ID
     this.userId = this.getOrCreateUserId();
 
+    // Restore the persisted opt-in state so the toggle survives restarts
+    this.enabled = (store as any).get('collaborativeSeedingEnabled') ?? false;
+
     // Initialize subsystems
     this.reputationSystem = new ReputationSystem(this.userId);
     this.coordinator = new SeedingCoordinator(this.userId);
     this.optimizer = new SeedingOptimizer(this.coordinator);
+  }
+
+  /** Whether collaborative seeding is currently enabled. */
+  isEnabled(): boolean {
+    return this.enabled;
   }
 
   /**
@@ -59,6 +68,7 @@ export class CollaborativeSeedingManager {
     log.info('Collaborative seeding enabled changed', { enabled });
 
     this.enabled = enabled;
+    (store as any).set('collaborativeSeedingEnabled', enabled);
 
     if (enabled) {
       this.startMonitoring();

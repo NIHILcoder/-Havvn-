@@ -22,7 +22,9 @@ interface StoreSchema {
   searchProviders: SearchProvider[];
   ipBlocklists: IPBlocklist[];
   blocklistData: Record<string, string>; // id -> packed IP ranges as CSV
-  defaultsSeeded: boolean;               // First-run seeding of built-in provider / suggested feeds
+  defaultsSeeded: boolean;               // First-run seeding marker
+  suggestedFeedSeeded: boolean;          // One-time seeding/migration of the working FOSS Torrents feed
+  collaborativeSeedingEnabled: boolean;  // Collaborative Seeding Network opt-in (persisted)
 }
 
 const defaultCategories: Category[] = [
@@ -67,6 +69,11 @@ const store = new Store<StoreSchema>({
       // Seeding limits
       defaultSeedRatioLimit: 0,
       defaultSeedTimeLimitMinutes: 0,
+      // Notifications
+      enableNotifications: true,
+      enableSounds: true,
+      notifyOnComplete: true,
+      notifyOnError: true,
       updatedAt: new Date(),
     },
     categories: defaultCategories,
@@ -91,6 +98,8 @@ const store = new Store<StoreSchema>({
     ipBlocklists: [],
     blocklistData: {},
     defaultsSeeded: false,
+    suggestedFeedSeeded: false,
+    collaborativeSeedingEnabled: false,
   },
 });
 
@@ -650,63 +659,76 @@ export async function removeSearchProvider(id: string): Promise<void> {
 // === First-run defaults ===
 
 /**
- * Curated, fully-legal suggested RSS feeds (FOSS Torrents — Linux distros,
+ * Curated, fully-legal suggested RSS feed (FOSS Torrents — Linux distros,
  * open-source games & software). Seeded DISABLED so nothing touches the network
- * until the user explicitly enables a feed or hits "Check".
+ * until the user explicitly enables it or hits "Check".
+ *
+ * NOTE: must be the `torrents.xml` feed — its <item><link> points at an actual
+ * .torrent file. The per-category feeds (distribution/game/software.xml) are
+ * news feeds whose <link> is an HTML page, which can't be downloaded.
  */
 const SUGGESTED_RSS_FEEDS: Omit<RSSFeed, 'id'>[] = [
   {
-    name: 'FOSS Torrents — Linux Distributions',
-    url: 'https://fosstorrents.com/feed/distribution.xml',
-    enabled: false,
-    autoDownload: false,
-    intervalMinutes: 360,
-  },
-  {
-    name: 'FOSS Torrents — Open-Source Games',
-    url: 'https://fosstorrents.com/feed/game.xml',
-    enabled: false,
-    autoDownload: false,
-    intervalMinutes: 360,
-  },
-  {
-    name: 'FOSS Torrents — Open-Source Software',
-    url: 'https://fosstorrents.com/feed/software.xml',
+    name: 'FOSS Torrents (Linux, open-source games & software)',
+    url: 'https://fosstorrents.com/feed/torrents.xml',
     enabled: false,
     autoDownload: false,
     intervalMinutes: 360,
   },
 ];
 
+/** Old per-category news feeds seeded by mistake — their <link> is an HTML page. */
+const DEPRECATED_FEED_URLS = new Set<string>([
+  'https://fosstorrents.com/feed/distribution.xml',
+  'https://fosstorrents.com/feed/game.xml',
+  'https://fosstorrents.com/feed/software.xml',
+]);
+
 /**
- * Seed first-run defaults exactly once (guarded by a persistent flag, so it also
- * runs for existing installs upgrading to this version, and never re-adds items
- * the user later deletes).
+ * Seed first-run defaults and run lightweight migrations.
  *
- * - Internet Archive: a built-in search provider, ENABLED. It's pull-only —
- *   no network traffic until the user actually runs a search.
- * - Suggested RSS feeds: added DISABLED — opt-in, zero background traffic.
+ * Migrations (every launch):
+ *   - Remove the old built-in Internet Archive provider. archive.org serves its
+ *     generated .torrent files unreliably (intermittent HTTP 401/403), so it
+ *     can't be a dependable default.
+ *   - Replace the wrongly-seeded FOSS Torrents news feeds (distribution/game/
+ *     software.xml — their <link> is an HTML page, not a .torrent) with the
+ *     correct torrents.xml feed. Only feeds the user never enabled are touched.
+ *
+ * First-run only (guarded by a persistent flag): seed the suggested RSS feed
+ * DISABLED — opt-in, zero background traffic until the user enables it.
  */
 export async function seedDefaultsIfNeeded(): Promise<void> {
-  if (store.get('defaultsSeeded')) return;
-  store.set('defaultsSeeded', true);
-
+  // Migration: drop the dead built-in Internet Archive provider if present
   const providers = store.get('searchProviders') ?? [];
-  if (!providers.some((p: SearchProvider) => p.type === 'archive')) {
-    providers.push({
-      id: uuidv4(),
-      name: 'Internet Archive',
-      url: 'https://archive.org',
-      enabled: true,
-      type: 'archive',
-      builtIn: true,
-    });
-    store.set('searchProviders', providers);
+  const cleanedProviders = providers.filter((p: SearchProvider) => !(p.builtIn && p.type === 'archive'));
+  if (cleanedProviders.length !== providers.length) {
+    store.set('searchProviders', cleanedProviders);
   }
 
+  // Migration: remove the broken news feeds (only if the user left them disabled)
   const feeds = store.get('rssFeeds') ?? [];
-  if (feeds.length === 0) {
-    store.set('rssFeeds', SUGGESTED_RSS_FEEDS.map(f => ({ ...f, id: uuidv4() })));
+  const cleanedFeeds = feeds.filter((f: RSSFeed) => !(DEPRECATED_FEED_URLS.has(f.url) && !f.enabled));
+  let feedsChanged = cleanedFeeds.length !== feeds.length;
+
+  // Seed the working feed exactly once — on a true first run, or as a one-time
+  // migration for installs that previously got the broken feeds. A dedicated
+  // flag keeps it idempotent and lets the user delete it for good afterwards.
+  const firstRun = !store.get('defaultsSeeded');
+  if (firstRun) store.set('defaultsSeeded', true);
+
+  if (!store.get('suggestedFeedSeeded')) {
+    store.set('suggestedFeedSeeded', true);
+    const hasSuggested = cleanedFeeds.some((f: RSSFeed) =>
+      SUGGESTED_RSS_FEEDS.some(s => s.url === f.url));
+    if (!hasSuggested) {
+      cleanedFeeds.push(...SUGGESTED_RSS_FEEDS.map(f => ({ ...f, id: uuidv4() })));
+      feedsChanged = true;
+    }
+  }
+
+  if (feedsChanged) {
+    store.set('rssFeeds', cleanedFeeds);
   }
 }
 

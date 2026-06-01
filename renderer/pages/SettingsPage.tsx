@@ -12,14 +12,6 @@ import {
   Select,
   Alert,
   ThemeSelector,
-  SpeedPresets,
-  NotificationSettings,
-  HotkeySettings,
-  defaultHotkeys,
-  SystemSettings,
-  ProxySettings,
-  AdvancedSettings,
-  SettingsBackup,
   AppStatistics,
   SettingsSidebar,
   SettingsCategory,
@@ -37,6 +29,9 @@ const SettingsPage: React.FC = () => {
 
   // Active category
   const [activeCategory, setActiveCategory] = useState('general');
+
+  // App version (single source of truth: package.json via Electron)
+  const [appVersion, setAppVersion] = useState('');
 
   // Settings state
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -98,9 +93,6 @@ const SettingsPage: React.FC = () => {
   const [schedulerEnabled, setSchedulerEnabled] = useState(false);
   const [schedules, setSchedules] = useState<ScheduleEntry[]>([]);
 
-  // Hotkeys
-  const [hotkeys, setHotkeys] = useState(defaultHotkeys);
-
   // Statistics
   const [stats, setStats] = useState({
     totalDownloads: 0,
@@ -132,8 +124,7 @@ const SettingsPage: React.FC = () => {
     
     // System
     { id: 'system', label: t('settings.system'), icon: 'power', group: 'system' },
-    { id: 'hotkeys', label: t('settings.hotkeys'), icon: 'keyboard', group: 'system' },
-    
+
     // Other
     { id: 'about', label: t('settings.about'), icon: 'info', group: 'other' },
   ];
@@ -146,25 +137,11 @@ const SettingsPage: React.FC = () => {
     const savedTheme = localStorage.getItem('theme') as Theme || 'system';
     setTheme(savedTheme);
     applyTheme(savedTheme);
-    
-    // Load saved hotkeys
-    try {
-      const savedHotkeys = localStorage.getItem('hotkeys');
-      if (savedHotkeys) {
-        const hotkeysMap = JSON.parse(savedHotkeys);
-        const updatedHotkeys = defaultHotkeys.map(h => ({
-          ...h,
-          keys: hotkeysMap[h.id] || h.keys
-        }));
-        setHotkeys(updatedHotkeys);
-      }
-    } catch (error) {
-      console.error('Failed to load hotkeys:', error);
-    }
-    
+
     // Load system settings not in standard settings object
     window.api.getAutoLaunch().then(setAutoLaunch).catch(console.error);
     window.api.isDefaultClient().then(setIsDefaultClient).catch(console.error);
+    window.api.getAppVersion().then(setAppVersion).catch(console.error);
   }, []);
 
   useEffect(() => {
@@ -174,18 +151,55 @@ const SettingsPage: React.FC = () => {
     }
   }, [message]);
 
+  // Track unsaved changes across ALL persisted fields (not just a handful),
+  // so the Save bar appears whenever anything actually changed.
   useEffect(() => {
-    if (settings) {
-      const changed =
-        defaultDownloadDir !== settings.defaultDownloadDir ||
-        maxDownKbps !== settings.maxDownKbps ||
-        maxUpKbps !== settings.maxUpKbps ||
-        maxActiveDownloads !== settings.maxActiveDownloads ||
-        minimizeToTray !== (settings as any).minimizeToTray ||
-        closeToTray !== (settings as any).closeToTray;
-      setHasChanges(changed);
-    }
-  }, [settings, defaultDownloadDir, maxDownKbps, maxUpKbps, maxActiveDownloads, minimizeToTray, closeToTray]);
+    if (!settings) return;
+    const s = settings as AppSettings;
+    const changed =
+      defaultDownloadDir !== s.defaultDownloadDir ||
+      maxDownKbps !== s.maxDownKbps ||
+      maxUpKbps !== s.maxUpKbps ||
+      maxActiveDownloads !== s.maxActiveDownloads ||
+      minimizeToTray !== s.minimizeToTray ||
+      closeToTray !== s.closeToTray ||
+      autoLaunch !== s.autoLaunch ||
+      // Advanced
+      enableDHT !== s.enableDHT ||
+      enablePEX !== s.enablePEX ||
+      enableLSD !== s.enableLSD ||
+      maxConnections !== s.maxConnections ||
+      portMin !== s.portMin ||
+      portMax !== s.portMax ||
+      // Proxy
+      proxyEnabled !== s.proxyEnabled ||
+      proxyType !== s.proxyType ||
+      proxyHost !== s.proxyHost ||
+      proxyPort !== s.proxyPort ||
+      proxyUsername !== s.proxyUsername ||
+      proxyPassword !== s.proxyPassword ||
+      // Watch folder
+      watchFolderEnabled !== s.watchFolderEnabled ||
+      watchFolderPath !== s.watchFolderPath ||
+      watchFolderDeleteAfterAdd !== s.watchFolderDeleteAfterAdd ||
+      // Seeding
+      defaultSeedRatioLimit !== s.defaultSeedRatioLimit ||
+      defaultSeedTimeLimitMinutes !== s.defaultSeedTimeLimitMinutes ||
+      // Notifications
+      enableNotifications !== (s.enableNotifications ?? true) ||
+      enableSounds !== (s.enableSounds ?? true) ||
+      notifyOnComplete !== (s.notifyOnComplete ?? true) ||
+      notifyOnError !== (s.notifyOnError ?? true);
+    setHasChanges(changed);
+  }, [
+    settings, defaultDownloadDir, maxDownKbps, maxUpKbps, maxActiveDownloads,
+    minimizeToTray, closeToTray, autoLaunch,
+    enableDHT, enablePEX, enableLSD, maxConnections, portMin, portMax,
+    proxyEnabled, proxyType, proxyHost, proxyPort, proxyUsername, proxyPassword,
+    watchFolderEnabled, watchFolderPath, watchFolderDeleteAfterAdd,
+    defaultSeedRatioLimit, defaultSeedTimeLimitMinutes,
+    enableNotifications, enableSounds, notifyOnComplete, notifyOnError,
+  ]);
 
   const applyTheme = (selectedTheme: Theme) => {
     if (selectedTheme === 'system') {
@@ -237,6 +251,15 @@ const SettingsPage: React.FC = () => {
       // Default seeding limits
       setDefaultSeedRatioLimit(s.defaultSeedRatioLimit ?? 0);
       setDefaultSeedTimeLimitMinutes(s.defaultSeedTimeLimitMinutes ?? 0);
+
+      // Notifications
+      setEnableNotifications(s.enableNotifications ?? true);
+      setEnableSounds(s.enableSounds ?? true);
+      setNotifyOnComplete(s.notifyOnComplete ?? true);
+      setNotifyOnError(s.notifyOnError ?? true);
+
+      // Auto-update preference (persisted in settings)
+      setAutoUpdate(s.autoUpdate ?? false);
 
       const scheduler = await window.api.getScheduler();
       setSchedulerConfig(scheduler);
@@ -340,6 +363,14 @@ const SettingsPage: React.FC = () => {
         // Seeding limits
         defaultSeedRatioLimit,
         defaultSeedTimeLimitMinutes,
+        // Notifications
+        enableNotifications,
+        enableSounds,
+        notifyOnComplete,
+        notifyOnError,
+        // System
+        autoLaunch,
+        autoUpdate,
       });
 
       // Apply watch folder change immediately
@@ -352,6 +383,10 @@ const SettingsPage: React.FC = () => {
       if (autoLaunch !== await window.api.getAutoLaunch()) {
         await window.api.setAutoLaunch(autoLaunch);
       }
+
+      // Apply tray behavior immediately (main process reads these live)
+      await window.api.setMinimizeToTray(minimizeToTray);
+      await window.api.setCloseToTray(closeToTray);
 
       if (schedulerConfig) {
         await window.api.updateScheduler({
@@ -398,58 +433,6 @@ const SettingsPage: React.FC = () => {
     }
   };
 
-  const handleSpeedChange = (download: number, upload: number) => {
-    setMaxDownKbps(download);
-    setMaxUpKbps(upload);
-  };
-
-  const handleSystemSettingsChange = async (systemSettings: {
-    autoLaunch: boolean;
-    autoUpdate: boolean;
-    minimizeToTray: boolean;
-    closeToTray: boolean;
-  }) => {
-    // Auto-launch: save immediately via Electron API
-    if (systemSettings.autoLaunch !== autoLaunch) {
-      try {
-        await window.api.setAutoLaunch(systemSettings.autoLaunch);
-        setAutoLaunch(systemSettings.autoLaunch);
-        setMessage({ type: 'success', text: systemSettings.autoLaunch ? 'Auto-launch enabled' : 'Auto-launch disabled' });
-      } catch (error) {
-        console.error('Failed to update auto launch:', error);
-        setMessage({ type: 'error', text: 'Failed to update auto-launch setting' });
-      }
-    }
-
-    // Minimize to tray: save immediately (takes effect on next minimize)
-    if (systemSettings.minimizeToTray !== minimizeToTray) {
-      try {
-        await window.api.setMinimizeToTray(systemSettings.minimizeToTray);
-        setMinimizeToTray(systemSettings.minimizeToTray);
-      } catch (error) {
-        console.error('Failed to update minimize-to-tray:', error);
-      }
-    }
-
-    // Close to tray: save immediately (takes effect on next window close)
-    if (systemSettings.closeToTray !== closeToTray) {
-      try {
-        await window.api.setCloseToTray(systemSettings.closeToTray);
-        setCloseToTray(systemSettings.closeToTray);
-        setMessage({
-          type: 'success',
-          text: systemSettings.closeToTray
-            ? 'Background mode enabled — app keeps running after closing'
-            : 'Background mode disabled — app will quit on close',
-        });
-      } catch (error) {
-        console.error('Failed to update close-to-tray:', error);
-      }
-    }
-
-    setAutoUpdate(systemSettings.autoUpdate);
-  };
-
   const handleSetDefaultClient = async () => {
     try {
       const result = await window.api.setDefaultClient();
@@ -463,63 +446,6 @@ const SettingsPage: React.FC = () => {
       console.error('Failed to set default client:', error);
       setMessage({ type: 'error', text: 'Failed to set as default client' });
     }
-  };
-
-  const handleHotkeyChange = (hotkeyId: string, keys: string[]) => {
-    const updatedHotkeys = hotkeys.map((h) => (h.id === hotkeyId ? { ...h, keys } : h));
-    setHotkeys(updatedHotkeys);
-    
-    // Save to localStorage
-    const hotkeysMap: Record<string, string[]> = {};
-    updatedHotkeys.forEach(h => {
-      hotkeysMap[h.id] = h.keys;
-    });
-    localStorage.setItem('hotkeys', JSON.stringify(hotkeysMap));
-  };
-
-  const handleResetHotkeys = () => {
-    setHotkeys([...defaultHotkeys]);
-    
-    // Save default to localStorage
-    const hotkeysMap: Record<string, string[]> = {};
-    defaultHotkeys.forEach(h => {
-      hotkeysMap[h.id] = h.keys;
-    });
-    localStorage.setItem('hotkeys', JSON.stringify(hotkeysMap));
-    
-    setMessage({ type: 'success', text: 'Hotkeys reset!' });
-  };
-
-  const handleProxyChange = (proxy: {
-    enabled: boolean;
-    type: 'http' | 'https' | 'socks5';
-    host: string;
-    port: number;
-    username: string;
-    password: string;
-  }) => {
-    setProxyEnabled(proxy.enabled);
-    setProxyType(proxy.type);
-    setProxyHost(proxy.host);
-    setProxyPort(proxy.port);
-    setProxyUsername(proxy.username);
-    setProxyPassword(proxy.password);
-  };
-
-  const handleAdvancedChange = (advanced: {
-    enableDHT: boolean;
-    enablePEX: boolean;
-    enableLSD: boolean;
-    maxConnections: number;
-    portMin: number;
-    portMax: number;
-  }) => {
-    setEnableDHT(advanced.enableDHT);
-    setEnablePEX(advanced.enablePEX);
-    setEnableLSD(advanced.enableLSD);
-    setMaxConnections(advanced.maxConnections);
-    setPortMin(advanced.portMin);
-    setPortMax(advanced.portMax);
   };
 
   const handleExportSettings = async () => {
@@ -557,7 +483,7 @@ const SettingsPage: React.FC = () => {
       }
       const release = await response.json();
       const latestVersion = (release.tag_name || '').replace(/^v/, '');
-      const currentVersion = '1.1.0'; // from package.json
+      const currentVersion = appVersion;
       if (latestVersion && latestVersion !== currentVersion) {
         setMessage({ type: 'success', text: `New version ${latestVersion} available! Visit GitHub to download.` });
       } else {
@@ -657,8 +583,6 @@ const SettingsPage: React.FC = () => {
         return renderNotificationSettings();
       case 'system':
         return renderSystemSettings();
-      case 'hotkeys':
-        return renderHotkeySettings();
       case 'about':
         return renderAboutSettings();
       default:
@@ -1359,26 +1283,6 @@ const SettingsPage: React.FC = () => {
     );
   }
 
-  function renderHotkeySettings() {
-    return (
-      <>
-        <div className="settings-category-header">
-          <h1 className="settings-category-title">Keyboard Shortcuts</h1>
-          <p className="settings-category-subtitle">Customize keyboard hotkeys</p>
-        </div>
-
-        <div className="settings-group">
-          <h3 className="settings-group-title">HOTKEYS</h3>
-          <HotkeySettings
-            hotkeys={hotkeys}
-            onHotkeyChange={handleHotkeyChange}
-            onResetHotkeys={handleResetHotkeys}
-          />
-        </div>
-      </>
-    );
-  }
-
   function renderAboutSettings() {
     return (
       <>
@@ -1389,10 +1293,10 @@ const SettingsPage: React.FC = () => {
 
         <div className="about-section">
           <div className="about-app">
-            <div className="about-icon">🔍</div>
+            <div className="about-icon"><Icon name="download" size={28} /></div>
             <div className="about-info-text">
               <h2 className="about-app-name">TorrentHunt</h2>
-              <p className="about-version">Version 1.0.0</p>
+              <p className="about-version">Version {appVersion || '—'}</p>
               <p className="about-description">
                 A desktop torrent client focused on legal open-source software distribution.
               </p>

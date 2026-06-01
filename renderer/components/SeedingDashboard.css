@@ -3,9 +3,6 @@
  */
 
 .seeding-dashboard {
-  padding: 32px;
-  max-width: 1400px;
-  margin: 0 auto;
   animation: fadeIn 0.3s ease;
 }
 
@@ -34,51 +31,115 @@
 
 /* Header */
 .dashboard-header {
-  margin-bottom: 32px;
+  margin-bottom: 24px;
 }
 
-.dashboard-header h1 {
-  font-size: 32px;
-  font-weight: 700;
+.dashboard-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.dashboard-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 18px;
+  font-weight: 600;
   color: var(--color-text-primary);
-  margin-bottom: 8px;
+  margin: 0 0 4px;
 }
 
 .dashboard-subtitle {
-  font-size: 16px;
+  font-size: 13px;
   color: var(--color-text-secondary);
-  margin-bottom: 16px;
+  margin: 0;
 }
 
 .enable-toggle {
-  margin-top: 16px;
-}
-
-.enable-toggle label {
   display: flex;
   align-items: center;
-  gap: 12px;
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--color-text-primary);
-  cursor: pointer;
-  user-select: none;
+  gap: 10px;
+  flex-shrink: 0;
 }
 
-.enable-toggle input[type="checkbox"] {
-  width: 20px;
-  height: 20px;
-  cursor: pointer;
+.enable-status {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.enable-status.on { color: var(--color-text-primary); }
+.enable-status.off { color: var(--color-text-tertiary); }
+
+.seeding-disabled-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 10px 14px;
+  background: var(--color-accent-bg);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.seeding-disabled-banner svg {
+  flex-shrink: 0;
+  color: var(--color-text-primary);
+}
+
+/* "Local Beta" badge next to the title */
+.dashboard-badge {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent-bg);
+  border: 1px solid var(--color-border-strong);
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+}
+
+/* "Coming soon" notice about the network-sync part */
+.seeding-soon-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: var(--color-bg-secondary);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-tertiary);
+}
+
+.seeding-soon-banner svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--color-text-secondary);
+}
+
+.seeding-soon-banner strong {
+  color: var(--color-text-secondary);
+  font-weight: 600;
 }
 
 /* Reputation Card */
 .reputation-card {
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(139, 92, 246, 0.1));
-  border: 1px solid rgba(59, 130, 246, 0.2);
-  border-radius: 16px;
-  padding: 32px;
-  margin-bottom: 32px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  margin-bottom: 24px;
 }
 
 .reputation-header {
@@ -89,8 +150,8 @@
 }
 
 .reputation-header h2 {
-  font-size: 24px;
-  font-weight: 700;
+  font-size: 16px;
+  font-weight: 600;
   color: var(--color-text-primary);
 }
 
@@ -98,23 +159,25 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-  padding: 16px 24px;
-  border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+  background: var(--color-accent-primary);
+  padding: 12px 20px;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-glow-sm);
 }
 
 .level-number {
-  font-size: 48px;
+  font-size: 40px;
   font-weight: 800;
-  color: white;
+  /* Contrast against the monochrome accent fill (white in dark, black in light) */
+  color: var(--color-bg-primary);
   line-height: 1;
 }
 
 .level-label {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--color-bg-primary);
+  opacity: 0.7;
   text-transform: uppercase;
   letter-spacing: 1px;
 }
@@ -132,10 +195,10 @@
 }
 
 .stat-value {
-  font-size: 32px;
+  font-size: 26px;
   font-weight: 700;
   color: var(--color-text-primary);
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .stat-label {
@@ -193,7 +256,7 @@
 
 .badge-item.earned {
   border-color: #22c55e;
-  background: linear-gradient(135deg, rgba(34, 197, 94, 0.1), rgba(74, 222, 128, 0.1));
+  background: rgba(34, 197, 94, 0.08);
 }
 
 .badge-item.locked {
@@ -202,7 +265,7 @@
 }
 
 .badge-icon {
-  font-size: 48px;
+  font-size: 32px;
   margin-bottom: 8px;
 }
 
@@ -213,22 +276,30 @@
   text-align: center;
 }
 
-/* Recommendations Section */
-.recommendations-section {
-  margin-bottom: 32px;
+/* Section headers (shared) */
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0 0 8px;
 }
 
-.recommendations-section h2 {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--color-text-primary);
-  margin-bottom: 8px;
+.section-title svg {
+  color: var(--color-text-tertiary);
+}
+
+/* Recommendations Section */
+.recommendations-section {
+  margin-bottom: 24px;
 }
 
 .section-subtitle {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--color-text-secondary);
-  margin-bottom: 24px;
+  margin: 0 0 16px;
 }
 
 .recommendations-list {
@@ -245,8 +316,8 @@
 }
 
 .recommendation-card:hover {
-  border-color: var(--color-accent-primary);
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-sm);
 }
 
 .rec-header {
@@ -327,14 +398,11 @@
 
 /* Transactions Section */
 .transactions-section {
-  margin-bottom: 32px;
+  margin-bottom: 8px;
 }
 
-.transactions-section h2 {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--color-text-primary);
-  margin-bottom: 24px;
+.transactions-section .section-title {
+  margin-bottom: 16px;
 }
 
 .transactions-list {
@@ -411,9 +479,9 @@
 }
 
 .tx-badge-bonus {
-  background: rgba(59, 130, 246, 0.1);
-  color: #3b82f6;
-  border: 1px solid rgba(59, 130, 246, 0.2);
+  background: var(--color-accent-bg);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border-strong);
 }
 
 .tx-badge-spend {

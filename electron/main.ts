@@ -409,10 +409,15 @@ async function initializeApp(): Promise<void> {
   await createWindow();
   logger.info('App', 'Main window created.');
 
-  // Apply auto-launch setting
+  // Apply auto-launch setting (registered as "TorrentHunt", not electron.exe)
   const settings = store.get('settings') as any;
   if (settings?.autoLaunch !== undefined) {
-    app.setLoginItemSettings({ openAtLogin: settings.autoLaunch });
+    app.setLoginItemSettings({
+      openAtLogin: settings.autoLaunch,
+      openAsHidden: settings.autoLaunch,
+      name: 'TorrentHunt',
+      path: process.execPath,
+    });
   }
 
   // Initialize IP blocklist (load from store, apply to client)

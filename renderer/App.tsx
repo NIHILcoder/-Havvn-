@@ -97,31 +97,15 @@ const AppContent: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
-  // Global hotkeys handler
+  // Global navigation shortcuts (fixed, layout-independent via event.code)
   useEffect(() => {
-    // Load hotkeys from localStorage
-    const loadHotkeys = () => {
-      try {
-        const saved = localStorage.getItem('hotkeys');
-        return saved ? JSON.parse(saved) : null;
-      } catch {
-        return null;
-      }
-    };
-
-    const savedHotkeys = loadHotkeys();
-
-    // Default hotkeys (using event.code for keyboard layout independence)
-    const defaultHotkeysMap = {
+    const hotkeysMap: Record<string, string[]> = {
       'open-downloads': ['Ctrl', 'KeyD'],
       'open-catalog': ['Ctrl', 'KeyK'],
       'open-settings': ['Ctrl', 'Comma'],
       'add-torrent': ['Ctrl', 'KeyO'],
       'create-torrent': ['Ctrl', 'KeyN'],
     };
-
-    // Merge with saved hotkeys
-    const hotkeysMap = savedHotkeys || defaultHotkeysMap;
 
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       // Don't trigger hotkeys when typing in input fields

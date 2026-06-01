@@ -139,8 +139,11 @@ export async function createTorrentFile(
     pieceCount: Math.ceil(totalSize / pieceLength),
   });
 
-  // Prepare input - use single path for now (most common case)
-  const input = sourcePaths[0];
+  // Prepare input. A single path (file or folder) is passed as-is; multiple
+  // selected files are passed as an array so they all go into one multi-file
+  // torrent (WebTorrent's seed() accepts an array of paths).
+  const input: string | string[] = sourcePaths.length === 1 ? sourcePaths[0] : sourcePaths;
+  const primaryPath = sourcePaths[0];
 
   // Send initial progress
   sendProgress(mainWindow, {
@@ -174,7 +177,7 @@ export async function createTorrentFile(
 
     // Seed options
     const seedOpts = {
-      name: options.name || path.basename(input),
+      name: options.name || path.basename(primaryPath),
       comment: options.comment,
       createdBy: options.createdBy || 'TorrentHunt',
       announce,

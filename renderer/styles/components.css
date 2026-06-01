@@ -37,51 +37,52 @@
 
 /* Primary Button — Animated B&W Border */
 .btn-primary {
-  background: transparent;
+  background: #141416;
   color: #FFFFFF;
   border: none;
   position: relative;
   overflow: hidden;
   z-index: 1;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  transition: background var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
 }
 
+/* Animated border: one continuous gradient ring confined to the border by a
+   mask, so the strip is whole on every side and corner (no breaks). The conic
+   gradient is symmetric at the 0deg/360deg wrap (equal alpha) to avoid a seam;
+   a single bright segment peaks at 180deg and glides around as --btn-angle spins. */
 .btn-primary::before {
   content: '';
   position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 300%;
-  height: 300%;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
   background: conic-gradient(
-    from 0deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.8) 10%,
-    transparent 20%,
-    transparent 50%,
-    rgba(255, 255, 255, 0.8) 60%,
-    transparent 70%
+    from var(--btn-angle),
+    rgba(255, 255, 255, 0.14) 0deg,
+    rgba(255, 255, 255, 0.14) 70deg,
+    rgba(255, 255, 255, 0.55) 140deg,
+    rgba(255, 255, 255, 1) 180deg,
+    rgba(255, 255, 255, 0.55) 220deg,
+    rgba(255, 255, 255, 0.14) 290deg,
+    rgba(255, 255, 255, 0.14) 360deg
   );
-  animation: borderRotate 3s linear infinite;
-  z-index: -2;
-  transform-origin: center center;
-}
-
-.btn-primary::after {
-  content: '';
-  position: absolute;
-  inset: 1.5px;
-  background: #141416;
-  border-radius: 7px;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  animation: btnBorderSpin 6s linear infinite;
+  pointer-events: none;
   z-index: -1;
-  transition: background var(--transition-fast);
 }
 
-.btn-primary:hover:not(:disabled)::after {
-  background: #1C1C1F;
+@media (prefers-reduced-motion: reduce) {
+  .btn-primary::before { animation: none; }
 }
 
 .btn-primary:hover:not(:disabled) {
+  background: #1C1C1F;
   box-shadow: 0 4px 16px rgba(255, 255, 255, 0.12);
   transform: translateY(-1px);
 }
@@ -90,12 +91,17 @@
   transform: translateY(0) scale(0.98);
 }
 
-@keyframes borderRotate {
-  0% {
-    transform: translate(-50%, -50%) rotate(0deg);
-  }
-  100% {
-    transform: translate(-50%, -50%) rotate(360deg);
+/* Registering the custom property lets the keyframe interpolate the angle
+   smoothly (otherwise it would jump 0->360 instead of rotating). */
+@property --btn-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes btnBorderSpin {
+  to {
+    --btn-angle: 360deg;
   }
 }
 
@@ -389,39 +395,9 @@
   background: var(--color-status-queued);
 }
 
-/* === Toggle Switch === */
-.toggle-switch {
-  position: relative;
-  width: 40px;
-  height: 22px;
-  background: var(--color-bg-tertiary);
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-full);
-  cursor: pointer;
-  transition: all var(--transition-normal);
-  flex-shrink: 0;
-}
-
-.toggle-switch.active {
-  background: var(--gradient-primary);
-  border-color: transparent;
-}
-
-.toggle-slider {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 16px;
-  height: 16px;
-  background: #fff;
-  border-radius: 50%;
-  transition: transform var(--transition-spring);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-}
-
-.toggle-switch.active .toggle-slider {
-  transform: translateX(18px);
-}
+/* Toggle switch styles live in Toggle.css (component) and SettingsPage.css
+   (inline settings toggles). The old global definition was removed because it
+   conflicted with those (forcing a 40x22 size and offset knob). */
 
 /* === Cards === */
 .card {
@@ -639,9 +615,8 @@
   padding: var(--space-6) var(--space-8);
 }
 
-.settings-content-inner {
-  max-width: var(--settings-content-max-width);
-}
+/* Width/padding for .settings-content-inner is owned by SettingsPage.css.
+   (The old 840px cap here squeezed the content on wide screens.) */
 
 .settings-category-header {
   margin-bottom: var(--space-6);

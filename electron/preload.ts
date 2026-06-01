@@ -1,4 +1,9 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
+
+// webUtils was added in Electron 30; the bundled type defs for older versions
+// don't declare it, so access it defensively without a typed named import.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { webUtils } = require('electron') as { webUtils?: { getPathForFile(file: File): string } };
 import {
   AddDownloadRequest,
   Download,
@@ -204,6 +209,10 @@ const api: IpcApi = {
     return ipcRenderer.invoke('seeding:enable', enabled);
   },
 
+  isCollaborativeSeedingEnabled: () => {
+    return ipcRenderer.invoke('seeding:isEnabled');
+  },
+
   // Privacy & Security
   getPrivacyConfig: () => {
     return ipcRenderer.invoke('privacy:getConfig');
@@ -254,6 +263,11 @@ const api: IpcApi = {
     return ipcRenderer.invoke('app:setMinimizeToTray', enabled);
   },
 
+  // App version (from package.json via Electron)
+  getAppVersion: (): Promise<string> => {
+    return ipcRenderer.invoke('app:getVersion');
+  },
+
   // Default client
   isDefaultClient: (): Promise<boolean> => {
     return ipcRenderer.invoke('app:isDefaultClient');
@@ -281,6 +295,20 @@ const api: IpcApi = {
 
   notifyReady: (): void => {
     ipcRenderer.send('app:rendererReady');
+  },
+
+  // Resolve the absolute filesystem path of a dropped/selected File.
+  // Electron >=30 exposes webUtils.getPathForFile; older versions still carry the
+  // legacy File.path. Use whichever exists so drag & drop works across versions.
+  getPathForFile: (file: File): string => {
+    try {
+      if (webUtils && typeof webUtils.getPathForFile === 'function') {
+        return webUtils.getPathForFile(file);
+      }
+    } catch {
+      /* fall through to legacy File.path */
+    }
+    return (file as unknown as { path?: string }).path || '';
   },
 
   onPauseAll: (callback: () => void): (() => void) => {

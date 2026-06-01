@@ -4,7 +4,7 @@
  * Main navigation sidebar with expandable Downloads submenu for filters.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Icon, IconName } from '../components';
 import { useTranslation } from '../utils/i18nContext';
 
@@ -52,6 +52,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const { t } = useTranslation();
   const [isDownloadsExpanded, setIsDownloadsExpanded] = useState(currentPage === 'downloads');
+  const [appVersion, setAppVersion] = useState('');
+
+  useEffect(() => {
+    window.api.getAppVersion().then(setAppVersion).catch(() => {});
+  }, []);
 
   const navItems: NavItem[] = [
     { id: 'downloads', label: t('nav.downloads'), icon: 'download', hasSubmenu: true },
@@ -165,7 +170,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
         
         <div className="sidebar-version">
-          TorrentHunt v1.3.5
+          TorrentHunt{appVersion ? ` v${appVersion}` : ''}
         </div>
       </div>
     </aside>

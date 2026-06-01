@@ -59,32 +59,37 @@
 }
 
 .toggle-switch.active {
-  background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
-  border-color: #3b82f6;
-  box-shadow: 
+  background: var(--color-accent-primary);
+  border-color: var(--color-accent-primary);
+  box-shadow:
     inset 0 1px 2px rgba(0, 0, 0, 0.1),
-    0 0 0 3px rgba(96, 165, 250, 0.15),
-    0 2px 8px rgba(59, 130, 246, 0.3);
+    0 0 0 3px var(--color-accent-bg),
+    0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 .toggle-switch.active:not(.disabled):hover {
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  background: var(--color-accent-primary-hover);
   transform: translateY(-1px);
-  box-shadow: 
+  box-shadow:
     inset 0 1px 2px rgba(0, 0, 0, 0.15),
-    0 0 0 3px rgba(96, 165, 250, 0.2),
-    0 4px 12px rgba(59, 130, 246, 0.35);
+    0 0 0 3px var(--color-accent-bg),
+    0 4px 12px rgba(0, 0, 0, 0.35);
 }
 
-/* Slider */
+/* Slider — vertically centered via top:50%/translateY so the knob is always
+   perfectly aligned regardless of border-box math. Horizontal position is
+   driven by the --x custom property (0 when off, computed when active). */
 .toggle-slider {
   position: absolute;
-  top: 2px;
+  top: 50%;
   left: 2px;
+  --x: 0px;
   background: linear-gradient(135deg, #ffffff 0%, #f9fafb 100%);
   border-radius: 50%;
-  transition: all 250ms cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 
+  transition: transform 250ms cubic-bezier(0.4, 0, 0.2, 1),
+              background 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  transform: translate(var(--x), -50%);
+  box-shadow:
     0 2px 4px rgba(0, 0, 0, 0.2),
     0 1px 2px rgba(0, 0, 0, 0.1),
     inset 0 -1px 1px rgba(0, 0, 0, 0.05);
@@ -92,6 +97,8 @@
   user-select: none;
 }
 
+/* Travel distance = track width - knob - 2*(border+gap). Each variant: track,
+   knob, gap(2) → x = track - knob - 8. small:40-16-8=16, medium:52-20-8=24, large:64-26-8=30 */
 .toggle-switch.small .toggle-slider {
   width: 16px;
   height: 16px;
@@ -108,20 +115,21 @@
 }
 
 .toggle-switch.small.active .toggle-slider {
-  transform: translateX(18px);
+  --x: 16px;
 }
 
 .toggle-switch.medium.active .toggle-slider {
-  transform: translateX(24px);
+  --x: 24px;
 }
 
 .toggle-switch.large.active .toggle-slider {
-  transform: translateX(30px);
+  --x: 30px;
 }
 
 .toggle-switch.active .toggle-slider {
-  background: linear-gradient(135deg, #ffffff 0%, #fefefe 100%);
-  box-shadow: 
+  /* Knob contrasts against the monochrome accent track (white in dark, black in light) */
+  background: var(--color-bg-elevated);
+  box-shadow:
     0 3px 6px rgba(0, 0, 0, 0.25),
     0 2px 4px rgba(0, 0, 0, 0.15),
     inset 0 -1px 2px rgba(0, 0, 0, 0.08);
@@ -130,39 +138,14 @@
 /* Focus state */
 .toggle-switch:focus-visible {
   outline: none;
-  box-shadow: 
-    0 0 0 3px rgba(96, 165, 250, 0.4),
-    inset 0 2px 4px rgba(0, 0, 0, 0.1),
-    0 2px 4px rgba(0, 0, 0, 0.08);
+  box-shadow:
+    var(--shadow-focus),
+    inset 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-/* Active (pressed) state */
+/* Pressed feedback: a subtle knob shrink (keeps the centered transform intact) */
 .toggle-switch:not(.disabled):active .toggle-slider {
-  width: calc(100% - 24px);
-}
-
-.toggle-switch.small:not(.disabled):active .toggle-slider {
-  width: 20px;
-}
-
-.toggle-switch.medium:not(.disabled):active .toggle-slider {
-  width: 24px;
-}
-
-.toggle-switch.large:not(.disabled):active .toggle-slider {
-  width: 30px;
-}
-
-.toggle-switch.small.active:not(.disabled):active .toggle-slider {
-  transform: translateX(14px);
-}
-
-.toggle-switch.medium.active:not(.disabled):active .toggle-slider {
-  transform: translateX(20px);
-}
-
-.toggle-switch.large.active:not(.disabled):active .toggle-slider {
-  transform: translateX(24px);
+  transform: translate(var(--x), -50%) scale(0.9);
 }
 
 /* Label */
