@@ -350,7 +350,44 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): void {
       }
     }
   ));
-  
+
+  // Build a real (recursive) file tree for the given source paths, used by the
+  // Create Torrent file picker so the user can exclude individual files.
+  ipcMain.handle('fs:getFileTree', wrapHandler('fs:getFileTree',
+    async (_event, sourcePaths: string[]) => {
+      const MAX_ENTRIES = 5000; // guard against gigantic trees
+      let count = 0;
+
+      const build = async (p: string): Promise<import('../../shared/types').FsFileNode | null> => {
+        if (count >= MAX_ENTRIES) return null;
+        const stats = await fs.stat(p);
+        if (stats.isDirectory()) {
+          const entries = await fs.readdir(p, { withFileTypes: true });
+          const children: import('../../shared/types').FsFileNode[] = [];
+          let dirSize = 0;
+          for (const entry of entries) {
+            if (count >= MAX_ENTRIES) break;
+            const child = await build(path.join(p, entry.name));
+            if (child) {
+              children.push(child);
+              dirSize += child.size;
+            }
+          }
+          return { path: p, name: path.basename(p), size: dirSize, isDirectory: true, children };
+        }
+        count++;
+        return { path: p, name: path.basename(p), size: stats.size, isDirectory: false };
+      };
+
+      const roots: import('../../shared/types').FsFileNode[] = [];
+      for (const sp of sourcePaths) {
+        const node = await build(sp);
+        if (node) roots.push(node);
+      }
+      return roots;
+    }
+  ));
+
   // Select files for torrent creation
   ipcMain.handle('dialog:selectFilesForTorrent', wrapHandler('dialog:selectFilesForTorrent',
     async () => {

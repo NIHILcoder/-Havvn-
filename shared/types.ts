@@ -194,6 +194,16 @@ export interface CreateTorrentRequest {
   outputPath: string; // Where to save .torrent file
   options: CreateTorrentOptions;
   startSeeding?: boolean; // Auto-start seeding after creation
+  excludePaths?: string[]; // Absolute file paths to exclude from the torrent
+}
+
+// A node in the real (recursive) file tree returned by fs:getFileTree
+export interface FsFileNode {
+  path: string;        // absolute path
+  name: string;
+  size: number;
+  isDirectory: boolean;
+  children?: FsFileNode[];
 }
 
 export interface CreateTorrentResult {
@@ -398,6 +408,10 @@ export interface IpcApi {
   setAutoLaunch: (enabled: boolean) => Promise<{ success: boolean }>;
   setCloseToTray: (enabled: boolean) => Promise<{ success: boolean }>;
   setMinimizeToTray: (enabled: boolean) => Promise<{ success: boolean }>;
+  // Auto-update
+  checkForUpdates: () => Promise<{ ok: boolean; reason?: string }>;
+  quitAndInstallUpdate: () => Promise<{ ok: boolean }>;
+  onUpdateStatus: (callback: (status: { kind: string; [k: string]: unknown }) => void) => () => void;
   getAppVersion: () => Promise<string>;
   isDefaultClient: () => Promise<boolean>;
   setDefaultClient: () => Promise<{ success: boolean }>;
@@ -429,6 +443,7 @@ export interface IpcApi {
     fileCount: number;
     name: string;
   }>;
+  getFileTree: (sourcePaths: string[]) => Promise<FsFileNode[]>;
 
   // Shell operations
   openPath: (path: string) => Promise<void>;

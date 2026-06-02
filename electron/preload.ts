@@ -136,6 +136,10 @@ const api: IpcApi = {
     return ipcRenderer.invoke('fs:getPathInfo', path);
   },
 
+  getFileTree: (sourcePaths: string[]) => {
+    return ipcRenderer.invoke('fs:getFileTree', sourcePaths);
+  },
+
   // Shell operations
   openPath: (path: string): Promise<void> => {
     return ipcRenderer.invoke('shell:openPath', path);
@@ -269,6 +273,21 @@ const api: IpcApi = {
 
   setMinimizeToTray: (enabled: boolean): Promise<{ success: boolean }> => {
     return ipcRenderer.invoke('app:setMinimizeToTray', enabled);
+  },
+
+  // Auto-update
+  checkForUpdates: (): Promise<{ ok: boolean; reason?: string }> => {
+    return ipcRenderer.invoke('app:checkForUpdates');
+  },
+
+  quitAndInstallUpdate: (): Promise<{ ok: boolean }> => {
+    return ipcRenderer.invoke('app:quitAndInstall');
+  },
+
+  onUpdateStatus: (callback: (status: { kind: string; [k: string]: unknown }) => void): (() => void) => {
+    const handler = (_e: IpcRendererEvent, status: { kind: string }) => callback(status);
+    ipcRenderer.on('app:updateStatus', handler);
+    return () => { ipcRenderer.removeListener('app:updateStatus', handler); };
   },
 
   // App version (from package.json via Electron)

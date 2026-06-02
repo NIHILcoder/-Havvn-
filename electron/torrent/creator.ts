@@ -82,7 +82,7 @@ function getTotalSize(paths: string[]): number {
 function getDirSize(dirPath: string): number {
   let size = 0;
   const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-  
+
   for (const entry of entries) {
     const fullPath = path.join(dirPath, entry.name);
     if (entry.isDirectory()) {
@@ -91,8 +91,35 @@ function getDirSize(dirPath: string): number {
       size += fs.statSync(fullPath).size;
     }
   }
-  
+
   return size;
+}
+
+/**
+ * Recursively collect absolute file paths under `p`, skipping any path in
+ * `exclude` (matched by resolved absolute path). Used to honor per-file
+ * exclusions from the Create Torrent file tree.
+ */
+function collectFiles(p: string, exclude: Set<string>, out: string[]): void {
+  const resolved = path.resolve(p);
+  if (exclude.has(resolved)) return;
+  const stat = fs.statSync(p);
+  if (stat.isDirectory()) {
+    for (const entry of fs.readdirSync(p, { withFileTypes: true })) {
+      collectFiles(path.join(p, entry.name), exclude, out);
+    }
+  } else if (stat.isFile()) {
+    out.push(p);
+  }
+}
+
+/** Size of a single file, 0 on error. */
+function safeSize(p: string): number {
+  try {
+    return fs.statSync(p).size;
+  } catch {
+    return 0;
+  }
 }
 
 /**
@@ -115,10 +142,12 @@ export async function createTorrentFile(
   mainWindow: BrowserWindow | null = null
 ): Promise<CreateTorrentResult> {
   const { sourcePaths, outputPath, options } = request;
+  const excludeSet = new Set((request.excludePaths || []).map(p => path.resolve(p)));
 
   log.info('Creating torrent', {
     sourcePaths,
     outputPath,
+    excluded: excludeSet.size,
     options: { ...options, announceList: `${options.announceList.length} trackers` },
   });
 
@@ -129,27 +158,50 @@ export async function createTorrentFile(
     }
   }
 
-  // Calculate total size and optimal piece length
-  const totalSize = getTotalSize(sourcePaths);
+  // Stage 1: scanning — resolve what actually goes into the torrent.
+  sendProgress(mainWindow, { stage: 'hashing', progress: 0.05, message: 'Scanning files...' });
+
+  // Build the concrete file list, honoring exclusions. When nothing is excluded
+  // and a single folder is selected we pass the folder path directly (preserves
+  // the folder name as the torrent root). Otherwise we expand to a flat file
+  // list minus excluded paths.
+  const primaryPath = sourcePaths[0];
+  let input: string | string[];
+  let usingFolderRoot = false;
+
+  if (excludeSet.size === 0 && sourcePaths.length === 1) {
+    input = sourcePaths[0];
+    usingFolderRoot = fs.statSync(sourcePaths[0]).isDirectory();
+  } else {
+    const files: string[] = [];
+    for (const sp of sourcePaths) {
+      collectFiles(sp, excludeSet, files);
+    }
+    if (files.length === 0) {
+      throw new Error('No files to include — everything was excluded.');
+    }
+    input = files;
+  }
+
+  // Calculate total size (of included files) and optimal piece length
+  const totalSize = Array.isArray(input)
+    ? input.reduce((sum, f) => sum + safeSize(f), 0)
+    : getTotalSize([input]);
   const pieceLength = options.pieceLength || calculatePieceLength(totalSize);
 
   log.debug('Calculated sizes', {
     totalSize,
     pieceLength,
     pieceCount: Math.ceil(totalSize / pieceLength),
+    fileCount: Array.isArray(input) ? input.length : undefined,
+    usingFolderRoot,
   });
 
-  // Prepare input. A single path (file or folder) is passed as-is; multiple
-  // selected files are passed as an array so they all go into one multi-file
-  // torrent (WebTorrent's seed() accepts an array of paths).
-  const input: string | string[] = sourcePaths.length === 1 ? sourcePaths[0] : sourcePaths;
-  const primaryPath = sourcePaths[0];
-
-  // Send initial progress
+  // Stage 2: hashing begins
   sendProgress(mainWindow, {
     stage: 'hashing',
-    progress: 0,
-    message: 'Preparing files for hashing...',
+    progress: 0.15,
+    message: 'Hashing files...',
   });
 
   // Flatten announce list for WebTorrent
@@ -162,22 +214,29 @@ export async function createTorrentFile(
     // Create a temporary WebTorrent client for seeding
     const client = new WebTorrent({ utp: false } as any);
 
-    // Simulate progress updates during hashing
-    let lastProgress = 0;
+    // create-torrent (used by WebTorrent.seed) doesn't expose hashing progress,
+    // so we estimate it from total size at a conservative hash rate. This is an
+    // ETA-based estimate, not a fake fixed ramp — it tracks real elapsed time
+    // and is capped below 100% until hashing actually completes.
+    const HASH_BYTES_PER_SEC = 80 * 1024 * 1024; // ~80 MB/s, conservative
+    const estMs = Math.max(800, (totalSize / HASH_BYTES_PER_SEC) * 1000);
+    const startedAt = Date.now();
+    const HASH_FLOOR = 0.15;   // where hashing stage starts
+    const HASH_CEIL = 0.9;     // never claim done until the callback fires
     const progressInterval = setInterval(() => {
-      if (lastProgress < 0.85) {
-        lastProgress += 0.05;
-        sendProgress(mainWindow, {
-          stage: 'hashing',
-          progress: lastProgress,
-          message: `Hashing files... ${Math.round(lastProgress * 100)}%`,
-        });
-      }
-    }, 300);
+      const elapsed = Date.now() - startedAt;
+      const frac = Math.min(1, elapsed / estMs);
+      const progress = HASH_FLOOR + (HASH_CEIL - HASH_FLOOR) * frac;
+      sendProgress(mainWindow, {
+        stage: 'hashing',
+        progress,
+        message: 'Hashing files...',
+      });
+    }, 250);
 
     // Seed options
     const seedOpts = {
-      name: options.name || path.basename(primaryPath),
+      name: options.name || (usingFolderRoot ? path.basename(primaryPath) : undefined),
       comment: options.comment,
       createdBy: options.createdBy || 'TorrentHunt',
       announce,

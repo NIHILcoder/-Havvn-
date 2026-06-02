@@ -1,0 +1,121 @@
+/**
+ * Auto-updater (electron-updater + GitHub releases)
+ *
+ * - Only runs in a packaged build (electron-updater can't work in dev).
+ * - If AppSettings.autoUpdate is on, checks on startup and downloads silently,
+ *   then installs on quit (or prompts).
+ * - Always supports a manual "Check for updates" trigger from Settings.
+ * - Streams status to the renderer via 'app:updateStatus' so the UI can show
+ *   progress / "update ready" without a fake GitHub-API check.
+ */
+
+import { app, BrowserWindow, ipcMain } from 'electron';
+import { autoUpdater } from 'electron-updater';
+import { logger } from './logger';
+import * as db from '../db/store';
+
+const log = logger.child('AutoUpdater');
+
+export type UpdateStatusKind =
+  | 'checking' | 'available' | 'not-available' | 'downloading'
+  | 'downloaded' | 'error' | 'dev-disabled';
+
+let mainWindowRef: BrowserWindow | null = null;
+let wired = false;
+
+function send(kind: UpdateStatusKind, payload: Record<string, unknown> = {}): void {
+  if (mainWindowRef && !mainWindowRef.isDestroyed()) {
+    mainWindowRef.webContents.send('app:updateStatus', { kind, ...payload });
+  }
+}
+
+export async function initAutoUpdater(mainWindow: BrowserWindow): Promise<void> {
+  mainWindowRef = mainWindow;
+
+  // Manual check from the UI — always available, even when auto-update is off.
+  if (!wired) {
+    wired = true;
+    ipcMain.handle('app:checkForUpdates', async () => {
+      if (!app.isPackaged) {
+        send('dev-disabled');
+        return { ok: false, reason: 'dev' };
+      }
+      try {
+        send('checking');
+        await autoUpdater.checkForUpdates();
+        return { ok: true };
+      } catch (e) {
+        log.error('Manual update check failed', { error: e instanceof Error ? e.message : String(e) });
+        send('error', { message: e instanceof Error ? e.message : String(e) });
+        return { ok: false, reason: 'error' };
+      }
+    });
+
+    // Trigger install of an already-downloaded update
+    ipcMain.handle('app:quitAndInstall', async () => {
+      try {
+        autoUpdater.quitAndInstall();
+        return { ok: true };
+      } catch (e) {
+        log.error('quitAndInstall failed', { error: e instanceof Error ? e.message : String(e) });
+        return { ok: false };
+      }
+    });
+  }
+
+  if (!app.isPackaged) {
+    log.info('Auto-updater disabled in dev build');
+    return;
+  }
+
+  // Don't auto-download; we decide based on the setting.
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.logger = {
+    info: (m: unknown) => log.info(String(m)),
+    warn: (m: unknown) => log.warn(String(m)),
+    error: (m: unknown) => log.error(String(m)),
+    debug: (m: unknown) => log.debug(String(m)),
+  } as any;
+
+  autoUpdater.on('checking-for-update', () => send('checking'));
+  autoUpdater.on('update-available', (info) => {
+    send('available', { version: info.version });
+    // Auto-download only when the user enabled auto-update
+    void db.getSettings().then((s) => {
+      if (s.autoUpdate) {
+        log.info('Auto-update on — downloading', { version: info.version });
+        autoUpdater.downloadUpdate().catch((e) => {
+          send('error', { message: e instanceof Error ? e.message : String(e) });
+        });
+      }
+    });
+  });
+  autoUpdater.on('update-not-available', () => send('not-available'));
+  autoUpdater.on('download-progress', (p) => {
+    send('downloading', { percent: Math.round(p.percent), bytesPerSecond: p.bytesPerSecond });
+  });
+  autoUpdater.on('update-downloaded', (info) => {
+    log.info('Update downloaded', { version: info.version });
+    send('downloaded', { version: info.version });
+  });
+  autoUpdater.on('error', (err) => {
+    log.error('Updater error', { error: err == null ? 'unknown' : String(err) });
+    send('error', { message: err == null ? 'unknown' : String((err as Error).message || err) });
+  });
+
+  // On startup: if auto-update is enabled, check (download is triggered by the
+  // 'update-available' handler above). A short delay lets the app settle.
+  try {
+    const settings = await db.getSettings();
+    if (settings.autoUpdate) {
+      setTimeout(() => {
+        autoUpdater.checkForUpdates().catch((e) => {
+          log.warn('Startup update check failed', { error: e instanceof Error ? e.message : String(e) });
+        });
+      }, 8000);
+    }
+  } catch {
+    /* ignore */
+  }
+}

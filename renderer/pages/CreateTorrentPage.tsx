@@ -161,16 +161,22 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
         setSourceSize(totalSize);
         setSourceFileCount(totalFiles);
         setFileList(files);
-        
-        // Build simple file tree (for display purposes)
-        const tree: FileNode[] = files.map(file => ({
-          path: file.path,
-          name: file.name,
-          size: file.size,
-          isDirectory: sourceMode === 'folder',
-          children: [] // In a real implementation, this would be populated with actual file structure
-        }));
-        setFileTree(tree);
+
+        // Build the REAL recursive file tree so the user can exclude individual
+        // files (not just top-level items).
+        try {
+          const tree = await window.api.getFileTree(sourcePaths);
+          setFileTree(tree as FileNode[]);
+        } catch (treeErr) {
+          console.error('Failed to build file tree:', treeErr);
+          // Fallback: flat top-level nodes
+          setFileTree(files.map(file => ({
+            path: file.path, name: file.name, size: file.size,
+            isDirectory: sourceMode === 'folder', children: [],
+          })));
+        }
+        // Reset exclusions whenever the source changes
+        setExcludedPaths(new Set());
       } catch (err) {
         console.error('Failed to get path info:', err);
       }
@@ -338,6 +344,7 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
         outputPath,
         options,
         startSeeding,
+        excludePaths: excludedPaths.size > 0 ? Array.from(excludedPaths) : undefined,
       });
 
       setResult(createResult);
@@ -362,7 +369,7 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
       setStage('setup');
       addToast(errorMessage, 'error');
     }
-  }, [sourcePaths, name, comment, createdBy, trackers, webSeeds, isPrivate, pieceLength, startSeeding, addToast]);
+  }, [sourcePaths, name, comment, createdBy, trackers, webSeeds, isPrivate, pieceLength, startSeeding, excludedPaths, addToast]);
 
   // Copy magnet link
   const handleCopyMagnet = useCallback(() => {

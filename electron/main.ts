@@ -448,6 +448,16 @@ async function initializeApp(): Promise<void> {
     logger.error('App', 'Failed to init disk guard', { error: e });
   }
 
+  // Initialize the auto-updater (no-op in dev; respects the autoUpdate setting)
+  try {
+    if (mainWindow) {
+      const { initAutoUpdater } = await import('./utils/auto-updater');
+      await initAutoUpdater(mainWindow);
+    }
+  } catch (e) {
+    logger.error('App', 'Failed to init auto-updater', { error: e });
+  }
+
   // Apply auto-launch setting (registered as "TorrentHunt", not electron.exe)
   const settings = store.get('settings') as any;
   if (settings?.autoLaunch !== undefined) {

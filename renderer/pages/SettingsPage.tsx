@@ -32,6 +32,8 @@ const SettingsPage: React.FC = () => {
 
   // App version (single source of truth: package.json via Electron)
   const [appVersion, setAppVersion] = useState('');
+  // Set when an update has been downloaded and is ready to install
+  const [updateReady, setUpdateReady] = useState<string | null>(null);
 
   // Settings state
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -154,6 +156,37 @@ const SettingsPage: React.FC = () => {
       return () => clearTimeout(timer);
     }
   }, [message]);
+
+  // Live auto-update status from the main process
+  useEffect(() => {
+    const off = window.api.onUpdateStatus((status) => {
+      switch (status.kind) {
+        case 'checking':
+          setMessage({ type: 'success', text: 'Checking for updates...' });
+          break;
+        case 'available':
+          setMessage({ type: 'success', text: `Update ${status.version ?? ''} available — downloading...` });
+          break;
+        case 'not-available':
+          setMessage({ type: 'success', text: 'You are on the latest version.' });
+          break;
+        case 'downloading':
+          setMessage({ type: 'success', text: `Downloading update... ${status.percent ?? 0}%` });
+          break;
+        case 'downloaded':
+          setUpdateReady(String(status.version ?? ''));
+          setMessage({ type: 'success', text: 'Update downloaded — ready to install.' });
+          break;
+        case 'error':
+          setMessage({ type: 'error', text: `Update error: ${status.message ?? 'unknown'}` });
+          break;
+        case 'dev-disabled':
+          setMessage({ type: 'error', text: 'Updates only work in the installed app.' });
+          break;
+      }
+    });
+    return () => off();
+  }, []);
 
   // Track unsaved changes across ALL persisted fields (not just a handful),
   // so the Save bar appears whenever anything actually changed.
@@ -489,23 +522,16 @@ const SettingsPage: React.FC = () => {
   };
 
   const handleCheckForUpdates = async () => {
+    setMessage({ type: 'success', text: 'Checking for updates...' });
     try {
-      setMessage({ type: 'success', text: 'Checking for updates...' });
-      const response = await fetch('https://api.github.com/repos/NIHILcoder/TorrentHunt/releases/latest');
-      if (!response.ok) {
-        setMessage({ type: 'error', text: 'Could not check for updates. Try again later.' });
-        return;
+      const res = await window.api.checkForUpdates();
+      if (!res.ok && res.reason === 'dev') {
+        setMessage({ type: 'error', text: 'Updates are only available in the installed app, not in dev mode.' });
       }
-      const release = await response.json();
-      const latestVersion = (release.tag_name || '').replace(/^v/, '');
-      const currentVersion = appVersion;
-      if (latestVersion && latestVersion !== currentVersion) {
-        setMessage({ type: 'success', text: `New version ${latestVersion} available! Visit GitHub to download.` });
-      } else {
-        setMessage({ type: 'success', text: 'You are on the latest version.' });
-      }
-    } catch (error) {
-      setMessage({ type: 'error', text: 'Failed to check for updates. Check your internet connection.' });
+      // Other outcomes (available / not-available / downloading / downloaded /
+      // error) arrive via the onUpdateStatus subscription below.
+    } catch {
+      setMessage({ type: 'error', text: 'Failed to check for updates.' });
     }
   };
 
@@ -1265,13 +1291,27 @@ const SettingsPage: React.FC = () => {
           <h3 className="settings-group-title">UPDATES</h3>
           <div className="setting-item">
             <div className="setting-info">
-              <div className="setting-label">Check for Updates</div>
-              <p className="setting-description">Look for new versions</p>
+              <div className="setting-label">{updateReady ? 'Update ready' : 'Check for Updates'}</div>
+              <p className="setting-description">
+                {updateReady
+                  ? `Version ${updateReady} downloaded. Restart to install.`
+                  : 'Look for new versions on GitHub.'}
+              </p>
             </div>
             <div className="setting-control">
-              <Button variant="secondary" onClick={handleCheckForUpdates}>
-                Check Now
-              </Button>
+              {updateReady ? (
+                <Button
+                  variant="primary"
+                  icon={<Icon name="refresh" size={16} />}
+                  onClick={() => window.api.quitAndInstallUpdate()}
+                >
+                  Restart & Install
+                </Button>
+              ) : (
+                <Button variant="secondary" onClick={handleCheckForUpdates}>
+                  Check Now
+                </Button>
+              )}
             </div>
           </div>
         </div>
