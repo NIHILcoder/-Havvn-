@@ -45,7 +45,11 @@ export class ShareManager {
     if (!this.client) {
       // Lazy require so the native module only loads if sharing is ever used.
       const wrtc = require('@roamhq/wrtc');
-      this.client = new WebTorrent({ tracker: { wrtc } } as any);
+      // utp: false — like every other client in the app. The native utp-native
+      // module throws an uncaught WSAENOBUFS on Windows under load that crashes
+      // the whole process (not catchable via uncaughtException). Plain TCP +
+      // WebRTC is what we need here anyway.
+      this.client = new WebTorrent({ utp: false, tracker: { wrtc } } as any);
       this.client.on('error', (err: string | Error) => {
         log.error('Share client error', { error: err instanceof Error ? err.message : String(err) });
       });
@@ -83,6 +87,11 @@ export class ShareManager {
           if (settled) return;
           settled = true;
           client.removeListener('error', onError);
+
+          // Swallow per-torrent errors/warnings so a flaky peer or tracker can't
+          // bubble into an unhandled exception.
+          torrent.on('error', (e: any) => log.warn('Share torrent error', { error: String(e?.message || e) }));
+          torrent.on('warning', () => { /* tracker/peer noise — ignore */ });
 
           const link = RECEIVER_BASE + '#' + encodeURIComponent(torrent.magnetURI);
           const share: ActiveShare = {

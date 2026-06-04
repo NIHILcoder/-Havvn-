@@ -4,6 +4,14 @@ All notable changes to TorrentHunt are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [1.5.14-beta] - 2026-06-04
+
+### Fixed
+- **App crash when opening a share link.** The share client didn't disable µTP,
+  so the native utp-native module crashed the whole process (WSAENOBUFS) the
+  moment a browser peer connected. It now uses `utp: false` like every other
+  client, plus per-torrent error guards.
+
 ## [1.5.13-beta] - 2026-06-04
 
 ### Added
@@ -111,6 +119,7 @@ This project follows [Keep a Changelog](https://keepachangelog.com/) and
 - Real encryption / anonymity options, VPN kill-switch, disk-space guard,
   and torrent health indicators.
 
+[1.5.14-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.5.14-beta
 [1.5.13-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.5.13-beta
 [1.5.12-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.5.12-beta
 [1.5.11-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.5.11-beta
