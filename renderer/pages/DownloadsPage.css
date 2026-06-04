@@ -953,6 +953,16 @@
 .download-item-title .download-item-name {
   font-size: var(--font-size-base);
   font-weight: var(--font-weight-semibold);
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Action buttons must never shrink or overlap the (truncating) title. */
+.download-detailed-header .download-item-actions {
+  flex-shrink: 0;
 }
 
 .download-detailed-progress {

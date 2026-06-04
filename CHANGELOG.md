@@ -4,6 +4,14 @@ All notable changes to TorrentHunt are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [1.5.18-beta] - 2026-06-04
+
+### Fixed
+- **Long file names no longer break layouts.** In the download detail view the
+  title now truncates and the action buttons stay put instead of overlapping it.
+  On the "Torrent Created" screen, a long file name no longer stretches the info
+  grid and pushes the buttons out of place.
+
 ## [1.5.17-beta] - 2026-06-04
 
 ### Fixed
@@ -147,6 +155,7 @@ This project follows [Keep a Changelog](https://keepachangelog.com/) and
 - Real encryption / anonymity options, VPN kill-switch, disk-space guard,
   and torrent health indicators.
 
+[1.5.18-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.5.18-beta
 [1.5.17-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.5.17-beta
 [1.5.16-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.5.16-beta
 [1.5.15-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.5.15-beta
