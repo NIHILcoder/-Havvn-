@@ -9,7 +9,7 @@
  */
 
 import path from 'path';
-import { app, utilityProcess, UtilityProcess } from 'electron';
+import { utilityProcess, UtilityProcess } from 'electron';
 import { logger } from '../utils';
 import { ShareInfo } from '../../shared/types';
 
@@ -24,12 +24,16 @@ export class ShareManager {
 
   private ensureWorker(): UtilityProcess {
     if (this.worker) return this.worker;
-    // share-worker.js is compiled next to this file. In a packaged app it is
-    // asarUnpack'd (it loads the native WebRTC module), so fork from the
-    // unpacked copy on disk.
-    let workerPath = path.join(__dirname, 'share-worker.js');
-    if (app.isPackaged) workerPath = workerPath.replace('app.asar', 'app.asar.unpacked');
-    const child = utilityProcess.fork(workerPath, [], { serviceName: 'th-share' });
+    // share-worker.js is compiled next to this file and stays INSIDE the asar,
+    // so it resolves node_modules exactly like the main process does (the native
+    // WebRTC module is redirected to app.asar.unpacked automatically). Forking
+    // from the unpacked copy would break `require('webtorrent')`.
+    const workerPath = path.join(__dirname, 'share-worker.js');
+    const child = utilityProcess.fork(workerPath, [], { serviceName: 'th-share', stdio: 'pipe' });
+
+    // Surface worker stdout/stderr into our log so load-time failures are visible.
+    (child as any).stderr?.on('data', (d: any) => log.warn('Worker stderr', { out: String(d).slice(0, 800) }));
+    (child as any).stdout?.on('data', (d: any) => log.info('Worker stdout', { out: String(d).slice(0, 800) }));
 
     child.on('message', (msg: any) => this.onMessage(msg));
     child.on('exit', (code: number) => this.onExit(code));

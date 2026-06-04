@@ -4,6 +4,15 @@ All notable changes to TorrentHunt are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [1.5.16-beta] - 2026-06-04
+
+### Fixed
+- **Share worker crashed in the packaged app.** The isolated share worker had
+  been unpacked from the asar, which broke its module resolution
+  (`require('webtorrent')` couldn't be found). It now stays inside the asar like
+  the main process, so it loads modules identically. Worker stdout/stderr is now
+  captured into the app log for diagnostics.
+
 ## [1.5.15-beta] - 2026-06-04
 
 ### Fixed
@@ -128,6 +137,7 @@ This project follows [Keep a Changelog](https://keepachangelog.com/) and
 - Real encryption / anonymity options, VPN kill-switch, disk-space guard,
   and torrent health indicators.
 
+[1.5.16-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.5.16-beta
 [1.5.15-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.5.15-beta
 [1.5.14-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.5.14-beta
 [1.5.13-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.5.13-beta
