@@ -24,7 +24,18 @@ import {
 } from '../../shared/state-machine';
 import * as db from '../db/store';
 import { logger, checkDiskSpace, formatBytes } from '../utils';
-import { classifyMediaKind } from '../../shared/media';
+import { classifyMediaKind, isDirectlyPlayable } from '../../shared/media';
+import { spawn, ChildProcess } from 'child_process';
+
+// ffmpeg-static ships a platform binary; in a packaged app it lives in
+// app.asar.unpacked (it can't execute from inside the asar archive).
+const ffmpegStaticPath = require('ffmpeg-static') as string | null;
+function resolveFfmpegPath(): string | null {
+  if (!ffmpegStaticPath) return null;
+  return app.isPackaged
+    ? ffmpegStaticPath.replace('app.asar', 'app.asar.unpacked')
+    : ffmpegStaticPath;
+}
 
 const log = logger.child('TorrentManager');
 
@@ -72,6 +83,12 @@ export class TorrentManager {
   private client: WebTorrent.Instance;
   private managedTorrents: Map<string, ManagedTorrent> = new Map();
   private infoHashIndex: Map<string, string> = new Map();
+  // Shared on-the-fly transcoding server (ffmpeg → fragmented MP4) for formats
+  // Chromium can't play directly (avi, mkv, HEVC, …). Started lazily.
+  private transcodeServer: http.Server | null = null;
+  private transcodePort = 0;
+  private activeTranscodes: Set<ChildProcess> = new Set();
+  private readonly ffmpegPath: string | null = resolveFfmpegPath();
     private addingTorrents: Set<string> = new Set();
   private statsInterval: NodeJS.Timeout | null = null;
   // Stats are broadcast to the UI every tick, but persisted to disk only every
@@ -1305,7 +1322,11 @@ export class TorrentManager {
    * prioritises those pieces — so playback works while the torrent is still
    * downloading (sequential, on demand). The server binds to 127.0.0.1 only.
    */
-  async getStreamUrl(id: string, fileIndex: number): Promise<{ url: string; name: string; kind: 'video' | 'audio' | 'other' }> {
+  async getStreamUrl(
+    id: string,
+    fileIndex: number,
+    opts?: { transcode?: boolean },
+  ): Promise<{ url: string; name: string; kind: 'video' | 'audio' | 'other'; transcoded: boolean }> {
     const managed = this.managedTorrents.get(id);
     if (!managed) {
       throw new TorrentError('Download not found', 'NOT_FOUND', id);
@@ -1322,6 +1343,22 @@ export class TorrentManager {
     // Make sure the file is selected so its pieces actually download.
     try { (file as any).select(); } catch { /* ignore */ }
 
+    const kind = classifyMediaKind(file.name);
+
+    // Transcode when forced (direct playback failed) or the container isn't one
+    // Chromium can play. Requires the bundled ffmpeg.
+    const wantTranscode = opts?.transcode === true || !isDirectlyPlayable(file.name);
+    if (wantTranscode && this.ffmpegPath) {
+      const port = await this.ensureTranscodeServer();
+      return {
+        url: `http://127.0.0.1:${port}/transcode/${encodeURIComponent(id)}/${fileIndex}?t=${Date.now()}`,
+        name: file.name,
+        kind,
+        transcoded: true,
+      };
+    }
+
+    // Direct streaming via WebTorrent's per-torrent server (with Range support).
     // Reuse the server only if it belongs to the current torrent instance.
     if (managed.streamServer && managed.streamServer.torrent !== torrent) {
       this.closeStreamServer(managed);
@@ -1346,8 +1383,89 @@ export class TorrentManager {
     return {
       url: `http://127.0.0.1:${port}/${fileIndex}`,
       name: file.name,
-      kind: classifyMediaKind(file.name),
+      kind,
+      transcoded: false,
     };
+  }
+
+  /**
+   * Lazily start the shared transcoding HTTP server (127.0.0.1 only).
+   * Routes: GET /transcode/<downloadId>/<fileIndex> → fragmented MP4 / MP3.
+   */
+  private ensureTranscodeServer(): Promise<number> {
+    if (this.transcodeServer) return Promise.resolve(this.transcodePort);
+    return new Promise((resolve, reject) => {
+      const server = http.createServer((req, res) => this.handleTranscodeRequest(req, res));
+      server.on('error', reject);
+      server.listen(0, '127.0.0.1', () => {
+        this.transcodeServer = server;
+        this.transcodePort = (server.address() as any).port;
+        log.info('Transcode server started', { port: this.transcodePort });
+        resolve(this.transcodePort);
+      });
+    });
+  }
+
+  private handleTranscodeRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
+    let proc: ChildProcess | null = null;
+    let input: NodeJS.ReadableStream | null = null;
+    const cleanup = () => {
+      if (proc) { this.activeTranscodes.delete(proc); try { proc.kill('SIGKILL'); } catch { /* ignore */ } proc = null; }
+      if (input) { try { (input as any).destroy?.(); } catch { /* ignore */ } input = null; }
+    };
+
+    try {
+      const url = new URL(req.url || '', 'http://127.0.0.1');
+      const parts = url.pathname.split('/').filter(Boolean); // ['transcode', id, index]
+      if (parts[0] !== 'transcode' || parts.length < 3) { res.writeHead(404); res.end(); return; }
+      const id = decodeURIComponent(parts[1]);
+      const fileIndex = Number(parts[2]);
+
+      const managed = this.managedTorrents.get(id);
+      const torrent = managed?.torrent;
+      if (!torrent || !torrent.files || fileIndex < 0 || fileIndex >= torrent.files.length) {
+        res.writeHead(404); res.end(); return;
+      }
+      if (!this.ffmpegPath) { res.writeHead(503); res.end('ffmpeg unavailable'); return; }
+
+      const file = torrent.files[fileIndex];
+      try { (file as any).select(); } catch { /* ignore */ }
+      const kind = classifyMediaKind(file.name);
+
+      const args = kind === 'audio'
+        ? ['-i', 'pipe:0', '-c:a', 'libmp3lame', '-b:a', '192k', '-f', 'mp3', 'pipe:1']
+        : [
+            '-i', 'pipe:0',
+            '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
+            '-c:a', 'aac', '-b:a', '160k', '-ac', '2',
+            '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
+            '-f', 'mp4', 'pipe:1',
+          ];
+
+      res.writeHead(200, {
+        'Content-Type': kind === 'audio' ? 'audio/mpeg' : 'video/mp4',
+        'Cache-Control': 'no-store',
+      });
+
+      input = (file as any).createReadStream();
+      proc = spawn(this.ffmpegPath, args, { windowsHide: true });
+      this.activeTranscodes.add(proc);
+
+      input!.on('error', () => cleanup());
+      proc.stdin?.on('error', () => { /* EPIPE when ffmpeg/client ends — ignore */ });
+      input!.pipe(proc.stdin!);
+      proc.stdout?.pipe(res);
+      proc.stderr?.on('data', () => { /* discard ffmpeg progress chatter */ });
+      proc.on('error', (e) => { log.warn('ffmpeg error', { error: String(e) }); cleanup(); try { res.destroy(); } catch { /* ignore */ } });
+      proc.on('close', () => { if (proc) this.activeTranscodes.delete(proc); });
+
+      res.on('close', cleanup);
+      req.on('close', cleanup);
+    } catch (e) {
+      log.error('Transcode request failed', { error: String(e) });
+      cleanup();
+      try { res.writeHead(500); res.end(); } catch { /* ignore */ }
+    }
   }
   
   /**
@@ -1711,6 +1829,16 @@ export class TorrentManager {
     // Close any open streaming servers
     for (const managed of this.managedTorrents.values()) {
       this.closeStreamServer(managed);
+    }
+
+    // Kill active transcodes and close the transcode server
+    for (const proc of this.activeTranscodes) {
+      try { proc.kill('SIGKILL'); } catch { /* ignore */ }
+    }
+    this.activeTranscodes.clear();
+    if (this.transcodeServer) {
+      try { this.transcodeServer.close(); } catch { /* ignore */ }
+      this.transcodeServer = null;
     }
 
     // Save final stats (single batched write, speeds zeroed since we're stopping)

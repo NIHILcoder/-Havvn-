@@ -4,6 +4,23 @@ All notable changes to TorrentHunt are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [1.5.12-beta] - 2026-06-04
+
+### Added
+- **Play AVI/MKV and other formats via on-the-fly transcoding.** Files Chromium
+  can't decode (avi, mkv, wmv, flv, HEVC, …) are now transcoded to H.264/AAC on
+  the fly with a bundled ffmpeg, so they play in the in-app player. Direct
+  playback that fails on an unsupported codec falls back to transcoding
+  automatically. (Increases the installer size by ~80 MB for the ffmpeg binary.)
+
+### Changed
+- **Redesigned the player** to match the app's look — accent header, a
+  "Converting" badge during transcoding, refined file switcher and states.
+
+### Notes
+- Transcoding re-encodes video in real time; weak CPUs may buffer on 1080p.
+- Seeking ahead is limited while transcoding (live stream, no range).
+
 ## [1.5.11-beta] - 2026-06-04
 
 ### Added
@@ -80,6 +97,7 @@ This project follows [Keep a Changelog](https://keepachangelog.com/) and
 - Real encryption / anonymity options, VPN kill-switch, disk-space guard,
   and torrent health indicators.
 
+[1.5.12-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.5.12-beta
 [1.5.11-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.5.11-beta
 [1.5.10-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.5.10-beta
 [1.5.9-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.5.9-beta

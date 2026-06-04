@@ -1,9 +1,10 @@
 /**
  * StreamPlayerModal
  *
- * In-app player that streams a media file straight from a torrent via the local
- * WebTorrent HTTP server — playback starts while the torrent is still
- * downloading (sequential, on demand).
+ * In-app player that streams a media file straight from a torrent — playback
+ * starts while the torrent is still downloading. Formats Chromium can't decode
+ * (avi, mkv, HEVC, …) are transcoded on the fly via the bundled ffmpeg; direct
+ * playback that fails on an unsupported codec falls back to transcoding too.
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -37,8 +38,10 @@ export const StreamPlayerModal: React.FC<StreamPlayerModalProps> = ({ downloadId
   const { t } = useTranslation();
   const [files, setFiles] = useState<StreamFile[]>([]);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const [forceTranscode, setForceTranscode] = useState(false);
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [kind, setKind] = useState<MediaKind>('video');
+  const [transcoded, setTranscoded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -70,7 +73,7 @@ export const StreamPlayerModal: React.FC<StreamPlayerModalProps> = ({ downloadId
     return () => { cancelled = true; };
   }, [downloadId, t]);
 
-  // Resolve a stream URL whenever the active file changes.
+  // Resolve a stream URL whenever the active file (or transcode mode) changes.
   useEffect(() => {
     if (activeIndex === null) return;
     let cancelled = false;
@@ -79,10 +82,11 @@ export const StreamPlayerModal: React.FC<StreamPlayerModalProps> = ({ downloadId
     setStreamUrl(null);
     (async () => {
       try {
-        const info = await window.api.getStreamUrl(downloadId, activeIndex);
+        const info = await window.api.getStreamUrl(downloadId, activeIndex, { transcode: forceTranscode });
         if (cancelled) return;
         setStreamUrl(info.url);
         setKind(info.kind === 'other' ? 'video' : info.kind);
+        setTranscoded(info.transcoded);
         setLoading(false);
       } catch (err: any) {
         if (!cancelled) {
@@ -92,7 +96,7 @@ export const StreamPlayerModal: React.FC<StreamPlayerModalProps> = ({ downloadId
       }
     })();
     return () => { cancelled = true; };
-  }, [downloadId, activeIndex]);
+  }, [downloadId, activeIndex, forceTranscode]);
 
   // Close on Escape.
   useEffect(() => {
@@ -101,13 +105,25 @@ export const StreamPlayerModal: React.FC<StreamPlayerModalProps> = ({ downloadId
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  const selectFile = useCallback((index: number) => {
+    setActiveIndex(index);
+    setForceTranscode(false);
+    setError(null);
+  }, []);
+
+  // Direct playback failed — retry through the transcoder once.
+  const handleMediaError = useCallback(() => {
+    if (!transcoded) setForceTranscode(true);
+    else setError(t('player.unsupported'));
+  }, [transcoded, t]);
+
   const activeFile = files.find((f) => f.index === activeIndex) || null;
 
   const renderBody = useCallback(() => {
     if (error) {
       return (
         <div className="player-message">
-          <Icon name="alert-triangle" size={32} />
+          <Icon name="alert-triangle" size={30} />
           <p>{error}</p>
         </div>
       );
@@ -116,39 +132,49 @@ export const StreamPlayerModal: React.FC<StreamPlayerModalProps> = ({ downloadId
       return (
         <div className="player-message">
           <span className="spinner spinner-lg" />
-          <p>{t('player.buffering')}</p>
+          <p>{transcoded ? t('player.converting') : t('player.buffering')}</p>
         </div>
       );
     }
     if (kind === 'audio') {
       return (
         <div className="player-audio">
-          <Icon name="music" size={64} />
+          <div className="player-audio-art"><Icon name="music" size={48} /></div>
           <div className="player-audio-name">{activeFile?.name}</div>
           {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-          <audio src={streamUrl} controls autoPlay />
+          <audio src={streamUrl} controls autoPlay onError={handleMediaError} />
         </div>
       );
     }
     return (
       // eslint-disable-next-line jsx-a11y/media-has-caption
       <video
+        key={streamUrl}
         src={streamUrl}
         controls
         autoPlay
         className="player-video"
-        onError={() => setError(t('player.unsupported'))}
+        onError={handleMediaError}
       />
     );
-  }, [error, loading, streamUrl, kind, activeFile, t]);
+  }, [error, loading, streamUrl, kind, activeFile, transcoded, handleMediaError, t]);
 
   return (
     <div className="player-overlay" onClick={onClose}>
       <div className="player-modal" onClick={(e) => e.stopPropagation()}>
         <div className="player-header">
-          <div className="player-title" title={activeFile?.name || downloadName}>
-            <Icon name={kind === 'audio' ? 'music' : 'play'} size={16} />
-            <span>{activeFile?.name || downloadName}</span>
+          <div className="player-title">
+            <span className="player-title-icon">
+              <Icon name={kind === 'audio' ? 'music' : 'play'} size={15} />
+            </span>
+            <span className="player-title-text" title={activeFile?.name || downloadName}>
+              {activeFile?.name || downloadName}
+            </span>
+            {transcoded && (
+              <span className="player-badge" title={t('player.transcodingNote')}>
+                <Icon name="zap" size={11} /> {t('player.transcoding')}
+              </span>
+            )}
           </div>
           <button className="player-close" onClick={onClose} title={t('player.close')}>
             <Icon name="x" size={18} />
@@ -163,7 +189,7 @@ export const StreamPlayerModal: React.FC<StreamPlayerModalProps> = ({ downloadId
               <button
                 key={f.index}
                 className={`player-file-chip ${f.index === activeIndex ? 'active' : ''}`}
-                onClick={() => setActiveIndex(f.index)}
+                onClick={() => selectFile(f.index)}
                 title={f.name}
               >
                 <Icon name={f.kind === 'audio' ? 'music' : 'film'} size={12} />
@@ -176,7 +202,7 @@ export const StreamPlayerModal: React.FC<StreamPlayerModalProps> = ({ downloadId
 
         <div className="player-note">
           <Icon name="info" size={12} />
-          <span>{t('player.note')}</span>
+          <span>{transcoded ? t('player.transcodingNote') : t('player.note')}</span>
         </div>
       </div>
     </div>

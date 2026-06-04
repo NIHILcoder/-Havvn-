@@ -455,8 +455,11 @@ const dictionary = {
     'player.watch': 'Watch / Listen',
     'player.close': 'Close',
     'player.buffering': 'Buffering…',
+    'player.converting': 'Converting & buffering…',
+    'player.transcoding': 'Converting',
+    'player.transcodingNote': 'Converting on the fly (ffmpeg) — seeking ahead may be limited.',
     'player.noMedia': 'No playable video or audio files in this torrent.',
-    'player.unsupported': "This file's format/codec isn't supported by the built-in player. Try opening it in an external player.",
+    'player.unsupported': "This file couldn't be played even after conversion. Try an external player.",
     'player.note': 'Streaming from the torrent — playback starts before the download finishes.',
 
     // App statistics
@@ -918,8 +921,11 @@ const dictionary = {
     'player.watch': 'Смотреть / Слушать',
     'player.close': 'Закрыть',
     'player.buffering': 'Буферизация…',
+    'player.converting': 'Конвертация и буферизация…',
+    'player.transcoding': 'Конвертация',
+    'player.transcodingNote': 'Конвертация на лету (ffmpeg) — перемотка вперёд может быть ограничена.',
     'player.noMedia': 'В этом торренте нет воспроизводимых видео или аудио.',
-    'player.unsupported': 'Формат/кодек этого файла не поддерживается встроенным плеером. Попробуйте открыть во внешнем плеере.',
+    'player.unsupported': 'Файл не удалось воспроизвести даже после конвертации. Попробуйте внешний плеер.',
     'player.note': 'Стриминг прямо из торрента — воспроизведение начинается до завершения загрузки.',
 
     // Статистика приложения

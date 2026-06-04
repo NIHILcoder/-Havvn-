@@ -114,8 +114,8 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): void {
   ));
 
   ipcMain.handle('downloads:getStreamUrl', wrapHandler('downloads:getStreamUrl',
-    async (_event, id: string, fileIndex: number) => {
-      return torrentManager.getStreamUrl(id, fileIndex);
+    async (_event, id: string, fileIndex: number, opts?: { transcode?: boolean }) => {
+      return torrentManager.getStreamUrl(id, fileIndex, opts);
     }
   ));
 

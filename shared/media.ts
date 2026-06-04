@@ -12,6 +12,12 @@ const AUDIO_EXTS = new Set([
 
 export type MediaKind = 'video' | 'audio' | 'other';
 
+// Containers/codecs the built-in Chromium player can usually play directly,
+// so they can be served as-is (no transcoding). Everything else streamable
+// (avi, mkv, wmv, flv, mpg, ts, wma, …) is transcoded on the fly via ffmpeg.
+const DIRECT_VIDEO_EXTS = new Set(['mp4', 'm4v', 'mov', 'webm', 'ogv']);
+const DIRECT_AUDIO_EXTS = new Set(['mp3', 'm4a', 'aac', 'ogg', 'oga', 'opus', 'wav', 'flac']);
+
 /** Classify a file as streamable video/audio by extension. */
 export function classifyMediaKind(name: string): MediaKind {
   const ext = name.split('.').pop()?.toLowerCase() || '';
@@ -23,4 +29,14 @@ export function classifyMediaKind(name: string): MediaKind {
 /** True if the file can be opened in the in-app player. */
 export function isStreamable(name: string): boolean {
   return classifyMediaKind(name) !== 'other';
+}
+
+/**
+ * True if the file is likely playable directly by Chromium (by container).
+ * A direct play can still fail on an unsupported codec (e.g. HEVC in an MP4) —
+ * the player falls back to transcoding in that case.
+ */
+export function isDirectlyPlayable(name: string): boolean {
+  const ext = name.split('.').pop()?.toLowerCase() || '';
+  return DIRECT_VIDEO_EXTS.has(ext) || DIRECT_AUDIO_EXTS.has(ext);
 }
