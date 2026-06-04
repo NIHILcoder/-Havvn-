@@ -4,6 +4,16 @@ All notable changes to TorrentHunt are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [1.5.17-beta] - 2026-06-04
+
+### Fixed
+- **Share links now actually transfer.** The native WebRTC module crashed under
+  Electron the moment a peer connected, so downloads never started. Sharing now
+  runs in a hidden window using Chromium's own WebRTC (the same stack the browser
+  receiver uses) while seeding the file straight from disk — validated
+  end-to-end (peer connects and downloads). Dropped the native @roamhq/wrtc
+  dependency entirely.
+
 ## [1.5.16-beta] - 2026-06-04
 
 ### Fixed
@@ -137,6 +147,7 @@ This project follows [Keep a Changelog](https://keepachangelog.com/) and
 - Real encryption / anonymity options, VPN kill-switch, disk-space guard,
   and torrent health indicators.
 
+[1.5.17-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.5.17-beta
 [1.5.16-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.5.16-beta
 [1.5.15-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.5.15-beta
 [1.5.14-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.5.14-beta

@@ -1,6 +1,6 @@
 {
   "name": "torrenthunt",
-  "version": "1.5.16-beta",
+  "version": "1.5.17-beta",
   "description": "A modern, agent-built BitTorrent client",
   "main": "dist/electron/electron/main.js",
   "scripts": {
@@ -19,7 +19,6 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^3.3.4",
-    "@roamhq/wrtc": "^0.10.0",
     "@tanstack/react-virtual": "^3.0.4",
     "@types/webtorrent": "^0.109.7",
     "crypto-browserify": "^3.12.1",
@@ -85,8 +84,7 @@
       "package.json"
     ],
     "asarUnpack": [
-      "**/node_modules/ffmpeg-static/**",
-      "**/node_modules/@roamhq/**"
+      "**/node_modules/ffmpeg-static/**"
     ],
     "fileAssociations": [
       {

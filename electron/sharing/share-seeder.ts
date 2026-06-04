@@ -1,17 +1,21 @@
 /**
- * Share worker — runs in an Electron utilityProcess (separate OS process).
+ * Share seeder — runs as the PRELOAD of a hidden BrowserWindow.
  *
- * The WebRTC native module (@roamhq/wrtc) can crash hard (native segfault) when
- * a browser peer connects. Running it here, isolated from the main process,
- * means such a crash only kills THIS process — the app keeps running and simply
- * respawns the worker on the next share.
+ * Why a hidden window? The native WebRTC module (@roamhq/wrtc) crashes under
+ * Electron when establishing a connection. A renderer, however, has Chromium's
+ * own battle-tested WebRTC (the same stack the browser receiver uses). So we run
+ * the node build of WebTorrent here (it can seed a file straight from a disk
+ * path, no in-memory copy) and hand it the window's native WebRTC. Best of both.
  *
- * Protocol (over utilityProcess MessagePort):
- *   main → worker: { type:'share'|'stop'|'get'|'list', reqId, ... }
- *   worker → main: { type:'result', reqId, ok, data|error }  and  { type:'log', ... }
+ * Talks to the main process over ipcRenderer:
+ *   main → here:  'share-cmd'  { type, reqId, ... }
+ *   here → main:  'share-res'  { reqId, ok, data|error }  and  'share-log'
  */
 
+import { ipcRenderer } from 'electron';
 import fs from 'fs';
+// Required (not bundled), so this resolves WebTorrent's NODE build — which can
+// seed from a path — while WebRTC comes from the window below.
 import WebTorrent from 'webtorrent';
 
 const SHARE_TRACKERS = [
@@ -21,38 +25,32 @@ const SHARE_TRACKERS = [
 ];
 const RECEIVER_BASE = 'https://nihilcoder.github.io/TorrentHunt/share/';
 
-const parentPort: any = (process as any).parentPort;
+const w = window as any;
+const nativeWrtc = {
+  RTCPeerConnection: w.RTCPeerConnection,
+  RTCSessionDescription: w.RTCSessionDescription,
+  RTCIceCandidate: w.RTCIceCandidate,
+};
 
 interface ShareEntry {
-  downloadId: string;
-  name: string;
-  infoHash: string;
-  magnetURI: string;
-  link: string;
-  createdAt: number;
+  downloadId: string; name: string; infoHash: string; magnetURI: string; link: string; createdAt: number;
 }
 
 let client: any = null;
-const shares = new Map<string, ShareEntry>(); // downloadId -> entry
+const shares = new Map<string, ShareEntry>();
 
-function post(msg: any): void {
-  try { parentPort.postMessage(msg); } catch { /* parent gone */ }
-}
-function logWarn(msg: string): void { post({ type: 'log', level: 'warn', msg }); }
+function log(msg: string): void { try { ipcRenderer.send('share-log', msg); } catch { /* ignore */ } }
 
 function ensureClient(): any {
   if (!client) {
-    const wrtc = require('@roamhq/wrtc');
-    // utp:false (native utp-native crashes Windows); dht:false — browser peers
-    // can't use DHT anyway, they meet us at the wss trackers over WebRTC.
-    client = new WebTorrent({ utp: false, dht: false, tracker: { wrtc } } as any);
-    client.on('error', (e: any) => logWarn('share client error: ' + (e?.message || e)));
-    post({ type: 'log', level: 'info', msg: 'Share client created (WebRTC, isolated)' });
+    client = new WebTorrent({ utp: false, dht: false, tracker: { wrtc: nativeWrtc } } as any);
+    client.on('error', (e: any) => log('share client error: ' + (e?.message || e)));
+    log('Share client ready (Chromium WebRTC)');
   }
   return client;
 }
 
-function entryToInfo(e: ShareEntry) {
+function toInfo(e: ShareEntry) {
   return { downloadId: e.downloadId, name: e.name, infoHash: e.infoHash, magnetURI: e.magnetURI, link: e.link, createdAt: e.createdAt };
 }
 
@@ -75,7 +73,7 @@ function doShare(downloadId: string, contentPath: string, name: string): Promise
       c.seed(contentPath, { announce: SHARE_TRACKERS, name } as any, (torrent: any) => {
         if (settled) return; settled = true;
         c.removeListener('error', onError);
-        torrent.on('error', (e: any) => logWarn('share torrent error: ' + (e?.message || e)));
+        torrent.on('error', (e: any) => log('torrent error: ' + (e?.message || e)));
         torrent.on('warning', () => { /* tracker/peer noise */ });
         const entry: ShareEntry = {
           downloadId, name,
@@ -85,7 +83,7 @@ function doShare(downloadId: string, contentPath: string, name: string): Promise
           createdAt: Date.now(),
         };
         shares.set(downloadId, entry);
-        post({ type: 'log', level: 'info', msg: 'Sharing started: ' + name });
+        log('Sharing started: ' + name);
         resolve(entry);
       });
     } catch (e) { onError(e); }
@@ -99,7 +97,7 @@ function doStop(downloadId: string): void {
   try {
     const t = client.torrents.find((x: any) => x.infoHash === entry.infoHash);
     if (t) client.remove(t);
-  } catch (e) { logWarn('stop failed: ' + String(e)); }
+  } catch (e) { log('stop failed: ' + String(e)); }
 }
 
 function getInfo(downloadId: string): any {
@@ -110,22 +108,22 @@ function getInfo(downloadId: string): any {
     const t = client.torrents.find((x: any) => x.infoHash === entry.infoHash);
     peers = t ? (t.numPeers || 0) : 0;
   }
-  return { ...entryToInfo(entry), peers };
+  return { ...toInfo(entry), peers };
 }
 
-async function handle(msg: any): Promise<void> {
+ipcRenderer.on('share-cmd', async (_e, msg: any) => {
   const { type, reqId } = msg;
   try {
     let data: any;
-    if (type === 'share') data = entryToInfo(await doShare(msg.downloadId, msg.contentPath, msg.name));
+    if (type === 'share') data = toInfo(await doShare(msg.downloadId, msg.contentPath, msg.name));
     else if (type === 'stop') { doStop(msg.downloadId); data = { ok: true }; }
     else if (type === 'get') data = getInfo(msg.downloadId);
-    else if (type === 'list') data = Array.from(shares.values()).map(entryToInfo).sort((a, b) => b.createdAt - a.createdAt);
+    else if (type === 'list') data = Array.from(shares.values()).map(toInfo).sort((a, b) => b.createdAt - a.createdAt);
     else throw new Error('Unknown command: ' + type);
-    post({ type: 'result', reqId, ok: true, data });
+    ipcRenderer.send('share-res', { reqId, ok: true, data });
   } catch (e: any) {
-    post({ type: 'result', reqId, ok: false, error: e?.message || String(e) });
+    ipcRenderer.send('share-res', { reqId, ok: false, error: e?.message || String(e) });
   }
-}
+});
 
-parentPort.on('message', (e: any) => { void handle(e.data); });
+ipcRenderer.send('share-ready');
