@@ -143,9 +143,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle('share:get', wrapHandler('share:get',
     async (_event, downloadId: string) => {
-      const share = getShareManager().getForDownload(downloadId);
-      if (!share) return null;
-      return { ...share, peers: getShareManager().getPeers(downloadId) };
+      return getShareManager().get(downloadId);
     }
   ));
 

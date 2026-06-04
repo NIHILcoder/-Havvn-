@@ -4,6 +4,15 @@ All notable changes to TorrentHunt are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [1.5.15-beta] - 2026-06-04
+
+### Fixed
+- **App no longer dies when a browser opens a share link.** The WebRTC native
+  module could crash the whole process (a native segfault, uncatchable from JS)
+  the moment a browser peer connected. Sharing now runs in an isolated
+  utilityProcess — if WebRTC crashes, only that worker dies and the app keeps
+  running (it respawns on the next share). Also disabled DHT on the share client.
+
 ## [1.5.14-beta] - 2026-06-04
 
 ### Fixed
@@ -119,6 +128,7 @@ This project follows [Keep a Changelog](https://keepachangelog.com/) and
 - Real encryption / anonymity options, VPN kill-switch, disk-space guard,
   and torrent health indicators.
 
+[1.5.15-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.5.15-beta
 [1.5.14-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.5.14-beta
 [1.5.13-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.5.13-beta
 [1.5.12-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.5.12-beta

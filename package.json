@@ -1,6 +1,6 @@
 {
   "name": "torrenthunt",
-  "version": "1.5.14-beta",
+  "version": "1.5.15-beta",
   "description": "A modern, agent-built BitTorrent client",
   "main": "dist/electron/electron/main.js",
   "scripts": {
@@ -86,7 +86,8 @@
     ],
     "asarUnpack": [
       "**/node_modules/ffmpeg-static/**",
-      "**/node_modules/@roamhq/**"
+      "**/node_modules/@roamhq/**",
+      "**/dist/electron/electron/sharing/share-worker.js"
     ],
     "fileAssociations": [
       {

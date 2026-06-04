@@ -1,152 +1,111 @@
 /**
  * ShareManager — "Instant Share Links" (Phase 2 of the P2P hub).
  *
- * Re-seeds a completed download from disk on a DEDICATED WebTorrent client that
- * has WebRTC enabled (@roamhq/wrtc) and announces to public WebSocket trackers.
- * A browser opening the share link runs WebTorrent in-page, meets this peer at
- * the same wss tracker, and pulls the file over WebRTC — no install, no cloud.
- *
- * Kept separate from the main download client so normal torrents are unaffected.
+ * This is a thin PROXY in the main process. The actual WebTorrent + WebRTC work
+ * runs in an isolated utilityProcess (see share-worker.ts), because the native
+ * WebRTC module can crash the whole process when a browser peer connects.
+ * Isolating it means such a crash only kills the worker — the app survives and
+ * respawns it on the next share.
  */
 
 import path from 'path';
-import fs from 'fs';
-import WebTorrent from 'webtorrent';
+import { app, utilityProcess, UtilityProcess } from 'electron';
 import { logger } from '../utils';
+import { ShareInfo } from '../../shared/types';
 
 const log = logger.child('ShareManager');
 
-// Public WebRTC (WebSocket) trackers used for browser ↔ desktop signalling.
-// Several for redundancy — availability varies.
-const SHARE_TRACKERS = [
-  'wss://tracker.openwebtorrent.com',
-  'wss://tracker.webtorrent.dev',
-  'wss://tracker.files.fm:7073/announce',
-];
-
-// Static receiver page (GitHub Pages). The magnet travels in the URL hash, so
-// it never hits a server and works on a purely static host.
-const RECEIVER_BASE = 'https://nihilcoder.github.io/TorrentHunt/share/';
-
-export interface ActiveShare {
-  downloadId: string;
-  name: string;
-  infoHash: string;
-  magnetURI: string;
-  link: string;
-  createdAt: number;
-}
+type Pending = { resolve: (v: any) => void; reject: (e: Error) => void };
 
 export class ShareManager {
-  private client: WebTorrent.Instance | null = null;
-  private shares: Map<string, ActiveShare> = new Map(); // keyed by downloadId
+  private worker: UtilityProcess | null = null;
+  private pending: Map<number, Pending> = new Map();
+  private reqSeq = 0;
 
-  private ensureClient(): WebTorrent.Instance {
-    if (!this.client) {
-      // Lazy require so the native module only loads if sharing is ever used.
-      const wrtc = require('@roamhq/wrtc');
-      // utp: false — like every other client in the app. The native utp-native
-      // module throws an uncaught WSAENOBUFS on Windows under load that crashes
-      // the whole process (not catchable via uncaughtException). Plain TCP +
-      // WebRTC is what we need here anyway.
-      this.client = new WebTorrent({ utp: false, tracker: { wrtc } } as any);
-      this.client.on('error', (err: string | Error) => {
-        log.error('Share client error', { error: err instanceof Error ? err.message : String(err) });
-      });
-      log.info('Share client created (WebRTC enabled)');
-    }
-    return this.client;
+  private ensureWorker(): UtilityProcess {
+    if (this.worker) return this.worker;
+    // share-worker.js is compiled next to this file. In a packaged app it is
+    // asarUnpack'd (it loads the native WebRTC module), so fork from the
+    // unpacked copy on disk.
+    let workerPath = path.join(__dirname, 'share-worker.js');
+    if (app.isPackaged) workerPath = workerPath.replace('app.asar', 'app.asar.unpacked');
+    const child = utilityProcess.fork(workerPath, [], { serviceName: 'th-share' });
+
+    child.on('message', (msg: any) => this.onMessage(msg));
+    child.on('exit', (code: number) => this.onExit(code));
+
+    this.worker = child;
+    log.info('Share worker spawned', { workerPath });
+    return child;
   }
 
-  /**
-   * Start sharing the content of a completed download. Returns the share link.
-   * Re-shares return the existing link (idempotent per download).
-   */
-  async share(downloadId: string, contentPath: string, name: string): Promise<ActiveShare> {
-    const existing = this.shares.get(downloadId);
-    if (existing) return existing;
-
-    if (!fs.existsSync(contentPath)) {
-      throw new Error('File not found on disk — the download must be complete to share');
+  private onMessage(msg: any): void {
+    if (!msg || typeof msg !== 'object') return;
+    if (msg.type === 'result') {
+      const p = this.pending.get(msg.reqId);
+      if (!p) return;
+      this.pending.delete(msg.reqId);
+      if (msg.ok) p.resolve(msg.data);
+      else p.reject(new Error(msg.error || 'Share worker error'));
+    } else if (msg.type === 'log') {
+      const level = msg.level === 'warn' ? 'warn' : 'info';
+      (log as any)[level]('Worker', { msg: msg.msg });
     }
+  }
 
-    const client = this.ensureClient();
+  private onExit(code: number): void {
+    log.warn('Share worker exited', { code });
+    // The worker (and its native WebRTC) died — reject everything in flight but
+    // keep the app alive. Shares are gone; a new share respawns the worker.
+    for (const [, p] of this.pending) {
+      p.reject(new Error('Sharing stopped unexpectedly (the share process crashed). Please try again.'));
+    }
+    this.pending.clear();
+    this.worker = null;
+  }
 
-    return new Promise<ActiveShare>((resolve, reject) => {
-      let settled = false;
-      const onError = (err: string | Error) => {
-        if (settled) return;
-        settled = true;
-        client.removeListener('error', onError);
-        reject(err instanceof Error ? err : new Error(String(err)));
-      };
-      client.once('error', onError);
-
-      try {
-        client.seed(contentPath, { announce: SHARE_TRACKERS, name } as any, (torrent: any) => {
-          if (settled) return;
-          settled = true;
-          client.removeListener('error', onError);
-
-          // Swallow per-torrent errors/warnings so a flaky peer or tracker can't
-          // bubble into an unhandled exception.
-          torrent.on('error', (e: any) => log.warn('Share torrent error', { error: String(e?.message || e) }));
-          torrent.on('warning', () => { /* tracker/peer noise — ignore */ });
-
-          const link = RECEIVER_BASE + '#' + encodeURIComponent(torrent.magnetURI);
-          const share: ActiveShare = {
-            downloadId,
-            name,
-            infoHash: torrent.infoHash,
-            magnetURI: torrent.magnetURI,
-            link,
-            createdAt: Date.now(),
-          };
-          this.shares.set(downloadId, share);
-          log.info('Sharing started', { downloadId, name, infoHash: torrent.infoHash });
-          resolve(share);
-        });
-      } catch (e) {
-        onError(e as Error);
+  private call<T = any>(type: string, payload: Record<string, unknown> = {}, timeoutMs = 0): Promise<T> {
+    const child = this.ensureWorker();
+    const reqId = ++this.reqSeq;
+    return new Promise<T>((resolve, reject) => {
+      this.pending.set(reqId, { resolve, reject });
+      if (timeoutMs > 0) {
+        setTimeout(() => {
+          if (this.pending.has(reqId)) {
+            this.pending.delete(reqId);
+            reject(new Error('Share worker did not respond'));
+          }
+        }, timeoutMs);
       }
+      child.postMessage({ type, reqId, ...payload });
     });
   }
 
-  /** Stop sharing a download (removes it from the share swarm). */
-  async stop(downloadId: string): Promise<void> {
-    const share = this.shares.get(downloadId);
-    if (!share || !this.client) return;
-    this.shares.delete(downloadId);
-    try {
-      const torrent = this.client.torrents.find((t: any) => t.infoHash === share.infoHash);
-      if (torrent) this.client.remove(torrent);
-      log.info('Sharing stopped', { downloadId, infoHash: share.infoHash });
-    } catch (e) {
-      log.warn('Failed to stop share', { downloadId, error: String(e) });
-    }
+  /** Start sharing a completed download's content (seeded from disk). */
+  share(downloadId: string, contentPath: string, name: string): Promise<ShareInfo> {
+    // No timeout: seeding hashes the file, which can take a while for big files.
+    return this.call<ShareInfo>('share', { downloadId, contentPath, name });
   }
 
-  getForDownload(downloadId: string): ActiveShare | null {
-    return this.shares.get(downloadId) || null;
+  stop(downloadId: string): Promise<{ ok: boolean }> {
+    return this.call('stop', { downloadId }, 8000);
   }
 
-  list(): ActiveShare[] {
-    return Array.from(this.shares.values()).sort((a, b) => b.createdAt - a.createdAt);
+  /** Returns the share + live peer count, or null if not shared. */
+  get(downloadId: string): Promise<(ShareInfo & { peers: number }) | null> {
+    return this.call('get', { downloadId }, 8000);
   }
 
-  /** Peer count currently connected to a share (rough "is anyone downloading" signal). */
-  getPeers(downloadId: string): number {
-    const share = this.shares.get(downloadId);
-    if (!share || !this.client) return 0;
-    const torrent = this.client.torrents.find((t: any) => t.infoHash === share.infoHash);
-    return torrent ? (torrent as any).numPeers || 0 : 0;
+  list(): Promise<ShareInfo[]> {
+    return this.call('list', {}, 8000);
   }
 
   destroy(): void {
-    this.shares.clear();
-    if (this.client) {
-      try { this.client.destroy(); } catch { /* ignore */ }
-      this.client = null;
+    for (const [, p] of this.pending) p.reject(new Error('Shutting down'));
+    this.pending.clear();
+    if (this.worker) {
+      try { this.worker.kill(); } catch { /* ignore */ }
+      this.worker = null;
     }
     log.info('ShareManager destroyed');
   }
