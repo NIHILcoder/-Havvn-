@@ -59,7 +59,8 @@ Compare the output against the SHA-256 published in the matching GitHub release.
 ### Create & share
 - Create torrents from files or folders (single or batch), custom trackers, private flag,
   start-seeding-immediately
-- **Collaborative seeding** with a reputation/badge system
+- **Instant Share Links** — send a completed download to anyone via a browser link
+  (peer-to-peer over WebRTC, no install on their side)
 
 ### Automation & networking
 - **Scheduler** for time-based bandwidth/activity rules
@@ -135,7 +136,7 @@ Packaged output is written to `release/`.
 electron/            Main process (TypeScript)
   torrent/           WebTorrent manager, creator, watch folder
   services/          RSS, search, IP blocklist
-  seeding/           Collaborative seeding & reputation
+  sharing/           Instant Share Links (WebRTC seeder in a hidden window)
   scheduler/         Time-based scheduler engine
   db/                electron-store wrapper
   ipc/               Typed IPC handlers
@@ -164,7 +165,7 @@ QUEUED → DOWNLOADING → COMPLETED → SEEDING
 Invalid transitions are rejected to keep state consistent.
 
 ### Persistence
-Downloads, settings, feeds, providers and reputation are stored locally via
+Downloads, settings, feeds and providers are stored locally via
 **electron-store** (JSON). Progress is written on a debounced interval (batched into a
 single write) to keep disk I/O low while torrents are active, so downloads resume after a
 restart.
