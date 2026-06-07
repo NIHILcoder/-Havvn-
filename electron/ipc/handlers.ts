@@ -233,6 +233,10 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): void {
     }
   ));
 
+  ipcMain.handle('rooms:openFile', wrapHandler('rooms:openFile',
+    async (_event, roomId: string, fileId: string) => roomManager.openFile(roomId, fileId)
+  ));
+
   ipcMain.handle('downloads:getTorrentInfo', wrapHandler('downloads:getTorrentInfo',
     async (_event, params: { torrentPath?: string; magnetUri?: string }) => {
       return torrentManager.getTorrentInfo(params);

@@ -112,6 +112,7 @@ export interface RoomTransfer {
   downSpeed: number;     // bytes/s
   peers: number;
   haveLocally: boolean;
+  released?: boolean;    // user stopped seeding this file to unlock it on disk
 }
 
 /** Full live state of one room, pushed to the renderer. */
@@ -618,6 +619,7 @@ export interface IpcApi {
     addFiles: (roomId: string, paths: string[]) => Promise<RoomState>;
     pickAndAddFiles: (roomId: string) => Promise<RoomState | null>;
     openFolder: (roomId: string) => Promise<void>;
+    openFile: (roomId: string, fileId: string) => Promise<void>;
   };
   onRoomUpdate: (callback: (state: RoomState) => void) => () => void;
 

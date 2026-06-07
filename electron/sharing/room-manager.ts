@@ -12,7 +12,7 @@
 
 import path from 'path';
 import fs from 'fs';
-import { BrowserWindow, ipcMain, app } from 'electron';
+import { BrowserWindow, ipcMain, app, shell } from 'electron';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils';
 import * as db from '../db/store';
@@ -142,7 +142,16 @@ export class RoomManager {
 
   // ── Public API ─────────────────────────────────────────────────────────────
   getProfile(): RoomProfile { return db.getRoomProfile(); }
-  setProfile(updates: Partial<Pick<RoomProfile, 'name' | 'avatarSeed'>>): RoomProfile { return db.updateRoomProfile(updates); }
+
+  setProfile(updates: Partial<Pick<RoomProfile, 'name' | 'avatarSeed'>>): RoomProfile {
+    const profile = db.updateRoomProfile(updates);
+    // Push the change into the live engine so active rooms re-broadcast the new
+    // identity to peers immediately (no rejoin needed). Skip if not running yet.
+    if (this.win && !this.win.isDestroyed() && this.ready) {
+      this.win.webContents.send('room-cmd', { type: 'profile', reqId: ++this.reqSeq, payload: { name: profile.name, avatarSeed: profile.avatarSeed } });
+    }
+    return profile;
+  }
 
   async createRoom(name: string): Promise<RoomState> {
     const roomId = uuidv4();
@@ -228,6 +237,21 @@ export class RoomManager {
 
   folderOf(roomId: string): string | null {
     return db.getPersistedRooms().find((r) => r.roomId === roomId)?.folder ?? null;
+  }
+
+  /**
+   * Open a room file from disk. First tells the engine to stop seeding it so
+   * Windows releases the file handle (otherwise archives can't be opened while
+   * the file is being shared), then opens it with the OS default app.
+   */
+  async openFile(roomId: string, fileId: string): Promise<void> {
+    const state = this.cache.get(roomId);
+    const file = state?.files.find((f) => f.fileId === fileId);
+    const folder = this.folderOf(roomId);
+    try { await this.call('releaseFile', { roomId, fileId }, 8000); } catch { /* engine may be down */ }
+    if (folder && file) {
+      try { await shell.openPath(path.join(folder, file.name)); } catch { /* ignore */ }
+    }
   }
 
   /** Re-join all persisted rooms on startup so swarms reconnect automatically. */

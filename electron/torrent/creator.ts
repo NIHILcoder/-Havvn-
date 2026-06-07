@@ -7,6 +7,7 @@
 
 import WebTorrent from 'webtorrent';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { BrowserWindow } from 'electron';
 import {
@@ -84,11 +85,12 @@ function getDirSize(dirPath: string): number {
   const entries = fs.readdirSync(dirPath, { withFileTypes: true });
 
   for (const entry of entries) {
+    if (entry.isSymbolicLink()) continue; // don't follow symlinks (avoids loops)
     const fullPath = path.join(dirPath, entry.name);
     if (entry.isDirectory()) {
       size += getDirSize(fullPath);
-    } else {
-      size += fs.statSync(fullPath).size;
+    } else if (entry.isFile()) {
+      size += safeSize(fullPath);
     }
   }
 
@@ -103,13 +105,66 @@ function getDirSize(dirPath: string): number {
 function collectFiles(p: string, exclude: Set<string>, out: string[]): void {
   const resolved = path.resolve(p);
   if (exclude.has(resolved)) return;
-  const stat = fs.statSync(p);
+  let stat: fs.Stats;
+  try { stat = fs.lstatSync(p); } catch { return; }
+  if (stat.isSymbolicLink()) return; // don't follow symlinks (avoids loops/hangs)
   if (stat.isDirectory()) {
     for (const entry of fs.readdirSync(p, { withFileTypes: true })) {
       collectFiles(path.join(p, entry.name), exclude, out);
     }
   } else if (stat.isFile()) {
     out.push(p);
+  }
+}
+
+/**
+ * When the selection has exclusions or multiple sources, mirror the *included*
+ * files into a temp staging tree (hardlinks — instant, no data copy) preserving
+ * their folder structure, then seed that folder. This is necessary because
+ * passing create-torrent a flat array of file paths makes it collapse every file
+ * to its basename at the torrent root — subfolders vanish and same-named files
+ * in different folders collide. Hardlinks fall back to a copy across volumes.
+ */
+function stageSelection(
+  sourcePaths: string[],
+  excludeSet: Set<string>,
+): { input: string | string[]; name?: string; stageDir: string } {
+  const stageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'torrenthunt-stage-'));
+  const wipe = () => { try { fs.rmSync(stageDir, { recursive: true, force: true }); } catch { /* ignore */ } };
+  try {
+    const tops: string[] = [];
+    let staged = 0;
+
+    for (const sp of sourcePaths) {
+      const parentOf = path.dirname(path.resolve(sp));
+      const files: string[] = [];
+      collectFiles(sp, excludeSet, files);
+      for (const f of files) {
+        const rel = path.relative(parentOf, path.resolve(f));
+        const dest = path.join(stageDir, rel);
+        fs.mkdirSync(path.dirname(dest), { recursive: true });
+        try {
+          fs.linkSync(f, dest);
+        } catch {
+          // Cross-volume (EXDEV) or hardlinks unsupported — copy instead.
+          fs.copyFileSync(f, dest);
+        }
+        staged++;
+      }
+      const topName = path.basename(path.resolve(sp));
+      if (!tops.includes(topName)) tops.push(topName);
+    }
+
+    if (staged === 0) throw new Error('No files to include — everything was excluded.');
+    if (tops.length === 1) {
+      return { input: path.join(stageDir, tops[0]), name: tops[0], stageDir };
+    }
+    return { input: tops.map((t) => path.join(stageDir, t)), stageDir };
+  } catch (e) {
+    wipe();
+    const msg = (e as Error)?.message || String(e);
+    throw new Error(/No files to include/.test(msg) ? msg
+      : `Could not stage files for the torrent — a file may be locked, offline (OneDrive) or unreadable. ${msg}`);
   }
 }
 
@@ -168,25 +223,34 @@ export async function createTorrentFile(
   const primaryPath = sourcePaths[0];
   let input: string | string[];
   let usingFolderRoot = false;
+  let stageDir: string | null = null;
+  let stagedName: string | undefined;
 
   if (excludeSet.size === 0 && sourcePaths.length === 1) {
+    // Common case: one source, nothing excluded — seed it directly so the folder
+    // name becomes the torrent root and hashing reads lazily from disk.
     input = sourcePaths[0];
     usingFolderRoot = fs.statSync(sourcePaths[0]).isDirectory();
   } else {
-    const files: string[] = [];
-    for (const sp of sourcePaths) {
-      collectFiles(sp, excludeSet, files);
-    }
-    if (files.length === 0) {
-      throw new Error('No files to include — everything was excluded.');
-    }
-    input = files;
+    // Exclusions or multiple sources — stage the included files (preserving
+    // folders) and seed the staging tree.
+    const staged = stageSelection(sourcePaths, excludeSet);
+    input = staged.input;
+    stageDir = staged.stageDir;
+    stagedName = staged.name;
+    usingFolderRoot = typeof input === 'string' && fs.statSync(input).isDirectory();
   }
 
+  // Clean up the staging tree on every exit path.
+  const cleanupStage = (): void => {
+    if (stageDir) {
+      try { fs.rmSync(stageDir, { recursive: true, force: true }); } catch { /* ignore */ }
+      stageDir = null;
+    }
+  };
+
   // Calculate total size (of included files) and optimal piece length
-  const totalSize = Array.isArray(input)
-    ? input.reduce((sum, f) => sum + safeSize(f), 0)
-    : getTotalSize([input]);
+  const totalSize = getTotalSize(Array.isArray(input) ? input : [input]);
   const pieceLength = options.pieceLength || calculatePieceLength(totalSize);
 
   log.debug('Calculated sizes', {
@@ -236,7 +300,7 @@ export async function createTorrentFile(
 
     // Seed options
     const seedOpts = {
-      name: options.name || (usingFolderRoot ? path.basename(primaryPath) : undefined),
+      name: options.name || stagedName || (usingFolderRoot ? path.basename(primaryPath) : undefined),
       comment: options.comment,
       createdBy: options.createdBy || 'TorrentHunt',
       announce,
@@ -290,6 +354,7 @@ export async function createTorrentFile(
         // Destroy the temporary client (we don't want to seed from here)
         // The main TorrentManager will handle seeding if requested
         client.destroy();
+        cleanupStage();
 
         resolve({
           torrentFilePath: outputPath,
@@ -302,6 +367,7 @@ export async function createTorrentFile(
       } catch (parseError) {
         clearInterval(progressInterval);
         client.destroy();
+        cleanupStage();
         log.error('Failed to write torrent', { error: parseError });
         reject(parseError);
       }
@@ -311,6 +377,7 @@ export async function createTorrentFile(
     client.on('error', (err: string | Error) => {
       clearInterval(progressInterval);
       client.destroy();
+      cleanupStage();
       const errorMessage = typeof err === 'string' ? err : err.message;
       log.error('Failed to create torrent', { error: errorMessage });
       reject(new Error(`Failed to create torrent: ${errorMessage}`));
@@ -320,6 +387,7 @@ export async function createTorrentFile(
     setTimeout(() => {
       clearInterval(progressInterval);
       client.destroy();
+      cleanupStage();
       reject(new Error('Torrent creation timed out'));
     }, 5 * 60 * 1000);
   });

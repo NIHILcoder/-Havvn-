@@ -56,6 +56,8 @@ const dictionary = {
     'rooms.profileDesc': 'This name and avatar are shown to other members. Your avatar is generated from your identity.',
     'rooms.inviteTitle': 'Invite to room',
     'rooms.inviteDesc': 'Share this code (or QR) with friends. Anyone with it can join.',
+    'rooms.openFile': 'Open',
+    'rooms.openFileHint': 'Open the file. Sharing of it stops so the file unlocks (others keep their copy).',
 
     // Downloads
     'filter.all': 'All',
@@ -595,6 +597,8 @@ const dictionary = {
     'rooms.profileDesc': 'Это имя и аватар видят другие участники. Аватар генерируется из вашего идентификатора.',
     'rooms.inviteTitle': 'Пригласить в комнату',
     'rooms.inviteDesc': 'Поделитесь этим кодом (или QR) с друзьями. Любой, у кого он есть, может войти.',
+    'rooms.openFile': 'Открыть',
+    'rooms.openFileHint': 'Открыть файл. Раздача файла остановится, чтобы он разблокировался (у других копия останется).',
     
     // Downloads
     'filter.all': 'Все',

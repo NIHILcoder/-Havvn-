@@ -443,6 +443,7 @@ const api: IpcApi = {
     addFiles: (roomId: string, paths: string[]): Promise<RoomState> => ipcRenderer.invoke('rooms:addFiles', roomId, paths),
     pickAndAddFiles: (roomId: string): Promise<RoomState | null> => ipcRenderer.invoke('rooms:pickAndAddFiles', roomId),
     openFolder: (roomId: string): Promise<void> => ipcRenderer.invoke('rooms:openFolder', roomId),
+    openFile: (roomId: string, fileId: string): Promise<void> => ipcRenderer.invoke('rooms:openFile', roomId, fileId),
   },
 
   onRoomUpdate: (callback: (state: RoomState) => void): (() => void) => {

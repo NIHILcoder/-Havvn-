@@ -120,6 +120,9 @@ function buildState(room: Room): RoomState {
   }
   const transfers: Record<string, RoomTransfer> = {};
   for (const [k, v] of room.transfers) transfers[k] = v;
+  // Count distinct *members* that are online, not raw WebRTC wires — multiple
+  // trackers each broker a wire to the same peer, so wires.size over-counts.
+  const onlinePeers = members.filter((m) => !m.isSelf && m.online).length;
   return {
     roomId: room.roomId,
     name: room.name,
@@ -131,7 +134,7 @@ function buildState(room: Room): RoomState {
     files: Array.from(room.files.values()).sort((a, b) => a.addedAt - b.addedAt),
     transfers,
     connected: room.started,
-    peerCount: room.wires.size,
+    peerCount: onlinePeers,
   };
 }
 
@@ -442,6 +445,35 @@ function leaveRoom(roomId: string): void {
   }
 }
 
+/**
+ * Stop seeding a file so Windows releases the on-disk handle (lets the user open
+ * or extract an archive). The file stays on disk and in the manifest — we just
+ * remove the torrent from the WebTorrent client. Other members keep it.
+ */
+function releaseFile(roomId: string, fileId: string): void {
+  const room = rooms.get(roomId);
+  if (!room) return;
+  // Only drop the torrent if no other active room still shares this file.
+  const stillUsedElsewhere = Array.from(rooms.values()).some((r) => r !== room && r.files.has(fileId));
+  if (client && !stillUsedElsewhere) {
+    const t = client.get(fileId);
+    if (t) { try { client.remove(t); } catch (e) { log('release failed: ' + String(e)); } }
+  }
+  const tr = room.transfers.get(fileId);
+  if (tr) { tr.status = 'done'; tr.released = true; tr.downSpeed = 0; tr.peers = 0; }
+  pushState(room, true);
+}
+
+/** Apply a profile change (name/avatar) to every active room and tell peers. */
+function updateProfile(p: { name?: string; avatarSeed?: string }): void {
+  for (const room of rooms.values()) {
+    if (typeof p.name === 'string') room.self.name = p.name;
+    if (typeof p.avatarSeed === 'string' && p.avatarSeed) room.self.avatarSeed = p.avatarSeed;
+    broadcast(room, { t: 'ping', memberId: room.self.memberId, name: room.self.name || 'You', avatarSeed: room.self.avatarSeed, have: buildState(room).members[0].have });
+    pushState(room, true);
+  }
+}
+
 // ── IPC command router ───────────────────────────────────────────────────────
 ipcRenderer.on('room-cmd', async (_e, msg: any) => {
   const { type, reqId } = msg;
@@ -450,6 +482,8 @@ ipcRenderer.on('room-cmd', async (_e, msg: any) => {
     if (type === 'join') data = startRoom(msg.payload);
     else if (type === 'addFiles') data = await addFiles(msg.roomId, msg.paths);
     else if (type === 'leave') { leaveRoom(msg.roomId); data = { ok: true }; }
+    else if (type === 'profile') { updateProfile(msg.payload || {}); data = { ok: true }; }
+    else if (type === 'releaseFile') { releaseFile(msg.roomId, msg.fileId); data = { ok: true }; }
     else if (type === 'snapshot') { const r = rooms.get(msg.roomId); data = r ? buildState(r) : null; }
     else throw new Error('Unknown room command: ' + type);
     ipcRenderer.send('room-res', { reqId, ok: true, data });

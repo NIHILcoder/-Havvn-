@@ -209,6 +209,23 @@
 .room-file-progress { height: 4px; border-radius: var(--radius-full); background: var(--color-bg-tertiary); overflow: hidden; margin-top: 2px; }
 .room-file-progress-bar { height: 100%; background: var(--color-accent); border-radius: var(--radius-full); transition: width var(--transition-normal); }
 
+.room-file-open {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
+}
+.room-file-open:hover { color: var(--color-text-primary); border-color: var(--color-border-hover); background: var(--color-bg-hover); }
+
 .room-file-status { flex-shrink: 0; display: flex; align-items: center; justify-content: center; min-width: 40px; }
 .room-status { display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .room-status.seeding { color: #22c55e; }

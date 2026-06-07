@@ -4,6 +4,27 @@ All notable changes to TorrentHunt are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [1.6.1-beta] - 2026-06-07
+
+### Fixed
+- **Create Torrent: subfolders no longer collapse.** When you excluded any file (or
+  picked multiple sources), the created torrent flattened every file to the root —
+  subfolders disappeared and same-named files in different folders collided. The
+  included files are now staged with their folder structure intact (via instant
+  hardlinks, no data copied) before hashing.
+- **Create Torrent: fewer hangs.** Symlinked folders are no longer followed (which
+  could loop forever), and an unreadable/locked/offline (OneDrive) file now fails
+  with a clear message naming the file instead of hanging until the timeout.
+- **Rooms: "connected" count was wrong.** It showed the number of WebRTC wires
+  (several per peer, one per tracker) instead of people — now it counts distinct
+  online members.
+- **Rooms: name changes propagate live.** Changing your room nickname now updates
+  for other members immediately, without rejoining.
+- **Rooms: open shared archives.** A shared `.zip`/`.rar`/`.7z` could be locked by
+  the app while it was being seeded. Each file now has an **Open** button that
+  stops sharing just that file so it unlocks, then opens it (other members keep
+  their copy).
+
 ## [1.6.0-beta] - 2026-06-07
 
 ### Added
@@ -260,6 +281,7 @@ This project follows [Keep a Changelog](https://keepachangelog.com/) and
 - Real encryption / anonymity options, VPN kill-switch, disk-space guard,
   and torrent health indicators.
 
+[1.6.1-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.6.1-beta
 [1.6.0-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.6.0-beta
 [1.5.25-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.5.25-beta
 [1.5.24-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.5.24-beta

@@ -406,6 +406,15 @@ const RoomFileRow: React.FC<{ file: RoomFile; room: RoomState }> = ({ file, room
           </div>
         )}
       </div>
+      {haveLocally && (
+        <button
+          className="room-file-open"
+          onClick={() => window.api.rooms.openFile(room.roomId, file.fileId)}
+          title={t('rooms.openFileHint')}
+        >
+          <Icon name="external-link" size={14} /> {t('rooms.openFile')}
+        </button>
+      )}
       <div className="room-file-status">
         {haveLocally ? (
           <span className="room-status seeding" title={t('rooms.haveLocal')}><Icon name="check-circle" size={16} /></span>
