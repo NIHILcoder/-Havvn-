@@ -56,6 +56,7 @@ export class CastServer {
   private published = new Set<string>(); // `${id}/${fileIndex}`
   private durations = new Map<string, number>(); // diskPath → seconds
   private active = new Set<ChildProcess>();
+  private hlsLib: Buffer | null = null;          // cached hls.min.js
   private resolveFile: Resolver;
   private getFfmpeg: () => string | null;
 
@@ -122,6 +123,10 @@ export class CastServer {
       // /play/<id>/<idx> | /direct/<id>/<idx> | /hls/<id>/<idx>/master.m3u8
       //   | /hls/<id>/<idx>/<variant>/index.m3u8 | /hls/<id>/<idx>/<variant>/seg-<n>.ts
       const route = parts[0];
+      // Serve the HLS player library locally so devices never need to reach a
+      // CDN (the #1 reason transcoded formats failed: hls.js wouldn't load).
+      if (route === 'hls.js') return void this.serveHlsLib(res);
+
       const id = decodeURIComponent(parts[1] || '');
       const fileIndex = Number(parts[2]);
       if (!this.published.has(`${id}/${fileIndex}`)) { res.writeHead(404); res.end('not published'); return; }
@@ -130,6 +135,7 @@ export class CastServer {
 
       if (route === 'play') return void this.servePlayer(res, info, id, fileIndex);
       if (route === 'direct') return this.serveDirect(req, res, info);
+      if (route === 'stream') return this.serveProgressive(req, res, info); // single-pass MP4 fallback
       if (route === 'hls') {
         if (parts[3] === 'master.m3u8') return void this.serveMaster(res, id, fileIndex);
         const variant = parts[3];
@@ -150,6 +156,7 @@ export class CastServer {
     const base = `/${encodeURIComponent(id)}/${fileIndex}`;
     const directUrl = `/direct${base}${q}`;
     const masterUrl = `/hls${base}/master.m3u8${q}`;
+    const streamUrl = `/stream${base}${q}`;
     // info.direct files play natively with a plain <video>; everything else uses
     // HLS (native on Safari/iOS, hls.js elsewhere). A failed direct play also
     // upgrades to HLS, covering MP4s with an unsupported codec (e.g. HEVC).
@@ -170,27 +177,37 @@ export class CastServer {
   <video id="v" controls autoplay playsinline></video>
   <div class="msg" id="m"></div>
 </div>
-<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
+<script src="/hls.js${q}"></script>
 <script>
 (function(){
   var v=document.getElementById('v'), m=document.getElementById('m');
   var DIRECT=${info.direct ? 'true' : 'false'};
   var directUrl=${JSON.stringify(directUrl)};
   var masterUrl=${JSON.stringify(masterUrl)};
+  var streamUrl=${JSON.stringify(streamUrl)};
   function say(t,err){ m.textContent=t||''; m.className='msg'+(err?' err':''); }
+  function clearSrc(){ try{ v.removeAttribute('src'); v.load(); }catch(e){} }
+  // Last resort: a single-pass transcoded MP4 stream. Plays anything; no seeking.
+  function playProgressive(){
+    clearSrc(); say('Converting — playback starts shortly (seeking is limited)…');
+    v.src=streamUrl;
+    v.addEventListener('playing',function(){ say(''); },{once:true});
+    v.addEventListener('error',function(){ say('Could not play this file on this device.',true); },{once:true});
+    v.play&&v.play().catch(function(){});
+  }
   function playHls(){
-    say('');
-    try { v.removeAttribute('src'); v.load(); } catch(e){}
+    say(''); clearSrc();
     if (v.canPlayType('application/vnd.apple.mpegurl')) { v.src=masterUrl; v.play&&v.play().catch(function(){}); return; }
     if (window.Hls && window.Hls.isSupported()) {
       var hls=new window.Hls({maxBufferLength:30});
       hls.loadSource(masterUrl); hls.attachMedia(v);
-      hls.on(window.Hls.Events.ERROR,function(_e,d){ if(d&&d.fatal){ say('Playback error — the file may still be downloading on the sender. Try again in a moment.',true);} });
-    } else { say('This browser cannot play the stream. Try Chrome, Edge, Safari or Firefox.',true); }
+      // If HLS fails on this file/device, fall back to the progressive stream.
+      hls.on(window.Hls.Events.ERROR,function(_e,d){ if(d&&d.fatal){ try{hls.destroy();}catch(e){} playProgressive(); } });
+    } else { playProgressive(); }
   }
   if (DIRECT){
     v.src=directUrl;
-    v.addEventListener('error',function(){ say('Direct play failed — switching to transcode…'); playHls(); });
+    v.addEventListener('error',function(){ playHls(); },{once:true});
   } else { playHls(); }
 })();
 </script>
@@ -227,6 +244,51 @@ export class CastServer {
       stream.on('error', () => { try { res.destroy(); } catch { /* ignore */ } });
       stream.pipe(res);
     }
+  }
+
+  /** Serve the bundled hls.js (no CDN needed). Cached after first read. */
+  private serveHlsLib(res: http.ServerResponse): void {
+    try {
+      if (!this.hlsLib) {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const p = require.resolve('hls.js/dist/hls.min.js');
+        this.hlsLib = fs.readFileSync(p);
+      }
+      res.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'max-age=86400' });
+      res.end(this.hlsLib);
+    } catch (e) {
+      log.warn('hls.js serve failed', { error: String(e) });
+      res.writeHead(404); res.end();
+    }
+  }
+
+  /**
+   * Single-pass transcode to a progressive fragmented MP4 — the proven recipe
+   * from the in-app player. No seeking, but it "just works" for avi/mkv/HEVC and
+   * is the fallback when HLS misbehaves on the device.
+   */
+  private serveProgressive(req: http.IncomingMessage, res: http.ServerResponse, info: FileInfo): void {
+    const ffmpeg = this.getFfmpeg();
+    if (!ffmpeg) { res.writeHead(503); res.end('ffmpeg unavailable'); return; }
+    const args = info.kind === 'audio'
+      ? ['-i', info.diskPath, '-c:a', 'libmp3lame', '-b:a', '192k', '-f', 'mp3', 'pipe:1']
+      : [
+          '-i', info.diskPath,
+          '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
+          '-c:a', 'aac', '-b:a', '160k', '-ac', '2',
+          '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
+          '-f', 'mp4', 'pipe:1',
+        ];
+    res.writeHead(200, { 'Content-Type': info.kind === 'audio' ? 'audio/mpeg' : 'video/mp4', 'Cache-Control': 'no-store' });
+    const proc = spawn(ffmpeg, args, { windowsHide: true });
+    this.active.add(proc);
+    const done = () => { this.active.delete(proc); try { proc.kill('SIGKILL'); } catch { /* ignore */ } };
+    proc.stdout.pipe(res);
+    proc.stderr.on('data', () => { /* discard */ });
+    proc.on('error', (e) => { log.warn('progressive ffmpeg error', { error: String(e) }); done(); try { res.destroy(); } catch { /* ignore */ } });
+    proc.on('close', () => this.active.delete(proc));
+    res.on('close', done);
+    req.on('close', done);
   }
 
   // ── HLS playlists ────────────────────────────────────────────────────────────

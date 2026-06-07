@@ -4,6 +4,16 @@ All notable changes to TorrentHunt are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [1.6.2-beta] - 2026-06-07
+
+### Fixed
+- **Cast (Watch on another device): transcoded formats now play reliably.** The
+  player library (hls.js) is now served locally from your PC instead of a CDN, so
+  the receiving device no longer needs Internet access to start an mkv/avi/HEVC
+  stream — the #1 reason those formats showed nothing. Added an automatic
+  single-pass MP4 fallback: if HLS can't play a particular file on a device, the
+  player switches to a plain transcoded stream that "just works" (seeking limited).
+
 ## [1.6.1-beta] - 2026-06-07
 
 ### Fixed
@@ -281,6 +291,7 @@ This project follows [Keep a Changelog](https://keepachangelog.com/) and
 - Real encryption / anonymity options, VPN kill-switch, disk-space guard,
   and torrent health indicators.
 
+[1.6.2-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.6.2-beta
 [1.6.1-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.6.1-beta
 [1.6.0-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.6.0-beta
 [1.5.25-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.5.25-beta
