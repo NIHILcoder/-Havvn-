@@ -163,6 +163,22 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): void {
     async () => getShareManager().list()
   ));
 
+  // ── Cast to device on the LAN (HLS / direct, with seeking) ───────────────
+  ipcMain.handle('cast:start', wrapHandler('cast:start',
+    async (_event, id: string, fileIndex: number) => {
+      const { getCastServer } = require('../torrent/cast-server');
+      return getCastServer().publish(id, fileIndex);
+    }
+  ));
+
+  ipcMain.handle('cast:stop', wrapHandler('cast:stop',
+    async (_event, id: string, fileIndex: number) => {
+      const { getCastServer } = require('../torrent/cast-server');
+      getCastServer().unpublish(id, fileIndex);
+      return { ok: true };
+    }
+  ));
+
   // ── Friend swarms / private rooms (Phase 3) ─────────────────────────────
   ipcMain.handle('rooms:getProfile', wrapHandler('rooms:getProfile',
     async () => roomManager.getProfile()

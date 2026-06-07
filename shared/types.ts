@@ -600,6 +600,12 @@ export interface IpcApi {
     testProvider: (id: string) => Promise<{ success: boolean; message: string }>;
   };
 
+  // Cast to a device on the LAN (HLS transcode / direct, with seeking)
+  cast: {
+    start: (id: string, fileIndex: number) => Promise<{ url: string; lan: string; port: number } | null>;
+    stop: (id: string, fileIndex: number) => Promise<{ ok: boolean }>;
+  };
+
   // Friend swarms / private rooms (Phase 3)
   rooms: {
     getProfile: () => Promise<RoomProfile>;

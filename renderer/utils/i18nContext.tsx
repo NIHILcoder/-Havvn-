@@ -510,6 +510,13 @@ const dictionary = {
     'player.noMedia': 'No playable video or audio files in this torrent.',
     'player.unsupported': "This file couldn't be played even after conversion. Try an external player.",
     'player.note': 'Streaming from the torrent — playback starts before the download finishes.',
+    'player.cast': 'Watch on another device',
+    'player.castTitle': 'Watch on another device',
+    'player.castStarting': 'Starting…',
+    'player.castDesc': 'Scan with a phone, tablet or TV on the same Wi-Fi.',
+    'player.castCopy': 'Click to copy the link',
+    'player.castHint': 'The device must be on the same network. Unplayable formats are converted on the fly, so seeking works.',
+    'player.castNoLan': 'No local network address found — connect to Wi-Fi or a LAN and try again.',
 
     // Share links
     'share.title': 'Share link',
@@ -1042,6 +1049,13 @@ const dictionary = {
     'player.noMedia': 'В этом торренте нет воспроизводимых видео или аудио.',
     'player.unsupported': 'Файл не удалось воспроизвести даже после конвертации. Попробуйте внешний плеер.',
     'player.note': 'Стриминг прямо из торрента — воспроизведение начинается до завершения загрузки.',
+    'player.cast': 'Смотреть на другом устройстве',
+    'player.castTitle': 'Смотреть на другом устройстве',
+    'player.castStarting': 'Запуск…',
+    'player.castDesc': 'Отсканируйте с телефона, планшета или ТВ в той же Wi-Fi-сети.',
+    'player.castCopy': 'Нажмите, чтобы скопировать ссылку',
+    'player.castHint': 'Устройство должно быть в той же сети. Неподдерживаемые форматы конвертируются на лету, поэтому перемотка работает.',
+    'player.castNoLan': 'Не найден адрес в локальной сети — подключитесь к Wi-Fi/LAN и попробуйте снова.',
 
     // Ссылки-шеринг
     'share.title': 'Ссылка для обмена',

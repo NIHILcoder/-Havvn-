@@ -4,6 +4,26 @@ All notable changes to TorrentHunt are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [1.6.0-beta] - 2026-06-07
+
+### Added
+- **Watch a torrent on any device on your network.** The in-app player now has a
+  **"Watch on another device"** button that shows a QR code and link. Open it on a
+  phone, tablet or TV on the same Wi-Fi and the video plays — **with seeking** —
+  even for formats the browser can't normally decode (mkv, HEVC, AVI…), because
+  the desktop transcodes to **HLS on the fly** (two quality levels, adaptive).
+  Browser-friendly files (mp4/webm) are streamed directly with native seeking and
+  zero extra CPU. No app to install on the other device, no cloud — the stream is
+  served straight from your PC over the local network (the link carries a
+  single-use access token).
+
+### Fixed
+- **Share links now explain when a movie can't preview in the browser.** Receiving
+  a shared `.mkv`/HEVC file used to silently fail to play. The receiver page now
+  recognizes more formats, surfaces a clear message when the browser can't decode
+  the codec, and points you to Download or to "Watch on another device" on the
+  same Wi-Fi for a converted stream.
+
 ## [1.5.25-beta] - 2026-06-06
 
 ### Added
@@ -240,6 +260,7 @@ This project follows [Keep a Changelog](https://keepachangelog.com/) and
 - Real encryption / anonymity options, VPN kill-switch, disk-space guard,
   and torrent health indicators.
 
+[1.6.0-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.6.0-beta
 [1.5.25-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.5.25-beta
 [1.5.24-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.5.24-beta
 [1.5.23-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.5.23-beta

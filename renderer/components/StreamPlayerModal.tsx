@@ -9,6 +9,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { Icon } from './Icon';
+import { QRCode } from './QRCode';
 import { useTranslation } from '../utils/i18nContext';
 import { classifyMediaKind, MediaKind } from '../../shared/media';
 import './StreamPlayerModal.css';
@@ -44,6 +45,13 @@ export const StreamPlayerModal: React.FC<StreamPlayerModalProps> = ({ downloadId
   const [transcoded, setTranscoded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // "Watch on another device" (LAN cast)
+  const [castInfo, setCastInfo] = useState<{ url: string; lan: string; port: number } | null>(null);
+  const [castOpen, setCastOpen] = useState(false);
+  const [castBusy, setCastBusy] = useState(false);
+  const [castError, setCastError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   // Load the streamable files in this torrent once.
   useEffect(() => {
@@ -119,6 +127,36 @@ export const StreamPlayerModal: React.FC<StreamPlayerModalProps> = ({ downloadId
 
   const activeFile = files.find((f) => f.index === activeIndex) || null;
 
+  // Publish the current file on the LAN and show a QR + URL to open elsewhere.
+  const handleCast = useCallback(async () => {
+    if (activeIndex === null) return;
+    setCastBusy(true);
+    setCastError(null);
+    setCastOpen(true);
+    try {
+      const info = await window.api.cast.start(downloadId, activeIndex);
+      if (!info) setCastError(t('player.castNoLan'));
+      else setCastInfo(info);
+    } catch (err: unknown) {
+      setCastError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCastBusy(false);
+    }
+  }, [downloadId, activeIndex, t]);
+
+  // Re-publish when switching files while the cast panel is open.
+  useEffect(() => {
+    if (castOpen && activeIndex !== null) { setCastInfo(null); handleCast(); }
+  }, [activeIndex]);
+
+  const copyCastUrl = useCallback(() => {
+    if (!castInfo) return;
+    navigator.clipboard.writeText(castInfo.url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }).catch(() => {});
+  }, [castInfo]);
+
   const renderBody = useCallback(() => {
     if (error) {
       return (
@@ -176,10 +214,42 @@ export const StreamPlayerModal: React.FC<StreamPlayerModalProps> = ({ downloadId
               </span>
             )}
           </div>
+          <button
+            className={`player-cast-btn ${castOpen ? 'active' : ''}`}
+            onClick={() => (castOpen ? setCastOpen(false) : handleCast())}
+            title={t('player.cast')}
+          >
+            <Icon name="tv" size={16} />
+            <span className="player-cast-label">{t('player.cast')}</span>
+          </button>
           <button className="player-close" onClick={onClose} title={t('player.close')}>
             <Icon name="x" size={18} />
           </button>
         </div>
+
+        {castOpen && (
+          <div className="player-cast-panel">
+            <button className="player-cast-close" onClick={() => setCastOpen(false)} title={t('player.close')}>
+              <Icon name="x" size={14} />
+            </button>
+            <div className="player-cast-title">{t('player.castTitle')}</div>
+            {castBusy ? (
+              <div className="player-cast-loading"><span className="spinner" /> {t('player.castStarting')}</div>
+            ) : castError ? (
+              <div className="player-cast-error"><Icon name="alert-triangle" size={14} /> {castError}</div>
+            ) : castInfo ? (
+              <>
+                <div className="player-cast-qr"><QRCode data={castInfo.url} size={180} /></div>
+                <div className="player-cast-desc">{t('player.castDesc')}</div>
+                <button className="player-cast-url" onClick={copyCastUrl} title={t('player.castCopy')}>
+                  <span>{castInfo.url}</span>
+                  <Icon name={copied ? 'check-circle' : 'copy'} size={14} />
+                </button>
+                <div className="player-cast-hint"><Icon name="info" size={12} /> {t('player.castHint')}</div>
+              </>
+            ) : null}
+          </div>
+        )}
 
         <div className="player-body">{renderBody()}</div>
 

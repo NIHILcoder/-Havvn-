@@ -605,6 +605,14 @@ async function cleanup(): Promise<void> {
     logger.error('App', 'Error destroying room manager', { error: e });
   }
 
+  try {
+    const { getCastServer } = require('./torrent/cast-server');
+    getCastServer().destroy();
+    logger.info('App', 'Cast server destroyed.');
+  } catch (e) {
+    logger.error('App', 'Error destroying cast server', { error: e });
+  }
+
   // Stop scheduler
   try {
     const scheduler = getSchedulerEngine();

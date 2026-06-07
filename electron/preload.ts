@@ -422,6 +422,14 @@ const api: IpcApi = {
     testProvider: (id: string) => ipcRenderer.invoke('search:testProvider', id),
   },
 
+  // Cast to a device on the LAN
+  cast: {
+    start: (id: string, fileIndex: number): Promise<{ url: string; lan: string; port: number } | null> =>
+      ipcRenderer.invoke('cast:start', id, fileIndex),
+    stop: (id: string, fileIndex: number): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke('cast:stop', id, fileIndex),
+  },
+
   // Friend swarms / private rooms (Phase 3)
   rooms: {
     getProfile: (): Promise<RoomProfile> => ipcRenderer.invoke('rooms:getProfile'),

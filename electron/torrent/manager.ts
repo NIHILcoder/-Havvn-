@@ -1514,6 +1514,39 @@ export class TorrentManager {
     };
   }
 
+  /** Bundled ffmpeg path (or null). Exposed for the LAN cast server. */
+  get ffmpegBinary(): string | null { return this.ffmpegPath; }
+
+  /**
+   * Resolve on-disk info for a file so the LAN "cast to device" server can serve
+   * it (direct Range or on-demand HLS transcode). Returns null if not available.
+   */
+  getCastFileInfo(id: string, fileIndex: number): {
+    name: string; length: number; diskPath: string; complete: boolean;
+    kind: 'video' | 'audio' | 'other'; direct: boolean;
+  } | null {
+    const managed = this.managedTorrents.get(id);
+    if (!managed || !managed.torrent) return null;
+    const file = managed.torrent.files[fileIndex];
+    if (!file) return null;
+    const rel = (file as unknown as { path: string }).path || file.name;
+    let diskPath = path.join(managed.download.savePath, rel);
+    // "Start seeding" entries keep content at the original source path.
+    if (!fs.existsSync(diskPath) && managed.download.seedPaths && managed.download.seedPaths.length === 1) {
+      diskPath = managed.download.seedPaths[0];
+    }
+    const downloaded = (file as unknown as { downloaded: number }).downloaded || 0;
+    const complete = file.length > 0 && downloaded >= file.length;
+    return {
+      name: file.name,
+      length: file.length,
+      diskPath,
+      complete,
+      kind: classifyMediaKind(file.name),
+      direct: isDirectlyPlayable(file.name),
+    };
+  }
+
   /**
    * Lazily start the shared transcoding HTTP server (127.0.0.1 only).
    * Routes: GET /transcode/<downloadId>/<fileIndex> → fragmented MP4 / MP3.

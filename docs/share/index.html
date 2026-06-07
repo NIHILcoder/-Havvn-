@@ -88,6 +88,12 @@
       $('dot').className = 'dot' + (live ? ' live' : '');
     }
     function fail(msg) { setStatus(msg, false); $('status').className = 'error'; }
+    var DEFAULT_HINT = $('hint') ? $('hint').textContent : '';
+    function setNote(text, err) {
+      var h = $('hint'); if (!h) return;
+      h.textContent = text || DEFAULT_HINT;
+      h.className = 'hint' + (text && err ? ' error' : '');
+    }
 
     // The link carries either a bare infoHash (new, short links) or a full
     // magnet (older links). For an infoHash we rebuild the magnet here, adding
@@ -136,7 +142,12 @@
 
     setStatus('Connecting to the sender…', true);
 
-    var MEDIA_RX = /\.(mp4|m4v|webm|ogv|ogg|mp3|m4a|aac|wav|flac|opus|mov)$/i;
+    // Formats the browser can usually play directly.
+    var PLAYABLE_RX = /\.(mp4|m4v|webm|ogv|ogg|mp3|m4a|aac|wav|flac|opus|mov)$/i;
+    // Any media file — we still offer a Preview for these, but warn that the
+    // browser may not be able to decode the codec (e.g. mkv/HEVC). The reliable
+    // path for those is the sender's "Watch on another device" on the same Wi-Fi.
+    var MEDIA_RX = /\.(mp4|m4v|webm|ogv|ogg|mov|mkv|avi|wmv|flv|mpg|mpeg|ts|m2ts|3gp|mp3|m4a|aac|wav|flac|opus|wma)$/i;
     var rendered = false;
 
     client.add(magnet, function (torrent) {
@@ -153,7 +164,18 @@
 
           if (MEDIA_RX.test(file.name)) {
             var play = document.createElement('button'); play.className = 'btn ghost'; play.textContent = 'Preview';
-            play.onclick = function () { $('media').innerHTML = ''; file.appendTo('#media', { autoplay: true, controls: true }); };
+            play.onclick = function () {
+              $('media').innerHTML = '';
+              setNote('');
+              file.appendTo('#media', { autoplay: true, controls: true }, function (err) {
+                if (err) {
+                  $('media').innerHTML = '';
+                  setNote(PLAYABLE_RX.test(file.name)
+                    ? 'Could not play this file in the browser — it may still be downloading. Try again in a moment, or use Download below.'
+                    : 'This format (e.g. MKV/HEVC) can’t be decoded by the browser. Download it below, or ask the sender to use “Watch on another device” on the same Wi‑Fi for a converted stream.', true);
+                }
+              });
+            };
             row.appendChild(play);
           }
 
