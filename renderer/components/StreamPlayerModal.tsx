@@ -52,6 +52,10 @@ export const StreamPlayerModal: React.FC<StreamPlayerModalProps> = ({ downloadId
   const [castBusy, setCastBusy] = useState(false);
   const [castError, setCastError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [castMode, setCastMode] = useState<'lan' | 'remote'>('lan');
+  const [remoteInfo, setRemoteInfo] = useState<{ url: string; sessionId: string } | null>(null);
+  const [remoteBusy, setRemoteBusy] = useState(false);
+  const [remoteError, setRemoteError] = useState<string | null>(null);
 
   // Load the streamable files in this torrent once.
   useEffect(() => {
@@ -149,13 +153,38 @@ export const StreamPlayerModal: React.FC<StreamPlayerModalProps> = ({ downloadId
     if (castOpen && activeIndex !== null) { setCastInfo(null); handleCast(); }
   }, [activeIndex]);
 
+  // Publish for remote viewing (over WebRTC, works outside the local network).
+  const handleRemote = useCallback(async () => {
+    if (activeIndex === null) return;
+    setRemoteBusy(true);
+    setRemoteError(null);
+    try {
+      const info = await window.api.cast.remoteStart(downloadId, activeIndex);
+      setRemoteInfo(info);
+    } catch (err: unknown) {
+      setRemoteError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRemoteBusy(false);
+    }
+  }, [downloadId, activeIndex]);
+
+  // Switching to the "anywhere" tab lazily starts the remote session.
+  useEffect(() => {
+    if (castOpen && castMode === 'remote' && !remoteInfo && !remoteBusy) handleRemote();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [castMode, castOpen]);
+
+  // Reset remote session when switching files.
+  useEffect(() => { setRemoteInfo(null); setRemoteError(null); }, [activeIndex]);
+
+  const activeCastUrl = castMode === 'remote' ? remoteInfo?.url : castInfo?.url;
   const copyCastUrl = useCallback(() => {
-    if (!castInfo) return;
-    navigator.clipboard.writeText(castInfo.url).then(() => {
+    if (!activeCastUrl) return;
+    navigator.clipboard.writeText(activeCastUrl).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     }).catch(() => {});
-  }, [castInfo]);
+  }, [activeCastUrl]);
 
   const renderBody = useCallback(() => {
     if (error) {
@@ -233,21 +262,49 @@ export const StreamPlayerModal: React.FC<StreamPlayerModalProps> = ({ downloadId
               <Icon name="x" size={14} />
             </button>
             <div className="player-cast-title">{t('player.castTitle')}</div>
-            {castBusy ? (
-              <div className="player-cast-loading"><span className="spinner" /> {t('player.castStarting')}</div>
-            ) : castError ? (
-              <div className="player-cast-error"><Icon name="alert-triangle" size={14} /> {castError}</div>
-            ) : castInfo ? (
-              <>
-                <div className="player-cast-qr"><QRCode data={castInfo.url} size={180} /></div>
-                <div className="player-cast-desc">{t('player.castDesc')}</div>
-                <button className="player-cast-url" onClick={copyCastUrl} title={t('player.castCopy')}>
-                  <span>{castInfo.url}</span>
-                  <Icon name={copied ? 'check-circle' : 'copy'} size={14} />
-                </button>
-                <div className="player-cast-hint"><Icon name="info" size={12} /> {t('player.castHint')}</div>
-              </>
-            ) : null}
+
+            <div className="player-cast-tabs">
+              <button className={`player-cast-tab ${castMode === 'lan' ? 'active' : ''}`} onClick={() => setCastMode('lan')}>
+                <Icon name="monitor" size={13} /> {t('player.castLan')}
+              </button>
+              <button className={`player-cast-tab ${castMode === 'remote' ? 'active' : ''}`} onClick={() => setCastMode('remote')}>
+                <Icon name="globe" size={13} /> {t('player.castRemote')}
+              </button>
+            </div>
+
+            {castMode === 'lan' ? (
+              castBusy ? (
+                <div className="player-cast-loading"><span className="spinner" /> {t('player.castStarting')}</div>
+              ) : castError ? (
+                <div className="player-cast-error"><Icon name="alert-triangle" size={14} /> {castError}</div>
+              ) : castInfo ? (
+                <>
+                  <div className="player-cast-qr"><QRCode data={castInfo.url} size={180} /></div>
+                  <div className="player-cast-desc">{t('player.castDesc')}</div>
+                  <button className="player-cast-url" onClick={copyCastUrl} title={t('player.castCopy')}>
+                    <span>{castInfo.url}</span>
+                    <Icon name={copied ? 'check-circle' : 'copy'} size={14} />
+                  </button>
+                  <div className="player-cast-hint"><Icon name="info" size={12} /> {t('player.castHint')}</div>
+                </>
+              ) : null
+            ) : (
+              remoteBusy ? (
+                <div className="player-cast-loading"><span className="spinner" /> {t('player.castStarting')}</div>
+              ) : remoteError ? (
+                <div className="player-cast-error"><Icon name="alert-triangle" size={14} /> {remoteError}</div>
+              ) : remoteInfo ? (
+                <>
+                  <div className="player-cast-qr"><QRCode data={remoteInfo.url} size={180} /></div>
+                  <div className="player-cast-desc">{t('player.castRemoteDesc')}</div>
+                  <button className="player-cast-url" onClick={copyCastUrl} title={t('player.castCopy')}>
+                    <span>{remoteInfo.url}</span>
+                    <Icon name={copied ? 'check-circle' : 'copy'} size={14} />
+                  </button>
+                  <div className="player-cast-hint"><Icon name="info" size={12} /> {t('player.castRemoteHint')}</div>
+                </>
+              ) : null
+            )}
           </div>
         )}
 

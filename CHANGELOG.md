@@ -4,6 +4,18 @@ All notable changes to TorrentHunt are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [1.7.0-beta] - 2026-06-07
+
+### Added
+- **Watch anywhere — stream a torrent to a device outside your network
+  (experimental).** The player's "Watch on another device" panel now has two
+  tabs: **Same Wi-Fi** (the existing LAN cast) and **Anywhere**. "Anywhere" gives
+  a public link + QR that plays the video on any device on any network — even
+  mobile data — by transcoding to H.264 on your PC and streaming it peer-to-peer
+  over WebRTC (the receiver plays it via MediaSource). No install on the other
+  side, no cloud. Keep TorrentHunt open while they watch; seeking is limited in
+  this mode. Marked experimental while it gets real-world testing across networks.
+
 ## [1.6.3-beta] - 2026-06-07
 
 ### Fixed
@@ -301,6 +313,7 @@ This project follows [Keep a Changelog](https://keepachangelog.com/) and
 - Real encryption / anonymity options, VPN kill-switch, disk-space guard,
   and torrent health indicators.
 
+[1.7.0-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.7.0-beta
 [1.6.3-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.6.3-beta
 [1.6.2-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.6.2-beta
 [1.6.1-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.6.1-beta

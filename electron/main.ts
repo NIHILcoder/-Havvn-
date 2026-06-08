@@ -613,6 +613,14 @@ async function cleanup(): Promise<void> {
     logger.error('App', 'Error destroying cast server', { error: e });
   }
 
+  try {
+    const { getRemoteCastManager } = require('./sharing/remote-cast-manager');
+    getRemoteCastManager().destroy();
+    logger.info('App', 'Remote-cast manager destroyed.');
+  } catch (e) {
+    logger.error('App', 'Error destroying remote-cast manager', { error: e });
+  }
+
   // Stop scheduler
   try {
     const scheduler = getSchedulerEngine();

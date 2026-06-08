@@ -428,6 +428,10 @@ const api: IpcApi = {
       ipcRenderer.invoke('cast:start', id, fileIndex),
     stop: (id: string, fileIndex: number): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke('cast:stop', id, fileIndex),
+    remoteStart: (id: string, fileIndex: number): Promise<{ url: string; sessionId: string }> =>
+      ipcRenderer.invoke('cast:remoteStart', id, fileIndex),
+    remoteStop: (sessionId: string): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke('cast:remoteStop', sessionId),
   },
 
   // Friend swarms / private rooms (Phase 3)

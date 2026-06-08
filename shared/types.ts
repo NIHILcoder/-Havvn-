@@ -605,6 +605,9 @@ export interface IpcApi {
   cast: {
     start: (id: string, fileIndex: number) => Promise<{ url: string; lan: string; port: number } | null>;
     stop: (id: string, fileIndex: number) => Promise<{ ok: boolean }>;
+    // Remote streaming over WebRTC (watch on a device outside your network)
+    remoteStart: (id: string, fileIndex: number) => Promise<{ url: string; sessionId: string }>;
+    remoteStop: (sessionId: string) => Promise<{ ok: boolean }>;
   };
 
   // Friend swarms / private rooms (Phase 3)

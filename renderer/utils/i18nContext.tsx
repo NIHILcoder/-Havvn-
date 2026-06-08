@@ -519,6 +519,10 @@ const dictionary = {
     'player.castCopy': 'Click to copy the link',
     'player.castHint': 'The device must be on the same network. Unplayable formats are converted on the fly, so seeking works.',
     'player.castNoLan': 'No local network address found — connect to Wi-Fi or a LAN and try again.',
+    'player.castLan': 'Same Wi-Fi',
+    'player.castRemote': 'Anywhere',
+    'player.castRemoteDesc': 'Open on any device, on any network — even mobile data.',
+    'player.castRemoteHint': 'Streams over the Internet (P2P). Keep this window open while they watch; seeking is limited.',
 
     // Share links
     'share.title': 'Share link',
@@ -1060,6 +1064,10 @@ const dictionary = {
     'player.castCopy': 'Нажмите, чтобы скопировать ссылку',
     'player.castHint': 'Устройство должно быть в той же сети. Неподдерживаемые форматы конвертируются на лету, поэтому перемотка работает.',
     'player.castNoLan': 'Не найден адрес в локальной сети — подключитесь к Wi-Fi/LAN и попробуйте снова.',
+    'player.castLan': 'Та же Wi-Fi',
+    'player.castRemote': 'Где угодно',
+    'player.castRemoteDesc': 'Откройте на любом устройстве в любой сети — даже на мобильном интернете.',
+    'player.castRemoteHint': 'Стриминг через интернет (P2P). Держите это окно открытым, пока смотрят; перемотка ограничена.',
 
     // Ссылки-шеринг
     'share.title': 'Ссылка для обмена',

@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>TorrentHunt — Watch</title>
+<style>
+  :root { --bg:#0a0a0b; --panel:#141416; --border:#26262a; --text:#f4f4f5; --muted:#9a9aa2; --green:#22c55e; --red:#f87171; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:#000; color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  .wrap { height:100%; display:flex; flex-direction:column; }
+  .top { display:flex; align-items:center; gap:10px; padding:12px 16px; background:var(--bg); border-bottom:1px solid var(--border); }
+  .logo { width:26px; height:26px; border-radius:7px; background:var(--text); color:var(--bg); display:flex; align-items:center; justify-content:center; font-weight:800; }
+  .top h1 { font-size:14px; margin:0; font-weight:650; flex:1; }
+  .status { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--muted); }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--muted); }
+  .dot.live { background:var(--green); animation:pulse 1.6s infinite; }
+  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(34,197,94,.5)} 70%{box-shadow:0 0 0 7px rgba(34,197,94,0)} 100%{box-shadow:0 0 0 0 rgba(34,197,94,0)} }
+  video { flex:1; width:100%; height:100%; background:#000; outline:none; }
+  .msg { padding:16px; font-size:13px; line-height:1.5; color:var(--muted); }
+  .msg.err { color:var(--red); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div class="logo">T</div>
+    <h1>TorrentHunt — Watch</h1>
+    <div class="status"><span class="dot" id="dot"></span><span id="st">Connecting…</span></div>
+  </div>
+  <video id="v" controls autoplay playsinline></video>
+  <div class="msg" id="m">The sender must keep TorrentHunt open and the stream running.</div>
+</div>
+
+<script type="module">
+  const $ = (id) => document.getElementById(id);
+  const v = $('v');
+  function setStatus(t, live) { $('st').textContent = t; $('dot').className = 'dot' + (live ? ' live' : ''); }
+  function note(t, err) { $('m').textContent = t || ''; $('m').className = 'msg' + (err ? ' err' : ''); }
+  function fail(t) { setStatus('Error', false); note(t, true); }
+
+  const TRACKERS = [
+    'wss://tracker.openwebtorrent.com',
+    'wss://tracker.webtorrent.dev',
+    'wss://tracker.files.fm:7073/announce'
+  ];
+  const STUN = [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:global.stun.twilio.com:3478' }];
+  const TURN = [
+    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
+  ];
+
+  // Parse the session id (and optional "|nt" = no TURN) from the URL hash.
+  let raw = '';
+  try { raw = decodeURIComponent(location.hash.replace(/^#/, '')); } catch (e) {}
+  let noTurn = false;
+  const bar = raw.indexOf('|nt');
+  if (bar !== -1) { noTurn = true; raw = raw.slice(0, bar); }
+  if (!/^[a-f0-9]{32}$/.test(raw)) { fail('Invalid or missing watch link.'); throw new Error('bad link'); }
+  const iceServers = noTurn ? STUN : STUN.concat(TURN);
+
+  const hex = (u8) => [...u8].map(b => b.toString(16).padStart(2, '0')).join('');
+  async function sha1hex(str) {
+    const buf = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(str));
+    return hex(new Uint8Array(buf));
+  }
+
+  // ── MediaSource pipeline ──────────────────────────────────────────────────
+  let ms = null, sb = null, mime = '', ended = false, started = false;
+  const queue = [];
+  function flush() {
+    if (!sb || sb.updating) return;
+    if (queue.length) {
+      try { sb.appendBuffer(queue.shift()); }
+      catch (e) {
+        if (e && e.name === 'QuotaExceededError') {
+          // Evict everything well behind the playhead, then retry.
+          try { const end = Math.max(0, v.currentTime - 10); if (end > 0) sb.remove(0, end); } catch (_) {}
+        }
+      }
+    } else if (ended && ms && ms.readyState === 'open') {
+      try { ms.endOfStream(); } catch (e) {}
+    }
+  }
+  function onInit(m) {
+    mime = m;
+    if (!('MediaSource' in window) || !MediaSource.isTypeSupported(mime)) {
+      fail('This browser can’t play the stream (' + mime + ').'); return;
+    }
+    ms = new MediaSource();
+    v.src = URL.createObjectURL(ms);
+    ms.addEventListener('sourceopen', () => {
+      try { sb = ms.addSourceBuffer(mime); } catch (e) { fail('Could not start playback: ' + e.message); return; }
+      sb.mode = 'sequence';
+      sb.addEventListener('updateend', flush);
+      flush();
+    }, { once: true });
+    setStatus('Streaming', true); note('');
+    v.play && v.play().catch(() => {});
+  }
+  function onChunk(u8) { queue.push(u8); flush(); }
+
+  // ── Signaling via bittorrent-tracker (browser WebRTC) ─────────────────────
+  let mod;
+  try { mod = await import('https://esm.sh/bittorrent-tracker@9.19.0'); }
+  catch (e) { fail('Could not load the connection library. Check your Internet connection.'); throw e; }
+  const Client = mod.Client || (mod.default && mod.default.Client) || mod.default;
+  if (!Client) { fail('Connection library unavailable.'); throw new Error('no Client'); }
+
+  const topic = await sha1hex('th-watch:v1:' + raw);
+  const peerId = hex(crypto.getRandomValues(new Uint8Array(20)));
+  setStatus('Connecting to the sender…', true);
+
+  let wired = false;
+  function wire(peer) {
+    if (wired) { try { peer.destroy(); } catch (e) {} return; }
+    wired = true;
+    setStatus('Connected', true);
+    peer.on('data', (d) => {
+      if (typeof d === 'string') {
+        let msg; try { msg = JSON.parse(d); } catch (e) { return; }
+        if (msg.t === 'init') { started = true; onInit(msg.mime); }
+        else if (msg.t === 'end') { ended = true; flush(); }
+        return;
+      }
+      onChunk(d instanceof Uint8Array ? d : new Uint8Array(d));
+    });
+    peer.on('close', () => { ended = true; flush(); if (!started) fail('The sender disconnected.'); });
+    peer.on('error', () => {});
+  }
+
+  let client;
+  try {
+    client = new Client({ infoHash: topic, peerId, announce: TRACKERS, port: 1, rtcConfig: { iceServers } });
+  } catch (e) { fail('Could not start the connection: ' + e.message); throw e; }
+  client.on('peer', wire);
+  client.on('warning', () => {});
+  client.on('error', () => {});
+  client.start();
+
+  setTimeout(() => { if (!wired) setStatus('Waiting for the sender — is their TorrentHunt open?', true); }, 15000);
+</script>
+</body>
+</html>

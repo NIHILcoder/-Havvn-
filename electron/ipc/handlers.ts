@@ -179,6 +179,21 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): void {
     }
   ));
 
+  // Remote streaming over WebRTC (watch outside the local network)
+  ipcMain.handle('cast:remoteStart', wrapHandler('cast:remoteStart',
+    async (_event, id: string, fileIndex: number) => {
+      const { getRemoteCastManager } = require('../sharing/remote-cast-manager');
+      return getRemoteCastManager().start(id, fileIndex);
+    }
+  ));
+
+  ipcMain.handle('cast:remoteStop', wrapHandler('cast:remoteStop',
+    async (_event, sessionId: string) => {
+      const { getRemoteCastManager } = require('../sharing/remote-cast-manager');
+      return getRemoteCastManager().stop(sessionId);
+    }
+  ));
+
   // ── Friend swarms / private rooms (Phase 3) ─────────────────────────────
   ipcMain.handle('rooms:getProfile', wrapHandler('rooms:getProfile',
     async () => roomManager.getProfile()

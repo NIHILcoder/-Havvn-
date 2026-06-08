@@ -293,6 +293,25 @@
 }
 .player-cast-close:hover { color: var(--color-text-primary); background: var(--color-bg-hover); }
 .player-cast-title { font-size: 0.85rem; font-weight: 700; color: var(--color-text-primary); align-self: flex-start; }
+.player-cast-tabs { display: flex; gap: 0.3rem; width: 100%; background: var(--color-bg-primary); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 0.2rem; }
+.player-cast-tab {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.5rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 0.74rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition-fast, 150ms), color var(--transition-fast, 150ms);
+}
+.player-cast-tab.active { background: var(--color-accent); color: var(--color-bg-primary); }
+.player-cast-tab:not(.active):hover { color: var(--color-text-primary); }
 .player-cast-loading, .player-cast-error { display: flex; align-items: center; gap: 0.5rem; font-size: 0.78rem; color: var(--color-text-secondary); padding: 0.5rem 0; }
 .player-cast-error { color: #f87171; }
 .player-cast-qr { padding: 0.5rem; background: #fff; border-radius: var(--radius-md); }
