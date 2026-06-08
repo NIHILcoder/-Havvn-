@@ -103,8 +103,11 @@
   function onChunk(u8) { queue.push(u8); flush(); }
 
   // ── Signaling via bittorrent-tracker (browser WebRTC) ─────────────────────
+  // NOTE: target=esnext keeps `class … extends EventEmitter` native — without it
+  // esm.sh down-transpiles to ES5 and `super()` throws "Class constructor cannot
+  // be invoked without 'new'" on some mobile browsers.
   let mod;
-  try { mod = await import('https://esm.sh/bittorrent-tracker@9.19.0'); }
+  try { mod = await import('https://esm.sh/bittorrent-tracker@9.19.0?target=esnext'); }
   catch (e) { fail('Could not load the connection library. Check your Internet connection.'); throw e; }
   const Client = mod.Client || (mod.default && mod.default.Client) || mod.default;
   if (!Client) { fail('Connection library unavailable.'); throw new Error('no Client'); }
