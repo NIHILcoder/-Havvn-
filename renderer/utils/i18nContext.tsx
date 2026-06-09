@@ -530,6 +530,9 @@ const dictionary = {
     'player.resume': 'Resume',
     'player.pause': 'Pause',
     'player.stop': 'Stop',
+    'player.subtitles': 'Subtitles',
+    'player.subOff': 'Off',
+    'player.subNone': 'No subtitles found in this file or folder',
 
     // Share links
     'share.title': 'Share link',
@@ -1082,6 +1085,9 @@ const dictionary = {
     'player.resume': 'Продолжить',
     'player.pause': 'Пауза',
     'player.stop': 'Стоп',
+    'player.subtitles': 'Субтитры',
+    'player.subOff': 'Выкл',
+    'player.subNone': 'Субтитры не найдены в файле или папке',
 
     // Ссылки-шеринг
     'share.title': 'Ссылка для обмена',

@@ -4,6 +4,15 @@ All notable changes to TorrentHunt are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [1.8.1-beta] - 2026-06-08
+
+### Added
+- **Subtitles in the built-in player.** A **CC** button lets you switch on embedded
+  text subtitles (from mkv and similar) or external `.srt` / `.ass` / `.vtt` files
+  sitting next to the video. Tracks are converted to WebVTT on the fly with ffmpeg
+  and overlaid on playback; pick a language or turn them off. (Subtitle support for
+  Cast/TV is a follow-up.)
+
 ## [1.8.0-beta] - 2026-06-08
 
 ### Added
@@ -363,6 +372,7 @@ This project follows [Keep a Changelog](https://keepachangelog.com/) and
 - Real encryption / anonymity options, VPN kill-switch, disk-space guard,
   and torrent health indicators.
 
+[1.8.1-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.8.1-beta
 [1.8.0-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.8.0-beta
 [1.7.3-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.7.3-beta
 [1.7.2-beta]: https://github.com/NIHILcoder/TorrentHunt/releases/tag/v1.7.2-beta

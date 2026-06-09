@@ -1547,6 +1547,88 @@ export class TorrentManager {
     };
   }
 
+  // ── Subtitles ───────────────────────────────────────────────────────────────
+
+  /** Run ffmpeg and resolve its stdout as a UTF-8 string (for VTT extraction). */
+  private ffmpegCapture(args: string[]): Promise<string> {
+    if (!this.ffmpegPath) return Promise.reject(new Error('ffmpeg unavailable'));
+    return new Promise((resolve, reject) => {
+      const proc = spawn(this.ffmpegPath as string, args, { windowsHide: true });
+      const out: Buffer[] = [];
+      proc.stdout.on('data', (d: Buffer) => out.push(d));
+      proc.stderr.on('data', () => { /* discard */ });
+      proc.on('error', reject);
+      proc.on('close', () => resolve(Buffer.concat(out).toString('utf8')));
+    });
+  }
+
+  /** Parse `ffmpeg -i` stderr for embedded TEXT subtitle streams (skip image subs). */
+  private probeSubtitleStreams(file: string): Promise<Array<{ sIndex: number; lang?: string; codec: string }>> {
+    if (!this.ffmpegPath) return Promise.resolve([]);
+    return new Promise((resolve) => {
+      const proc = spawn(this.ffmpegPath as string, ['-i', file], { windowsHide: true });
+      let err = '';
+      proc.stderr.on('data', (d: Buffer) => { err += d.toString(); });
+      proc.on('error', () => resolve([]));
+      proc.on('close', () => {
+        const out: Array<{ sIndex: number; lang?: string; codec: string }> = [];
+        let sIndex = 0;
+        const re = /Stream #\d+:\d+(?:\(([a-zA-Z]+)\))?: Subtitle: (\w+)/g;
+        let m: RegExpExecArray | null;
+        const textCodecs = new Set(['subrip', 'ass', 'ssa', 'mov_text', 'webvtt', 'text', 'srt']);
+        while ((m = re.exec(err)) !== null) {
+          const codec = m[2].toLowerCase();
+          if (textCodecs.has(codec)) out.push({ sIndex, lang: m[1], codec });
+          sIndex++; // count all subtitle streams so -map 0:s:<n> stays aligned
+        }
+        resolve(out);
+      });
+    });
+  }
+
+  /** List selectable subtitle tracks: embedded text subs + sidecar files. */
+  async getSubtitleTracks(id: string, fileIndex: number): Promise<Array<{ key: string; label: string; lang?: string; source: 'embedded' | 'external' }>> {
+    const info = this.getCastFileInfo(id, fileIndex);
+    if (!info) return [];
+    const tracks: Array<{ key: string; label: string; lang?: string; source: 'embedded' | 'external' }> = [];
+    try {
+      const streams = await this.probeSubtitleStreams(info.diskPath);
+      streams.forEach((s, i) => {
+        tracks.push({ key: `embedded:${s.sIndex}`, label: s.lang ? `${s.lang.toUpperCase()} (embedded)` : `Embedded #${i + 1}`, lang: s.lang, source: 'embedded' });
+      });
+    } catch { /* ignore */ }
+    try {
+      const dir = path.dirname(info.diskPath);
+      const baseNoExt = path.basename(info.diskPath, path.extname(info.diskPath)).toLowerCase();
+      for (const f of fs.readdirSync(dir)) {
+        if (!/\.(srt|ass|ssa|vtt|sub)$/i.test(f)) continue;
+        // Prefer sidecars that share the video's base name, but include any.
+        const related = f.toLowerCase().startsWith(baseNoExt.slice(0, Math.min(baseNoExt.length, 12)));
+        tracks.push({ key: `external:${f}`, label: f, source: 'external' });
+        if (related) { /* keep order; related ones still listed */ }
+      }
+    } catch { /* ignore */ }
+    return tracks;
+  }
+
+  /** Return the chosen subtitle track converted to WebVTT text. */
+  async getSubtitleVtt(id: string, fileIndex: number, key: string): Promise<string> {
+    const info = this.getCastFileInfo(id, fileIndex);
+    if (!info) throw new TorrentError('File not found', 'NOT_FOUND', id);
+    if (key.startsWith('embedded:')) {
+      const sIndex = Number(key.slice('embedded:'.length));
+      return this.ffmpegCapture(['-i', info.diskPath, '-map', `0:s:${sIndex}`, '-f', 'webvtt', 'pipe:1']);
+    }
+    if (key.startsWith('external:')) {
+      const name = key.slice('external:'.length);
+      const full = path.join(path.dirname(info.diskPath), name);
+      if (!fs.existsSync(full)) throw new Error('Subtitle file not found');
+      if (/\.vtt$/i.test(full)) return fs.readFileSync(full, 'utf8');
+      return this.ffmpegCapture(['-i', full, '-f', 'webvtt', 'pipe:1']);
+    }
+    throw new Error('Unknown subtitle track');
+  }
+
   /**
    * Lazily start the shared transcoding HTTP server (127.0.0.1 only).
    * Routes: GET /transcode/<downloadId>/<fileIndex> → fragmented MP4 / MP3.

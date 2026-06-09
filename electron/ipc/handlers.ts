@@ -232,6 +232,15 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): void {
     }
   ));
 
+  // Subtitles (embedded text tracks + sidecar files → WebVTT)
+  ipcMain.handle('subtitles:list', wrapHandler('subtitles:list',
+    async (_event, id: string, fileIndex: number) => torrentManager.getSubtitleTracks(id, fileIndex)
+  ));
+
+  ipcMain.handle('subtitles:get', wrapHandler('subtitles:get',
+    async (_event, id: string, fileIndex: number, key: string) => torrentManager.getSubtitleVtt(id, fileIndex, key)
+  ));
+
   // ── Friend swarms / private rooms (Phase 3) ─────────────────────────────
   ipcMain.handle('rooms:getProfile', wrapHandler('rooms:getProfile',
     async () => roomManager.getProfile()

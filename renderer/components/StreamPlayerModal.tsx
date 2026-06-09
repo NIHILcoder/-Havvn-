@@ -61,6 +61,11 @@ export const StreamPlayerModal: React.FC<StreamPlayerModalProps> = ({ downloadId
   const [tvError, setTvError] = useState<string | null>(null);
   const [tvPlaying, setTvPlaying] = useState<{ host: string; name: string } | null>(null);
   const [tvPaused, setTvPaused] = useState(false);
+  // Subtitles
+  const [subTracks, setSubTracks] = useState<Array<{ key: string; label: string; lang?: string; source: 'embedded' | 'external' }>>([]);
+  const [subOpen, setSubOpen] = useState(false);
+  const [subActiveKey, setSubActiveKey] = useState<string | null>(null);
+  const [subUrl, setSubUrl] = useState<string | null>(null);
 
   // Load the streamable files in this torrent once.
   useEffect(() => {
@@ -226,6 +231,33 @@ export const StreamPlayerModal: React.FC<StreamPlayerModalProps> = ({ downloadId
   // Reset TV state when switching files.
   useEffect(() => { setTvPlaying(null); setTvDevices([]); setTvError(null); }, [activeIndex]);
 
+  // Load available subtitle tracks for the active file.
+  useEffect(() => {
+    setSubOpen(false);
+    setSubActiveKey(null);
+    setSubUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
+    setSubTracks([]);
+    if (activeIndex === null) return;
+    let alive = true;
+    window.api.subtitles.list(downloadId, activeIndex)
+      .then((list) => { if (alive) setSubTracks(list); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [downloadId, activeIndex]);
+
+  const selectSubtitle = useCallback(async (key: string | null) => {
+    setSubOpen(false);
+    setSubUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
+    if (!key || activeIndex === null) { setSubActiveKey(null); return; }
+    setSubActiveKey(key);
+    try {
+      const vtt = await window.api.subtitles.get(downloadId, activeIndex, key);
+      if (!vtt || !vtt.trim()) return;
+      const url = URL.createObjectURL(new Blob([vtt], { type: 'text/vtt' }));
+      setSubUrl(url);
+    } catch { /* ignore */ }
+  }, [downloadId, activeIndex]);
+
   const activeCastUrl = castMode === 'remote' ? remoteInfo?.url : castInfo?.url;
   const copyCastUrl = useCallback(() => {
     if (!activeCastUrl) return;
@@ -263,7 +295,6 @@ export const StreamPlayerModal: React.FC<StreamPlayerModalProps> = ({ downloadId
       );
     }
     return (
-      // eslint-disable-next-line jsx-a11y/media-has-caption
       <video
         key={streamUrl}
         src={streamUrl}
@@ -271,9 +302,11 @@ export const StreamPlayerModal: React.FC<StreamPlayerModalProps> = ({ downloadId
         autoPlay
         className="player-video"
         onError={handleMediaError}
-      />
+      >
+        {subUrl && <track kind="subtitles" src={subUrl} srcLang="und" label="Subtitles" default />}
+      </video>
     );
-  }, [error, loading, streamUrl, kind, activeFile, transcoded, handleMediaError, t]);
+  }, [error, loading, streamUrl, kind, activeFile, transcoded, handleMediaError, t, subUrl]);
 
   return (
     <div className="player-overlay" onClick={onClose}>
@@ -292,6 +325,35 @@ export const StreamPlayerModal: React.FC<StreamPlayerModalProps> = ({ downloadId
               </span>
             )}
           </div>
+          {activeFile?.kind === 'video' && (
+            <div className="player-sub-wrap">
+              <button
+                className={`player-cast-btn ${subOpen ? 'active' : ''}`}
+                onClick={() => setSubOpen((o) => !o)}
+                title={t('player.subtitles')}
+              >
+                <Icon name="file-text" size={15} />
+                <span className="player-cast-label">{subActiveKey ? 'CC ●' : 'CC'}</span>
+              </button>
+              {subOpen && (
+                <div className="player-sub-panel">
+                  <button className={`player-sub-item ${!subActiveKey ? 'active' : ''}`} onClick={() => selectSubtitle(null)}>
+                    {t('player.subOff')}
+                  </button>
+                  {subTracks.length === 0 ? (
+                    <div className="player-sub-empty">{t('player.subNone')}</div>
+                  ) : (
+                    subTracks.map((tr) => (
+                      <button key={tr.key} className={`player-sub-item ${subActiveKey === tr.key ? 'active' : ''}`} onClick={() => selectSubtitle(tr.key)}>
+                        <Icon name={tr.source === 'embedded' ? 'film' : 'file-text'} size={13} />
+                        <span>{tr.label}</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           <button
             className={`player-cast-btn ${castOpen ? 'active' : ''}`}
             onClick={() => (castOpen ? setCastOpen(false) : handleCast())}

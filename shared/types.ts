@@ -615,6 +615,12 @@ export interface IpcApi {
     tvControl: (host: string, action: 'pause' | 'resume' | 'stop') => Promise<{ ok: boolean }>;
   };
 
+  // Subtitles for the player (embedded text tracks + sidecar files → WebVTT)
+  subtitles: {
+    list: (id: string, fileIndex: number) => Promise<Array<{ key: string; label: string; lang?: string; source: 'embedded' | 'external' }>>;
+    get: (id: string, fileIndex: number, key: string) => Promise<string>;
+  };
+
   // Friend swarms / private rooms (Phase 3)
   rooms: {
     getProfile: () => Promise<RoomProfile>;

@@ -440,6 +440,14 @@ const api: IpcApi = {
       ipcRenderer.invoke('cast:tvControl', host, action),
   },
 
+  // Subtitles
+  subtitles: {
+    list: (id: string, fileIndex: number): Promise<Array<{ key: string; label: string; lang?: string; source: 'embedded' | 'external' }>> =>
+      ipcRenderer.invoke('subtitles:list', id, fileIndex),
+    get: (id: string, fileIndex: number, key: string): Promise<string> =>
+      ipcRenderer.invoke('subtitles:get', id, fileIndex, key),
+  },
+
   // Friend swarms / private rooms (Phase 3)
   rooms: {
     getProfile: (): Promise<RoomProfile> => ipcRenderer.invoke('rooms:getProfile'),
