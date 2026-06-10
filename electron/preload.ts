@@ -394,6 +394,10 @@ const api: IpcApi = {
   setSeedTimeLimit: (id: string, minutes: number) =>
     ipcRenderer.invoke('downloads:setSeedTime', id, minutes),
 
+  // Peers
+  getPeers: (id: string) =>
+    ipcRenderer.invoke('downloads:getPeers', id),
+
   // Tracker management
   getTrackers: (id: string) =>
     ipcRenderer.invoke('downloads:getTrackers', id),

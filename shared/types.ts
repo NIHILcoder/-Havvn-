@@ -158,6 +158,24 @@ export interface TrackerInfo {
   lastAnnounce?: string;
 }
 
+/** A single connected peer, surfaced in the per-torrent Peers tab. */
+export interface PeerInfo {
+  address: string;                 // ip:port
+  client?: string;                 // decoded client name + version
+  connType: 'tcp-in' | 'tcp-out' | 'utp-in' | 'utp-out' | 'webrtc' | 'web-seed' | 'other';
+  downSpeed: number;               // bytes/sec from this peer
+  upSpeed: number;                 // bytes/sec to this peer
+  downloaded: number;              // bytes received from this peer (session)
+  uploaded: number;                // bytes sent to this peer (session)
+  progress: number;                // 0..1 — how much of the torrent the peer has
+  flags: {
+    interested: boolean;           // we are interested in the peer
+    choking: boolean;              // we are choking the peer
+    peerInterested: boolean;       // the peer is interested in us
+    peerChoking: boolean;          // the peer is choking us
+  };
+}
+
 export interface DownloadStats {
   id: string;
   progress: number;
@@ -513,6 +531,8 @@ export interface IpcApi {
   setTorrentSpeedLimits: (id: string, downKbps: number, upKbps: number) => Promise<void>;
   setSeedRatioLimit: (id: string, ratio: number) => Promise<void>;
   setSeedTimeLimit: (id: string, minutes: number) => Promise<void>;
+  // Peers
+  getPeers: (id: string) => Promise<PeerInfo[]>;
   // Tracker management
   getTrackers: (id: string) => Promise<TrackerInfo[]>;
   addTracker: (id: string, url: string) => Promise<void>;

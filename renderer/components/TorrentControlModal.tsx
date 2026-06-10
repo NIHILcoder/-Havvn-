@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Download, TorrentFile, TrackerInfo, FilePriority } from '../../shared/types';
+import { Download, TorrentFile, TrackerInfo, FilePriority, PeerInfo } from '../../shared/types';
 import { Button, Icon } from './index';
 import './TorrentControlModal.css';
 
@@ -15,7 +15,14 @@ interface TorrentControlModalProps {
   onUpdate?: () => void;
 }
 
-type Tab = 'download' | 'seeding' | 'files' | 'trackers';
+type Tab = 'download' | 'seeding' | 'files' | 'peers' | 'trackers';
+
+const CONN_TYPE_LABEL: Record<PeerInfo['connType'], string> = {
+  'tcp-in': 'TCP ↓', 'tcp-out': 'TCP ↑', 'utp-in': 'µTP ↓', 'utp-out': 'µTP ↑',
+  'webrtc': 'WebRTC', 'web-seed': 'Web seed', 'other': '—',
+};
+
+const formatSpeed = (bps: number): string => (bps > 0 ? formatBytes(bps) + '/s' : '—');
 
 const FILE_PRIORITY_LABELS: Record<FilePriority, string> = {
   skip: 'Skip',
@@ -68,11 +75,29 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
   const [loadingTrackers, setLoadingTrackers] = useState(false);
   const [addingTracker, setAddingTracker] = useState(false);
 
+  // Peers tab state
+  const [peers, setPeers] = useState<PeerInfo[]>([]);
+  const [peersLoaded, setPeersLoaded] = useState(false);
+
   // Load data when tab changes
   useEffect(() => {
     if (tab === 'files' && files.length === 0) loadFiles();
     if (tab === 'trackers' && trackers.length === 0) loadTrackers();
   }, [tab]);
+
+  // Live-poll peers while the Peers tab is open (they change constantly).
+  useEffect(() => {
+    if (tab !== 'peers') return;
+    let alive = true;
+    const tick = () => {
+      window.api.getPeers(download.id)
+        .then((list) => { if (alive) { setPeers(list || []); setPeersLoaded(true); } })
+        .catch(() => { if (alive) setPeersLoaded(true); });
+    };
+    tick();
+    const iv = setInterval(tick, 1500);
+    return () => { alive = false; clearInterval(iv); };
+  }, [tab, download.id]);
 
   const loadFiles = async () => {
     setLoadingFiles(true);
@@ -170,6 +195,7 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
     { id: 'download', label: 'Download', icon: 'download' },
     { id: 'seeding', label: 'Seeding', icon: 'upload' },
     { id: 'files', label: 'Files', icon: 'file' },
+    { id: 'peers', label: 'Peers', icon: 'users' },
     { id: 'trackers', label: 'Trackers', icon: 'server' },
   ];
 
@@ -407,6 +433,56 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
                         </div>
                       );
                     })}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* ── PEERS TAB ── */}
+          {tab === 'peers' && (
+            <div className="tcm-section">
+              {!peersLoaded ? (
+                <div className="tcm-loading">
+                  <span className="spinner" />
+                  <span>Loading peers...</span>
+                </div>
+              ) : peers.length === 0 ? (
+                <div className="tcm-empty">
+                  <Icon name="users" size={32} />
+                  <p>No connected peers.</p>
+                  <span>Peers appear here while the torrent is active and connecting.</span>
+                </div>
+              ) : (
+                <>
+                  <div className="tcm-peers-summary">
+                    <span><strong>{peers.length}</strong> connected</span>
+                    <span className="tcm-peers-live"><span className="tcm-live-dot" /> live</span>
+                  </div>
+                  <div className="tcm-peers-table">
+                    <div className="tcm-peers-head">
+                      <span className="pc-addr">Address</span>
+                      <span className="pc-client">Client</span>
+                      <span className="pc-type">Conn</span>
+                      <span className="pc-prog">Done</span>
+                      <span className="pc-spd">↓</span>
+                      <span className="pc-spd">↑</span>
+                    </div>
+                    <div className="tcm-peers-body">
+                      {peers.map((p) => (
+                        <div key={p.address} className="tcm-peer-row">
+                          <span className="pc-addr mono" title={p.address}>{p.address}</span>
+                          <span className="pc-client" title={p.client || 'Unknown'}>{p.client || '—'}</span>
+                          <span className="pc-type">{CONN_TYPE_LABEL[p.connType]}</span>
+                          <span className="pc-prog">
+                            <span className="pc-prog-bar"><span className="pc-prog-fill" style={{ width: `${Math.round(p.progress * 100)}%` }} /></span>
+                            <span className="pc-prog-txt">{Math.round(p.progress * 100)}%</span>
+                          </span>
+                          <span className="pc-spd dn">{formatSpeed(p.downSpeed)}</span>
+                          <span className="pc-spd up">{formatSpeed(p.upSpeed)}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </>
               )}

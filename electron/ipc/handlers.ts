@@ -1006,6 +1006,13 @@ export function setupIpcHandlers(window: BrowserWindow): void {
     }
   ));
 
+  // Per-torrent connected peers (Peers tab)
+  ipcMain.handle('downloads:getPeers', wrapHandler('downloads:getPeers',
+    async (_event, id: string) => {
+      return torrentManager.getPeers(id);
+    }
+  ));
+
   // Tracker management
   ipcMain.handle('downloads:getTrackers', wrapHandler('downloads:getTrackers',
     async (_event, id: string) => {
