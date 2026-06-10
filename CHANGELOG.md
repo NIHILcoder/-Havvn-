@@ -4,6 +4,16 @@ All notable changes to TorrentHunt are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [1.8.4-beta] - 2026-06-10
+
+### Added
+- **Automatic port forwarding (UPnP).** TorrentHunt now asks your router to forward its
+  listening port, so other peers can connect **to you** — not just you to them. This
+  noticeably improves download speed and peer count, especially on torrents with few
+  seeds. It's on by default and self-heals (the mapping is renewed automatically), and
+  Settings → Advanced shows a live status (mapped / no UPnP router / off) with the port.
+  For a stable mapping across restarts, keep a fixed listening port.
+
 ## [1.8.3-beta] - 2026-06-10
 
 ### Added
