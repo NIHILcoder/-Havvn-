@@ -9,6 +9,7 @@
  */
 
 import os from 'os';
+import { dialog } from 'electron';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import https from 'https';
@@ -346,7 +347,6 @@ function calculateConfidence(indicators: VPNDetectionResult['indicators']): {
  * Note: Translation keys are passed to renderer for i18n support
  */
 export function showVPNWarning(result: VPNDetectionResult): void {
-  const { dialog } = require('electron');
 
   // Send localized warning via IPC (translations handled in renderer)
   const warningData = {

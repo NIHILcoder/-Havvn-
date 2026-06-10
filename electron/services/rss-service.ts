@@ -6,6 +6,7 @@
 import https from 'https';
 import http from 'http';
 import { URL } from 'url';
+import { app } from 'electron';
 import { logger } from '../utils';
 import * as db from '../db/store';
 import { RSSFeed, RSSItem } from '../../shared/types';
@@ -92,24 +93,28 @@ export class RSSService {
 
     log.info('Checking RSS feed', { name: feed.name, url: feed.url });
 
+    // First check ever for this feed? Then everything in it is history, not
+    // news — store the items but never auto-download the whole backlog.
+    const isFirstCheck = !feed.lastChecked;
+
     const xml = await this.fetchURL(feed.url);
     const items = this.parseRSS(xml, feedId);
 
     // Apply filter if set
     const filtered = feed.filter ? this.filterItems(items, feed.filter) : items;
 
-    // Save new items
-    await db.saveRSSItems(filtered);
+    // Save and learn which items are actually NEW (not seen on a prior check)
+    const newItems = await db.saveRSSItems(filtered);
 
     // Update lastChecked
     await db.updateRSSFeed(feedId, { lastChecked: new Date().toISOString() });
 
-    // Auto-download if enabled
-    if (feed.autoDownload) {
-      await this.autoDownload(feed, filtered);
+    // Auto-download only items that appeared after the feed was added
+    if (feed.autoDownload && !isFirstCheck && newItems.length > 0) {
+      await this.autoDownload(feed, newItems);
     }
 
-    log.info('RSS feed checked', { name: feed.name, newItems: filtered.length });
+    log.info('RSS feed checked', { name: feed.name, items: filtered.length, newItems: newItems.length });
     return filtered;
   }
 
@@ -127,7 +132,7 @@ export class RSSService {
 
       const req = lib.get(url, {
         headers: {
-          'User-Agent': 'TorrentHunt/1.3.5 RSS Reader',
+          'User-Agent': `TorrentHunt/${app.getVersion()} RSS Reader`,
           'Accept': 'application/rss+xml, application/xml, text/xml, */*',
         },
         timeout: 15000,
@@ -191,11 +196,15 @@ export class RSSService {
           link = this.extractTag(itemXml, 'link') || '';
         }
 
+        // URLs in XML carry escaped entities (&amp; is near-universal in
+        // tracker links) — decode or the link 404s.
+        link = this.decodeHTMLEntities(link);
+
         // Try comments or description for magnet links
         if (!link || (!link.startsWith('magnet:') && !link.endsWith('.torrent'))) {
           const desc = this.extractTag(itemXml, 'description') || '';
           const magnetMatch = desc.match(/magnet:\?[^\s"<>]+/);
-          if (magnetMatch) link = magnetMatch[0];
+          if (magnetMatch) link = this.decodeHTMLEntities(magnetMatch[0]);
         }
 
         if (!link) continue; // Skip items without downloadable link
@@ -278,7 +287,10 @@ export class RSSService {
         await db.markRSSItemDownloaded(item.guid);
         log.info('RSS auto-downloaded', { title: item.title, feedName: feed.name });
       } catch (err: any) {
-        if (err?.code !== 'DUPLICATE') {
+        if (err?.code === 'DUPLICATE') {
+          // Already in downloads — mark it so we don't retry on every check
+          await db.markRSSItemDownloaded(item.guid);
+        } else {
           log.error('RSS auto-download failed', { title: item.title, error: err });
         }
       }

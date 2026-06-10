@@ -7,6 +7,7 @@
 import https from 'https';
 import http from 'http';
 import { URL } from 'url';
+import { app } from 'electron';
 import { logger } from '../utils';
 import * as db from '../db/store';
 import { SearchProvider, SearchResult } from '../../shared/types';
@@ -239,7 +240,7 @@ export class SearchService {
 
       const req = lib.get(url, {
         headers: {
-          'User-Agent': 'TorrentHunt/1.3.5 Search',
+          'User-Agent': `TorrentHunt/${app.getVersion()} Search`,
           ...extraHeaders,
         },
         timeout: 20000,

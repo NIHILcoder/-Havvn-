@@ -28,6 +28,15 @@ interface StoreSchema {
   collaborativeSeedingEnabled: boolean;  // Collaborative Seeding Network opt-in (persisted)
   rooms: Record<string, PersistedRoom>;  // Friend swarms / private rooms (Phase 3)
   roomProfile: RoomProfile | null;       // This install's identity in rooms
+  windowBounds: WindowBounds | null;     // Last main-window size/position
+}
+
+/** Persisted main-window geometry, restored on next launch. */
+export interface WindowBounds {
+  width: number;
+  height: number;
+  x?: number;
+  y?: number;
 }
 
 /** Minimal persisted room record — re-joined on startup. */
@@ -120,8 +129,19 @@ const store = new Store<StoreSchema>({
     collaborativeSeedingEnabled: false,
     rooms: {},
     roomProfile: null,
+    windowBounds: null,
   },
 });
+
+// === Window bounds ===
+
+export function getWindowBounds(): WindowBounds | null {
+  return store.get('windowBounds') ?? null;
+}
+
+export function saveWindowBounds(bounds: WindowBounds): void {
+  store.set('windowBounds', bounds);
+}
 
 
 // === Downloads ===
@@ -618,7 +638,12 @@ export async function getRSSItems(feedId?: string): Promise<RSSItem[]> {
   return feedId ? items.filter(i => i.feedId === feedId) : items;
 }
 
-export async function saveRSSItems(items: RSSItem[]): Promise<void> {
+/**
+ * Merge fetched items into the store (deduped by guid).
+ * Returns only the items that were actually new — callers use this to
+ * auto-download just the fresh entries instead of the whole feed history.
+ */
+export async function saveRSSItems(items: RSSItem[]): Promise<RSSItem[]> {
   const existing: RSSItem[] = store.get('rssItems') ?? [];
   // Merge: only add new items (by guid)
   const existingGuids = new Set(existing.map(i => i.guid));
@@ -627,6 +652,7 @@ export async function saveRSSItems(items: RSSItem[]): Promise<void> {
   // Keep last 5000 items total
   const trimmed = merged.slice(-5000);
   store.set('rssItems', trimmed);
+  return newItems;
 }
 
 /**

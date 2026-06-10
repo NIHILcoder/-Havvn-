@@ -570,9 +570,9 @@ export interface IpcApi {
   notifyReady: () => void;
   // Resolve the absolute path of a dropped/selected File (webUtils.getPathForFile)
   getPathForFile: (file: File) => string;
-  // Tray events from main
-  onPauseAll: (callback: () => void) => () => void;
-  onResumeAll: (callback: () => void) => () => void;
+  // Bulk torrent actions (the tray menu calls the manager directly)
+  pauseAll: () => Promise<{ paused: number }>;
+  resumeAll: () => Promise<{ resumed: number }>;
   onVpnDropped: (callback: (info: { paused: number; publicIP?: string }) => void) => () => void;
   onVpnRestored: (callback: () => void) => () => void;
   onDiskLow: (callback: (info: { paused: number; freeBytes: number; thresholdBytes: number }) => void) => () => void;
