@@ -4,6 +4,23 @@ All notable changes to TorrentHunt are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [1.8.3-beta] - 2026-06-10
+
+### Added
+- **Reworked Privacy & Anonymity tab with a live exposure dashboard.** The top of
+  the page now shows, at a glance, what the swarm can actually see about you: your
+  **public IP** (the one peers connect to, with reveal/hide + copy), your **ISP /
+  network** and **location**, and your **VPN status**. A colour-coded posture
+  banner sums it up — *Protected*, *Mostly protected*, or *Your real IP is exposed*.
+- **IP-leak detection.** If your torrent-facing IP looks like a regular ISP instead
+  of a VPN while no VPN is detected, the page warns you outright — so you catch a
+  leak before you start downloading. (Lookups only run when you open the tab or hit
+  Refresh; no background traffic.)
+- **"Apply recommended" one-click privacy setup** — turns on the VPN kill-switch and
+  startup check, sanitizes logs, and disables DHT to shrink your exposure.
+- **Log controls** — open the logs folder or clear logs on the spot, plus DHT can now
+  be toggled from the privacy tab as a discoverability lever.
+
 ## [1.8.2-beta] - 2026-06-10
 
 ### Fixed
