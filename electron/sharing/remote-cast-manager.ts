@@ -16,11 +16,7 @@ import { getTorrentManager } from '../torrent';
 const log = logger.child('RemoteCast');
 
 const RECEIVER_BASE = 'https://nihilcoder.github.io/TorrentHunt/watch/';
-const TURN_SERVERS = [
-  { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-];
+import { TURN_SERVERS } from './ice-servers';
 
 type Pending = { resolve: (v: any) => void; reject: (e: Error) => void };
 

@@ -25,20 +25,9 @@ const SHARE_TRACKERS = [
 ];
 const RECEIVER_BASE = 'https://nihilcoder.github.io/TorrentHunt/share/';
 
-// STUN reveals each peer's public address (enough for most home NATs) and is
-// privacy-neutral. TURN relays route the (encrypted) traffic through a
-// third-party server so peers behind a symmetric NAT can still connect — but
-// that third party then sees both IPs, so it's opt-out via a setting.
-// Keep these in sync with the receiver page (docs/share/index.html).
-const STUN_SERVERS = [
-  { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:global.stun.twilio.com:3478' },
-];
-const TURN_SERVERS = [
-  { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-];
+// ICE servers come from the shared module (see ice-servers.ts for the
+// privacy notes). This preload runs with sandbox:false, so require() works.
+import { STUN_SERVERS, TURN_SERVERS } from './ice-servers';
 
 const w = window as any;
 const nativeWrtc = {

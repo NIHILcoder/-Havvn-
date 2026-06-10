@@ -11,7 +11,6 @@ import {
   Button,
   Icon,
   IconName,
-  Input,
   ProgressBar,
   StatusBadge,
   HealthBadge,
@@ -19,13 +18,11 @@ import {
   EmptyState,
   FilePreview,
   ContextMenu,
-  ContextMenuItem,
   TorrentFileSelector,
   TorrentControlModal,
   StreamPlayerModal,
   ShareLinkModal,
 } from '../components';
-import { useTranslation } from '../utils/i18nContext';
 import './DownloadsPage.css';
 
 // Utility functions
@@ -656,8 +653,6 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
   const [dragCounter, setDragCounter] = useState(0);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewId, setPreviewId] = useState<string | null>(null);
-  const [showFilterMenu, setShowFilterMenu] = useState(false);
-  const [showSortMenu, setShowSortMenu] = useState(false);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [showExportMenu, setShowExportMenu] = useState(false);
 
@@ -789,19 +784,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
     };
   }, []);
 
-  // Close dropdowns when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as HTMLElement;
-      if (!target.closest('.dropdown-wrapper')) {
-        setShowFilterMenu(false);
-        setShowSortMenu(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  // (Filter/sort dropdown state was removed — sorting lives in the list header)
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -871,8 +854,6 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
       // Escape - Clear selection
       if (e.key === 'Escape') {
         setSelectedIds(new Set());
-        setShowFilterMenu(false);
-        setShowSortMenu(false);
         setShowExportMenu(false);
       }
     };
@@ -1014,22 +995,24 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
   };
 
 
-  // Handle file selection from file input
-  const handleFileSelect = async (file: File) => {
+  // Pause / resume everything at once (toolbar buttons; tray has the same)
+  const handlePauseAll = async () => {
     try {
-      // Save file to temp and add to downloads
-      const arrayBuffer = await file.arrayBuffer();
-      const uint8Array = new Uint8Array(arrayBuffer);
-      const base64 = btoa(String.fromCharCode(...uint8Array));
-
-      // For now, show file preview - actual upload will need API extension
-      setSelectedFile(file);
-      addToast('File ready to upload. Click "Add Selected Torrent" to proceed.', 'success');
+      const { paused } = await window.api.pauseAll();
+      addToast(paused > 0 ? `Paused ${paused} torrent(s)` : 'Nothing to pause', paused > 0 ? 'success' : 'info');
+      loadDownloads();
     } catch (error) {
-      addToast(
-        `Failed to process file: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        'error'
-      );
+      addToast(`Failed to pause all: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+    }
+  };
+
+  const handleResumeAll = async () => {
+    try {
+      const { resumed } = await window.api.resumeAll();
+      addToast(resumed > 0 ? `Resumed ${resumed} torrent(s)` : 'Nothing to resume', resumed > 0 ? 'success' : 'info');
+      loadDownloads();
+    } catch (error) {
+      addToast(`Failed to resume all: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
     }
   };
 
@@ -1189,7 +1172,9 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
     return true;
   });
 
-  // Sort downloads based on sort mode and direction
+  // Sort downloads based on sort mode and direction.
+  // Convention: every comparator returns ascending order for direction=1, so
+  // 'asc'/'desc' mean the same thing in every column.
   const sortedDownloads = [...filteredDownloads].sort((a, b) => {
     const statA = stats.get(a.id);
     const statB = stats.get(b.id);
@@ -1198,17 +1183,19 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
     switch (sortMode) {
       case 'name':
         return a.name.localeCompare(b.name) * direction;
-      case 'progress':
+      case 'progress': {
         const progressA = statA?.progress ?? a.progress;
         const progressB = statB?.progress ?? b.progress;
-        return (progressB - progressA) * direction;
-      case 'speed':
+        return (progressA - progressB) * direction;
+      }
+      case 'speed': {
         const speedA = statA?.downSpeedBps ?? 0;
         const speedB = statB?.downSpeedBps ?? 0;
-        return (speedB - speedA) * direction;
+        return (speedA - speedB) * direction;
+      }
       case 'added':
       default:
-        return (new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) * direction;
+        return (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()) * direction;
     }
   });
 
@@ -1267,6 +1254,22 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
             variant="ghost"
             size="sm"
             iconOnly
+            icon={<Icon name="pause" size={16} />}
+            onClick={handlePauseAll}
+            title="Pause all"
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            iconOnly
+            icon={<Icon name="play" size={16} />}
+            onClick={handleResumeAll}
+            title="Resume all"
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            iconOnly
             icon={<Icon name="refresh" size={16} />}
             onClick={loadDownloads}
             title="Refresh"
@@ -1277,11 +1280,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
               variant="ghost"
               size="sm"
               icon={<Icon name="download" size={16} />}
-              onClick={() => {
-                setShowExportMenu(!showExportMenu);
-                setShowFilterMenu(false);
-                setShowSortMenu(false);
-              }}
+              onClick={() => setShowExportMenu(!showExportMenu)}
               title="Export downloads list"
             >
               Export

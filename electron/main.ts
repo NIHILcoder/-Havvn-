@@ -1,11 +1,11 @@
-import { app, BrowserWindow, Tray, Menu, nativeImage, Notification, shell, session, ipcMain } from 'electron';
+import { app, BrowserWindow, Tray, Menu, nativeImage, Notification, shell, session, ipcMain, screen } from 'electron';
 import path from 'path';
 import dotenv from 'dotenv';
 import { getTorrentManager } from './torrent';
 import { getSchedulerEngine } from './scheduler/scheduler-engine';
 import { setupIpcHandlers } from './ipc';
 import { logger, detectVPN, showVPNWarning, getAppIconPath } from './utils';
-import { store, seedDefaultsIfNeeded } from './db/store';
+import { store, seedDefaultsIfNeeded, getWindowBounds, saveWindowBounds } from './db/store';
 import { getRSSService } from './services/rss-service';
 import { getIPBlocklistService } from './services/ip-blocklist';
 import { getWatchFolderService } from './torrent/watch-folder';
@@ -145,18 +145,19 @@ function createTray(): void {
       label: 'Pause All Downloads',
       type: 'normal',
       click: () => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('app:pauseAll');
-        }
+        // Act on the manager directly — works even with the window hidden/closed
+        getTorrentManager().pauseAllActive().catch((e) => {
+          logger.error('App', 'Tray pause-all failed', { error: String(e) });
+        });
       },
     },
     {
       label: 'Resume All Downloads',
       type: 'normal',
       click: () => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('app:resumeAll');
-        }
+        getTorrentManager().resumeAllPaused().catch((e) => {
+          logger.error('App', 'Tray resume-all failed', { error: String(e) });
+        });
       },
     },
     { type: 'separator' },
@@ -216,6 +217,29 @@ function createTrayIconPNG(): number[] {
   return data;
 }
 
+/**
+ * Restore the saved window geometry, but only if it's still visible on a
+ * connected display (a monitor may have been unplugged since last run).
+ */
+function restoredBounds(): { width: number; height: number; x?: number; y?: number } {
+  const fallback = { width: 1200, height: 800 };
+  try {
+    const saved = getWindowBounds();
+    if (!saved || saved.width < 400 || saved.height < 300) return fallback;
+    if (saved.x === undefined || saved.y === undefined) {
+      return { width: saved.width, height: saved.height };
+    }
+    const onScreen = screen.getAllDisplays().some(d => {
+      const a = d.workArea;
+      return saved.x! >= a.x - 50 && saved.y! >= a.y - 50 &&
+        saved.x! < a.x + a.width && saved.y! < a.y + a.height;
+    });
+    return onScreen ? saved : { width: saved.width, height: saved.height };
+  } catch {
+    return fallback;
+  }
+}
+
 async function createWindow(): Promise<void> {
   // Check if we should start hidden (launched at login with openAsHidden)
   const loginSettings = app.getLoginItemSettings();
@@ -224,8 +248,7 @@ async function createWindow(): Promise<void> {
   const appIconPath = getAppIconPath();
 
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    ...restoredBounds(),
     minWidth: 800,
     minHeight: 600,
     ...(appIconPath ? { icon: appIconPath } : {}),
@@ -296,6 +319,13 @@ async function createWindow(): Promise<void> {
 
   // === Tray behavior: Close to Tray ===
   mainWindow.on('close', (event: Electron.Event) => {
+    // Remember geometry (normal bounds, not the maximized/minimized rect)
+    try {
+      if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isMinimized()) {
+        saveWindowBounds(mainWindow.getNormalBounds());
+      }
+    } catch { /* best-effort */ }
+
     if (!isQuitting) {
       const settings = store.get('settings') as any;
       if (settings?.closeToTray) {
@@ -397,7 +427,18 @@ async function initializeApp(): Promise<void> {
   // Apply CSP before any window loads content
   applyContentSecurityPolicy();
 
-  // Initialize torrent manager (which will use electron-store)
+  // Create the tray and the window FIRST. Restoring torrents re-verifies
+  // their on-disk data (sha1 over potentially many GB) and used to run before
+  // the window existed — the app looked hung for tens of seconds on launch.
+  // The manager gates its public API on initialization, so early UI calls
+  // simply wait instead of failing.
+  createTray();
+  logger.info('App', 'System tray created.');
+
+  await createWindow();
+  logger.info('App', 'Main window created.');
+
+  // Initialize torrent manager (restores + verifies persisted torrents)
   const torrentManager = getTorrentManager();
   await torrentManager.initialize();
   logger.info('App', 'Torrent manager initialized with electron-store.');
@@ -415,14 +456,6 @@ async function initializeApp(): Promise<void> {
   const scheduler = getSchedulerEngine();
   scheduler.start();
   logger.info('App', 'Scheduler engine started.');
-
-  // Create system tray
-  createTray();
-  logger.info('App', 'System tray created.');
-
-  // Create main window
-  await createWindow();
-  logger.info('App', 'Main window created.');
 
   // Start the VPN kill-switch guard (no-op unless enabled in privacy settings)
   try {
@@ -552,7 +585,14 @@ app.on('before-quit', async (event) => {
   app.exit(0);
 });
 
+// cleanup() can be reached twice on quit (window-all-closed → app.quit() →
+// before-quit). Every step is try/catch'd, but there's no point running the
+// whole teardown again — guard it.
+let cleanupDone = false;
+
 async function cleanup(): Promise<void> {
+  if (cleanupDone) return;
+  cleanupDone = true;
   logger.info('App', 'Cleaning up...');
 
   // Check if clearDataOnExit is enabled
@@ -560,8 +600,8 @@ async function cleanup(): Promise<void> {
     const privacyConfig = (store.get('privacyConfig') as any) || {};
     if (privacyConfig.clearDataOnExit) {
       logger.info('App', 'clearDataOnExit enabled — removing logs and temp files');
-      const fs = require('fs');
-      const pathMod = require('path');
+      const fs = await import('fs');
+      const pathMod = await import('path');
 
       // Remove copied .torrent files
       const torrentsDir = pathMod.join(app.getPath('userData'), 'torrents');
@@ -590,7 +630,7 @@ async function cleanup(): Promise<void> {
   }
 
   try {
-    const { getShareManager } = require('./sharing/share-manager');
+    const { getShareManager } = await import('./sharing/share-manager');
     getShareManager().destroy();
     logger.info('App', 'Share manager destroyed.');
   } catch (e) {
@@ -598,7 +638,7 @@ async function cleanup(): Promise<void> {
   }
 
   try {
-    const { getRoomManager } = require('./sharing/room-manager');
+    const { getRoomManager } = await import('./sharing/room-manager');
     getRoomManager().destroy();
     logger.info('App', 'Room manager destroyed.');
   } catch (e) {
@@ -606,7 +646,7 @@ async function cleanup(): Promise<void> {
   }
 
   try {
-    const { getCastServer } = require('./torrent/cast-server');
+    const { getCastServer } = await import('./torrent/cast-server');
     getCastServer().destroy();
     logger.info('App', 'Cast server destroyed.');
   } catch (e) {
@@ -614,7 +654,7 @@ async function cleanup(): Promise<void> {
   }
 
   try {
-    const { getRemoteCastManager } = require('./sharing/remote-cast-manager');
+    const { getRemoteCastManager } = await import('./sharing/remote-cast-manager');
     getRemoteCastManager().destroy();
     logger.info('App', 'Remote-cast manager destroyed.');
   } catch (e) {
@@ -622,7 +662,7 @@ async function cleanup(): Promise<void> {
   }
 
   try {
-    const { getChromecastManager } = require('./torrent/chromecast');
+    const { getChromecastManager } = await import('./torrent/chromecast');
     getChromecastManager().destroy();
     logger.info('App', 'Chromecast manager destroyed.');
   } catch (e) {

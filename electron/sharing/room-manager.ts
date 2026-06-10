@@ -23,11 +23,7 @@ const log = logger.child('RoomManager');
 
 // Same relay set as share links — friends behind symmetric NATs need TURN to
 // connect. Honors the existing "Use TURN relays" privacy toggle.
-const TURN_SERVERS = [
-  { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-];
+import { TURN_SERVERS } from './ice-servers';
 
 type Pending = { resolve: (v: any) => void; reject: (e: Error) => void };
 

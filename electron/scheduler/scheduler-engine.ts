@@ -59,10 +59,14 @@ export class SchedulerEngine {
       const currentDay = now.getDay(); // 0=Sun ... 6=Sat
       const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
-      // Find a matching schedule
+      // Find a matching schedule. Windows may cross midnight (e.g. 23:00–02:00):
+      // start <= end is a same-day window, start > end wraps to the next day.
       const matchingSchedule = schedulerConfig.schedules.find(schedule => {
         if (!schedule.days.includes(currentDay)) return false;
-        return currentTime >= schedule.startTime && currentTime < schedule.endTime;
+        if (schedule.startTime <= schedule.endTime) {
+          return currentTime >= schedule.startTime && currentTime < schedule.endTime;
+        }
+        return currentTime >= schedule.startTime || currentTime < schedule.endTime;
       });
 
       if (matchingSchedule) {

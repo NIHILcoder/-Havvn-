@@ -289,7 +289,6 @@ export const StreamPlayerModal: React.FC<StreamPlayerModalProps> = ({ downloadId
         <div className="player-audio">
           <div className="player-audio-art"><Icon name="music" size={48} /></div>
           <div className="player-audio-name">{activeFile?.name}</div>
-          {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
           <audio src={streamUrl} controls autoPlay onError={handleMediaError} />
         </div>
       );

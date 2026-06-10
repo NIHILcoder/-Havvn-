@@ -2,6 +2,7 @@ import WebTorrent, { Torrent } from 'webtorrent';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
+import crypto from 'crypto';
 import https from 'https';
 import http from 'http';
 import { URL } from 'url';
@@ -29,6 +30,7 @@ import { spawn, ChildProcess } from 'child_process';
 
 // ffmpeg-static ships a platform binary; in a packaged app it lives in
 // app.asar.unpacked (it can't execute from inside the asar archive).
+// eslint-disable-next-line @typescript-eslint/no-var-requires
 const ffmpegStaticPath = require('ffmpeg-static') as string | null;
 function resolveFfmpegPath(): string | null {
   if (!ffmpegStaticPath) return null;
@@ -80,7 +82,9 @@ export class TorrentError extends Error {
  * - Comprehensive logging
  */
 export class TorrentManager {
-  private client: WebTorrent.Instance;
+  // Created in initialize() so client options (DHT, max connections, listening
+  // port, speed limits) can come from the persisted settings.
+  private client!: WebTorrent.Instance;
   private managedTorrents: Map<string, ManagedTorrent> = new Map();
   private infoHashIndex: Map<string, string> = new Map();
   // Creation options for "start seeding" entries, used the first time they seed
@@ -98,6 +102,9 @@ export class TorrentManager {
   // PERSIST_INTERVAL_MS to avoid serializing the whole store many times a second.
   private lastPersistAt = 0;
   private static readonly PERSIST_INTERVAL_MS = 5000;
+  // How long to wait for torrent metadata (magnet with no peers) before
+  // failing the add instead of hanging forever.
+  private static readonly METADATA_TIMEOUT_MS = 120_000;
   private statsCallbacks: Set<StatsCallback> = new Set();
   private completionCallbacks: Set<CompletionCallback> = new Set();
   private maxActiveDownloads = 3;
@@ -106,36 +113,34 @@ export class TorrentManager {
   private defaultSeedRatioLimit = 0;
   private defaultSeedTimeLimitMinutes = 0;
   
+  // Resolves once initialize() has restored all torrents. Public mutators
+  // await this so the window can be created (and the UI used) while the
+  // potentially slow restore/verification still runs in the background.
+  private initDone: Promise<void>;
+  private resolveInitDone!: () => void;
+
   constructor() {
-    // Use an ephemeral, non-identifying BitTorrent peer ID. It carries the
-    // TorrentHunt client prefix (-TH<version>-) followed by random bytes that
-    // rotate every launch, so peers can't correlate sessions long-term.
-    //
-    // utp: false — disable µTP transport. The native utp-native module throws
-    // uncaught "no buffer space available" (WSAENOBUFS) errors on Windows under
-    // load, which crash the main process. Plain TCP is stable and universal.
-    this.client = new WebTorrent({
-      peerId: this.generateEphemeralPeerId(),
-      utp: false,
-    } as any);
-
-    this.client.on('error', (err: string | Error) => {
-      log.error('WebTorrent client error', { error: err });
-    });
-
+    this.initDone = new Promise<void>((res) => { this.resolveInitDone = res; });
     log.debug('TorrentManager instance created');
   }
 
+  /** Wait until initialize() has finished (no-op afterwards). */
+  private whenReady(): Promise<void> {
+    return this.initDone;
+  }
+
   /**
-   * Generate a BitTorrent peer ID in Azureus-style format: -TH0140-<random>.
-   * 20 bytes total, no machine-identifying data.
+   * Generate a BitTorrent peer ID in Azureus-style format: -TH1810-<random>.
+   * Version digits are derived from package.json so they never go stale.
+   * 20 bytes total, no machine-identifying data; rotates every launch.
    */
   private generateEphemeralPeerId(): Buffer {
-    const prefix = '-TH1560-'; // TH client, v1.5.6 (Azureus-style)
-    const random = require('crypto').randomBytes(20 - prefix.length).toString('hex').slice(0, 20 - prefix.length);
+    const digits = app.getVersion().replace(/\D/g, '').padEnd(4, '0').slice(0, 4);
+    const prefix = `-TH${digits}-`;
+    const random = crypto.randomBytes(20 - prefix.length).toString('hex').slice(0, 20 - prefix.length);
     return Buffer.from(prefix + random);
   }
-  
+
   /**
    * Initialize the manager - restore state from database
    */
@@ -156,15 +161,30 @@ export class TorrentManager {
       maxUpKbps: this.maxUpKbps,
     });
 
-    // Apply speed throttle to WebTorrent client (best-effort — API availability depends on version)
-    if (this.maxDownKbps > 0) {
-      try { (this.client as any).throttleDownload?.(this.maxDownKbps * 1024); } catch (_) { /* unsupported */ }
-      log.info('Download throttle applied', { limitKbps: this.maxDownKbps });
-    }
-    if (this.maxUpKbps > 0) {
-      try { (this.client as any).throttleUpload?.(this.maxUpKbps * 1024); } catch (_) { /* unsupported */ }
-      log.info('Upload throttle applied', { limitKbps: this.maxUpKbps });
-    }
+    // Use an ephemeral, non-identifying BitTorrent peer ID. It carries the
+    // TorrentHunt client prefix (-TH<version>-) followed by random bytes that
+    // rotate every launch, so peers can't correlate sessions long-term.
+    //
+    // utp: false — disable µTP transport. The native utp-native module throws
+    // uncaught "no buffer space available" (WSAENOBUFS) errors on Windows under
+    // load, which crash the main process. Plain TCP is stable and universal.
+    //
+    // dht / maxConns / torrentPort / download+uploadLimit come from Settings →
+    // Advanced. (PEX can't be toggled in WebTorrent; LSD isn't implemented.)
+    this.client = new WebTorrent({
+      peerId: this.generateEphemeralPeerId(),
+      utp: false,
+      dht: settings.enableDHT !== false,
+      maxConns: settings.maxConnections > 0 ? settings.maxConnections : 100,
+      torrentPort: settings.portMin > 0 ? settings.portMin : 0,
+      // -1 = unlimited (0 would mean "0 bytes/sec" and stall all traffic)
+      downloadLimit: this.maxDownKbps > 0 ? this.maxDownKbps * 1024 : -1,
+      uploadLimit: this.maxUpKbps > 0 ? this.maxUpKbps * 1024 : -1,
+    } as any);
+
+    this.client.on('error', (err: string | Error) => {
+      log.error('WebTorrent client error', { error: err });
+    });
 
     // Load all downloads; permanently purge any stale 'removed' records left by older
     // app versions that used markAsRemoved instead of deleteDownload. This prevents
@@ -204,6 +224,7 @@ export class TorrentManager {
     // Process queue
     await this.processQueue();
 
+    this.resolveInitDone();
     log.info('TorrentManager initialized successfully');
   }
   
@@ -294,15 +315,40 @@ export class TorrentManager {
   }
 
   /**
-   * Extract infoHash from a magnet URI
+   * Extract infoHash from a magnet URI, normalized to lowercase hex.
+   * Magnets may carry the hash as 40-char hex OR 32-char base32 — WebTorrent
+   * normalizes to hex internally, so we must too or duplicate detection misses.
    */
   private extractInfoHashFromMagnet(magnetUri: string): string | null {
     try {
       const match = magnetUri.match(/xt=urn:btih:([a-zA-Z0-9]+)/i);
-      return match ? match[1].toLowerCase() : null;
+      if (!match) return null;
+      const hash = match[1];
+      if (/^[a-fA-F0-9]{40}$/.test(hash)) return hash.toLowerCase();
+      if (/^[a-zA-Z2-7]{32}$/.test(hash)) return this.base32ToHex(hash);
+      return null;
     } catch (err) {
       return null;
     }
+  }
+
+  /** Decode an RFC 4648 base32 infohash (32 chars) to 40-char lowercase hex. */
+  private base32ToHex(b32: string): string | null {
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    let bits = 0;
+    let value = 0;
+    const bytes: number[] = [];
+    for (const ch of b32.toUpperCase()) {
+      const idx = alphabet.indexOf(ch);
+      if (idx === -1) return null;
+      value = (value << 5) | idx;
+      bits += 5;
+      if (bits >= 8) {
+        bytes.push((value >>> (bits - 8)) & 0xff);
+        bits -= 8;
+      }
+    }
+    return bytes.length === 20 ? Buffer.from(bytes).toString('hex') : null;
   }
 
   /**
@@ -311,6 +357,7 @@ export class TorrentManager {
    */
   private async extractInfoHashFromFile(filePath: string): Promise<string | null> {
     try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
       const parseTorrent = require('parse-torrent');
       const buffer = fs.readFileSync(filePath);
       const parsed = await parseTorrent(buffer);
@@ -434,6 +481,9 @@ export class TorrentManager {
    * .torrent URL rather than a magnet link.
    */
   private downloadTorrentToTemp(url: string): Promise<string> {
+    // .torrent files are tiny (KBs); anything past this is not a torrent file
+    // and would only balloon memory since the body is buffered in full.
+    const MAX_TORRENT_BYTES = 10 * 1024 * 1024;
     return new Promise((resolve, reject) => {
       const get = (current: string, redirects: number): void => {
         if (redirects > 5) {
@@ -443,7 +493,7 @@ export class TorrentManager {
         const parsed = new URL(current);
         const lib = parsed.protocol === 'https:' ? https : http;
         const req = lib.get(current, {
-          headers: { 'User-Agent': 'TorrentHunt', 'Accept': 'application/x-bittorrent, */*' },
+          headers: { 'User-Agent': `TorrentHunt/${app.getVersion()}`, 'Accept': 'application/x-bittorrent, */*' },
           timeout: 30000,
         }, (res) => {
           if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
@@ -457,7 +507,16 @@ export class TorrentManager {
             return;
           }
           const chunks: Buffer[] = [];
-          res.on('data', (c: Buffer) => chunks.push(c));
+          let received = 0;
+          res.on('data', (c: Buffer) => {
+            received += c.length;
+            if (received > MAX_TORRENT_BYTES) {
+              res.destroy();
+              reject(new Error('Downloaded file is too large to be a .torrent'));
+              return;
+            }
+            chunks.push(c);
+          });
           res.on('end', () => {
             try {
               const buf = Buffer.concat(chunks);
@@ -491,6 +550,7 @@ export class TorrentManager {
     name?: string;
     selectedFiles?: number[];
   }): Promise<Download> {
+    await this.whenReady();
     log.info('Adding new download', { sourceType: params.sourceType, name: params.name });
 
     // For torrent files given as an HTTP(S) URL (search/RSS results), fetch the
@@ -715,6 +775,7 @@ export class TorrentManager {
     pieceLength?: number;
     torrentFilePath?: string;
   }): Promise<Download> {
+    await this.whenReady();
     const sourceFolder = path.dirname(params.sourcePaths[0]);
     const download = await db.createDownload({
       name: params.name || path.basename(params.sourcePaths[0]),
@@ -758,12 +819,14 @@ export class TorrentManager {
       let settled = false;
       const fail = (e: any) => {
         if (settled) return; settled = true;
+        this.client.removeListener('error', fail);
         reject(e instanceof Error ? e : new Error(String(e)));
       };
 
       try {
         this.client.seed(paths, seedOpts, async (torrent: any) => {
           if (settled) return; settled = true;
+          this.client.removeListener('error', fail);
           try {
             managed.torrent = torrent;
             const infoHash = torrent.infoHash;
@@ -854,10 +917,26 @@ export class TorrentManager {
           selectedCount: selectedFiles.length,
         });
       }
-      
+
       const torrent = this.client.add(torrentInput, addOptions);
-      
+
       managed.torrent = torrent;
+
+      // Guard against magnets that never find peers: without metadata 'ready'
+      // never fires and this promise would hang forever (blocking the IPC add
+      // call and the queue). Time out, surface a clear error, allow retry.
+      let settled = false;
+      const metadataTimeout = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        log.warn('Metadata fetch timed out', { id });
+        this.closeStreamServer(managed);
+        try { managed.torrent?.destroy({ destroyStore: false } as any); } catch (_) { /* ignore */ }
+        managed.torrent = null;
+        this.transitionStatus(id, 'error', 'Timed out fetching torrent metadata (no peers found). Retry later.')
+          .catch(() => { /* may already be in error state */ });
+        reject(new TorrentError('Timed out fetching torrent metadata', 'METADATA_TIMEOUT', id));
+      }, TorrentManager.METADATA_TIMEOUT_MS);
       
       // Transition to downloading only if not already in a terminal/active state
       // When restoring, we preserve the existing state (e.g., seeding, completed)
@@ -872,6 +951,9 @@ export class TorrentManager {
       }
       
       torrent.on('ready', async () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(metadataTimeout);
         // Apply file selection after torrent is ready
         if (selectedFiles && selectedFiles.length > 0) {
           try {
@@ -984,16 +1066,24 @@ export class TorrentManager {
           id,
           error: err?.message || String(err),
         });
-        
+
         const errorMsg = err?.message || String(err);
-        
+
         try {
           await this.transitionStatus(id, 'error', errorMsg);
         } catch (e) {
           // Status transition might fail if already in error state
           log.warn('Could not transition to error state', { id });
         }
-        
+
+        // If the torrent errored before 'ready', settle the add promise too —
+        // otherwise the caller (IPC add / queue) would wait forever.
+        if (!settled) {
+          settled = true;
+          clearTimeout(metadataTimeout);
+          reject(new TorrentError(errorMsg, 'TORRENT_ERROR', id));
+        }
+
         // Process queue to start next download
         this.processQueue();
       });
@@ -1144,6 +1234,7 @@ export class TorrentManager {
    * Pause a download
    */
   async pauseDownload(id: string): Promise<void> {
+    await this.whenReady();
     log.info('Pausing download', { id });
 
     const managed = this.managedTorrents.get(id);
@@ -1196,6 +1287,7 @@ export class TorrentManager {
    * Resume a download
    */
   async resumeDownload(id: string): Promise<void> {
+    await this.whenReady();
     log.info('Resuming download', { id });
 
     const managed = this.managedTorrents.get(id);
@@ -1233,6 +1325,7 @@ export class TorrentManager {
    * Remove a download
    */
   async removeDownload(id: string, deleteFiles: boolean): Promise<void> {
+    await this.whenReady();
     log.info('Removing download', { id, deleteFiles, idType: typeof id, deleteFilesType: typeof deleteFiles });
 
     const managed = this.managedTorrents.get(id);
@@ -1317,6 +1410,7 @@ export class TorrentManager {
    * Stop seeding a completed download
    */
   async stopSeeding(id: string): Promise<void> {
+    await this.whenReady();
     log.info('Stopping seeding', { id });
 
     const managed = this.managedTorrents.get(id);
@@ -1332,11 +1426,23 @@ export class TorrentManager {
       );
     }
 
+    // Destroy the torrent instance — torrent.pause() in WebTorrent 1.9.7 only
+    // stops new connections; already-connected peers keep downloading from us.
+    // Data on disk is preserved (destroyStore: false).
     if (managed.torrent) {
-      managed.torrent.pause();
+      this.closeStreamServer(managed);
+      try {
+        managed.torrent.destroy({ destroyStore: false } as any);
+      } catch (e) {
+        log.warn('Error destroying torrent during stopSeeding (non-fatal)', { error: String(e) });
+      }
+      managed.torrent = null;
     }
-    
+
     await this.transitionStatus(id, 'completed');
+
+    // A seeding slot was freed — let the next queued torrent start
+    await this.processQueue();
 
     log.debug('Seeding stopped', { id });
   }
@@ -1345,6 +1451,7 @@ export class TorrentManager {
    * Retry a failed download
    */
   async retryDownload(id: string): Promise<void> {
+    await this.whenReady();
     log.info('Retrying download', { id });
 
     const managed = this.managedTorrents.get(id);
@@ -1382,6 +1489,7 @@ export class TorrentManager {
    * Returns the number of torrents that were paused.
    */
   async pauseAllActive(): Promise<number> {
+    await this.whenReady();
     let paused = 0;
     for (const [id, managed] of this.managedTorrents) {
       const status = managed.download.status;
@@ -1396,6 +1504,28 @@ export class TorrentManager {
     }
     log.info('Paused all active torrents', { count: paused });
     return paused;
+  }
+
+  /**
+   * Resume every paused torrent (re-queues them; the queue respects
+   * maxActiveDownloads). Used by the tray "Resume All" action and the UI.
+   * Returns the number of torrents that were re-queued.
+   */
+  async resumeAllPaused(): Promise<number> {
+    await this.whenReady();
+    let resumed = 0;
+    for (const [id, managed] of this.managedTorrents) {
+      if (managed.download.status === 'paused') {
+        try {
+          await this.resumeDownload(id);
+          resumed++;
+        } catch (e) {
+          log.warn('resumeAllPaused: failed to resume one torrent', { id, error: String(e) });
+        }
+      }
+    }
+    log.info('Resumed all paused torrents', { count: resumed });
+    return resumed;
   }
 
   /**
@@ -1453,6 +1583,7 @@ export class TorrentManager {
     fileIndex: number,
     opts?: { transcode?: boolean },
   ): Promise<{ url: string; name: string; kind: 'video' | 'audio' | 'other'; transcoded: boolean }> {
+    await this.whenReady();
     const managed = this.managedTorrents.get(id);
     if (!managed) {
       throw new TorrentError('Download not found', 'NOT_FOUND', id);
@@ -1491,7 +1622,21 @@ export class TorrentManager {
     }
 
     if (!managed.streamServer) {
-      const server = (torrent as any).createServer();
+      // Harden WebTorrent's stream server. It binds to 127.0.0.1, but any
+      // page in the user's browser can still reach localhost via fetch — and
+      // WebTorrent defaults to `origin: '*'` (CORS open to every site). With
+      // the path being just `/<fileIndex>`, a malicious site could read the
+      // streaming file cross-origin.
+      //   • hostname: '127.0.0.1' — rejects requests whose Host header isn't
+      //     our loopback address (blocks DNS-rebinding).
+      //   • origin: a sentinel string — NOTE webtorrent 1.9.7 coerces
+      //     `origin:false` back to '*' (`if (!opts.origin) opts.origin='*'`),
+      //     so `false` is useless here. A non-empty origin that no real site
+      //     sends means Access-Control-Allow-Origin is never emitted for a
+      //     cross-origin fetch, so the browser blocks JS from reading the body.
+      //     Our own <video>/<audio> load is a no-cors request (no Origin
+      //     header), so it still plays — same as before.
+      const server = (torrent as any).createServer({ origin: 'th-local-stream', hostname: '127.0.0.1' });
       await new Promise<void>((resolve, reject) => {
         try {
           server.listen(0, '127.0.0.1', () => resolve());
@@ -1656,6 +1801,14 @@ export class TorrentManager {
     };
 
     try {
+      // Reject cross-origin reads and DNS-rebinding: this server is for our own
+      // renderer only. The Host header must be the loopback address we serve on;
+      // a rebinding attack (evil.com → 127.0.0.1) keeps Host: evil.com and fails
+      // here. Any cross-site fetch with an Origin header is denied outright.
+      const host = (req.headers.host || '').split(':')[0];
+      if (host !== '127.0.0.1' && host !== 'localhost') { res.writeHead(403); res.end(); return; }
+      if (req.headers.origin) { res.writeHead(403); res.end(); return; }
+
       const url = new URL(req.url || '', 'http://127.0.0.1');
       const parts = url.pathname.split('/').filter(Boolean); // ['transcode', id, index]
       if (parts[0] !== 'transcode' || parts.length < 3) { res.writeHead(404); res.end(); return; }
@@ -1735,6 +1888,15 @@ export class TorrentManager {
           seeds: download.status === 'seeding' ? torrent.numPeers : 0,
           status: download.status,
         });
+        // Keep the in-memory record in sync with the live torrent. Persisting
+        // only updates the store copy; without this, checkSeedingLimits would
+        // compute the seed ratio from stale (often zero) byte counters.
+        download.progress = torrent.progress;
+        download.downloadedBytes = torrent.downloaded;
+        download.uploadedBytes = torrent.uploaded;
+        download.downSpeedBps = torrent.downloadSpeed;
+        download.upSpeedBps = torrent.uploadSpeed;
+        download.peers = torrent.numPeers;
       } else {
         stats.push({
           id: download.id,
@@ -1838,13 +2000,15 @@ export class TorrentManager {
     if (settings.maxActiveDownloads !== undefined) {
       this.maxActiveDownloads = settings.maxActiveDownloads;
     }
+    // NOTE: -1 disables the throttle in WebTorrent; 0 would mean "0 bytes/sec"
+    // and silently stall all traffic after a limit is removed.
     if (settings.maxDownKbps !== undefined) {
       this.maxDownKbps = settings.maxDownKbps;
-      try { (this.client as any).throttleDownload?.(this.maxDownKbps > 0 ? this.maxDownKbps * 1024 : 0); } catch (_) { /* unsupported */ }
+      try { (this.client as any).throttleDownload?.(this.maxDownKbps > 0 ? this.maxDownKbps * 1024 : -1); } catch (_) { /* unsupported */ }
     }
     if (settings.maxUpKbps !== undefined) {
       this.maxUpKbps = settings.maxUpKbps;
-      try { (this.client as any).throttleUpload?.(this.maxUpKbps > 0 ? this.maxUpKbps * 1024 : 0); } catch (_) { /* unsupported */ }
+      try { (this.client as any).throttleUpload?.(this.maxUpKbps > 0 ? this.maxUpKbps * 1024 : -1); } catch (_) { /* unsupported */ }
     }
     if (settings.defaultSeedRatioLimit !== undefined) {
       this.defaultSeedRatioLimit = settings.defaultSeedRatioLimit;
@@ -1865,6 +2029,7 @@ export class TorrentManager {
    * In WebTorrent this is approximated by controlling file select/deselect order.
    */
   async setSequentialDownload(id: string, enabled: boolean): Promise<void> {
+    await this.whenReady();
     const managed = this.managedTorrents.get(id);
     if (!managed) throw new TorrentError('Download not found', 'NOT_FOUND', id);
 
@@ -1893,6 +2058,7 @@ export class TorrentManager {
    * 'skip' = deselect (don't download), others = select.
    */
   async setFilePriority(id: string, fileIndex: number, priority: FilePriority): Promise<void> {
+    await this.whenReady();
     const managed = this.managedTorrents.get(id);
     if (!managed) throw new TorrentError('Download not found', 'NOT_FOUND', id);
 
@@ -1920,6 +2086,7 @@ export class TorrentManager {
    * Set per-torrent speed limits (overrides global limits for this torrent).
    */
   async setTorrentSpeedLimits(id: string, downKbps: number, upKbps: number): Promise<void> {
+    await this.whenReady();
     const managed = this.managedTorrents.get(id);
     if (!managed) throw new TorrentError('Download not found', 'NOT_FOUND', id);
 
@@ -1944,6 +2111,7 @@ export class TorrentManager {
    * 0 = unlimited (use global default).
    */
   async setSeedRatioLimit(id: string, ratio: number): Promise<void> {
+    await this.whenReady();
     const managed = this.managedTorrents.get(id);
     if (!managed) throw new TorrentError('Download not found', 'NOT_FOUND', id);
 
@@ -1957,6 +2125,7 @@ export class TorrentManager {
    * 0 = unlimited.
    */
   async setSeedTimeLimit(id: string, minutes: number): Promise<void> {
+    await this.whenReady();
     const managed = this.managedTorrents.get(id);
     if (!managed) throw new TorrentError('Download not found', 'NOT_FOUND', id);
 

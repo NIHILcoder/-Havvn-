@@ -330,16 +330,12 @@ const api: IpcApi = {
     return (file as unknown as { path?: string }).path || '';
   },
 
-  onPauseAll: (callback: () => void): (() => void) => {
-    const handler = () => callback();
-    ipcRenderer.on('app:pauseAll', handler);
-    return () => { ipcRenderer.removeListener('app:pauseAll', handler); };
+  pauseAll: (): Promise<{ paused: number }> => {
+    return ipcRenderer.invoke('downloads:pauseAll');
   },
 
-  onResumeAll: (callback: () => void): (() => void) => {
-    const handler = () => callback();
-    ipcRenderer.on('app:resumeAll', handler);
-    return () => { ipcRenderer.removeListener('app:resumeAll', handler); };
+  resumeAll: (): Promise<{ resumed: number }> => {
+    return ipcRenderer.invoke('downloads:resumeAll');
   },
 
   onVpnDropped: (callback: (info: { paused: number; publicIP?: string }) => void): (() => void) => {

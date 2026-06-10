@@ -36,10 +36,7 @@ const ROOM_TRACKERS = [
   'wss://tracker.webtorrent.dev',
   'wss://tracker.files.fm:7073/announce',
 ];
-const STUN_SERVERS = [
-  { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:global.stun.twilio.com:3478' },
-];
+import { STUN_SERVERS } from './ice-servers';
 
 const w = window as any;
 const nativeWrtc = {

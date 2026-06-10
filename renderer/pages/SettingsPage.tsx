@@ -64,21 +64,11 @@ const SettingsPage: React.FC = () => {
   const [maxUpKbps, setMaxUpKbps] = useState(0);
   const [maxActiveDownloads, setMaxActiveDownloads] = useState(3);
 
-  // Proxy settings
-  const [proxyEnabled, setProxyEnabled] = useState(false);
-  const [proxyType, setProxyType] = useState<'http' | 'https' | 'socks5'>('http');
-  const [proxyHost, setProxyHost] = useState('');
-  const [proxyPort, setProxyPort] = useState(8080);
-  const [proxyUsername, setProxyUsername] = useState('');
-  const [proxyPassword, setProxyPassword] = useState('');
-
-  // Advanced settings
+  // Advanced settings (proxy UI removed — WebTorrent has no proxy support;
+  // PEX/LSD toggles removed — not switchable/implemented in WebTorrent)
   const [enableDHT, setEnableDHT] = useState(true);
-  const [enablePEX, setEnablePEX] = useState(true);
-  const [enableLSD, setEnableLSD] = useState(true);
   const [maxConnections, setMaxConnections] = useState(100);
   const [portMin, setPortMin] = useState(6881);
-  const [portMax, setPortMax] = useState(6889);
 
   // Watch folder settings
   const [watchFolderEnabled, setWatchFolderEnabled] = useState(false);
@@ -206,13 +196,6 @@ const SettingsPage: React.FC = () => {
       // Advanced
       maxConnections !== s.maxConnections ||
       portMin !== s.portMin ||
-      portMax !== s.portMax ||
-      // Proxy
-      proxyType !== s.proxyType ||
-      proxyHost !== s.proxyHost ||
-      proxyPort !== s.proxyPort ||
-      proxyUsername !== s.proxyUsername ||
-      proxyPassword !== s.proxyPassword ||
       // Watch folder
       watchFolderPath !== s.watchFolderPath ||
       // Disk guard
@@ -223,8 +206,7 @@ const SettingsPage: React.FC = () => {
     setHasChanges(changed);
   }, [
     settings, defaultDownloadDir, maxDownKbps, maxUpKbps, maxActiveDownloads,
-    maxConnections, portMin, portMax,
-    proxyType, proxyHost, proxyPort, proxyUsername, proxyPassword,
+    maxConnections, portMin,
     watchFolderPath, diskGuardMinFreeMB,
     defaultSeedRatioLimit, defaultSeedTimeLimitMinutes,
   ]);
@@ -257,19 +239,8 @@ const SettingsPage: React.FC = () => {
 
       // Advanced settings
       setEnableDHT(s.enableDHT ?? true);
-      setEnablePEX(s.enablePEX ?? true);
-      setEnableLSD(s.enableLSD ?? true);
       setMaxConnections(s.maxConnections ?? 100);
       setPortMin(s.portMin ?? 6881);
-      setPortMax(s.portMax ?? 6889);
-
-      // Proxy settings
-      setProxyEnabled(s.proxyEnabled ?? false);
-      setProxyType(s.proxyType ?? 'http');
-      setProxyHost(s.proxyHost ?? '');
-      setProxyPort(s.proxyPort ?? 8080);
-      setProxyUsername(s.proxyUsername ?? '');
-      setProxyPassword(s.proxyPassword ?? '');
 
       // Watch folder
       setWatchFolderEnabled(s.watchFolderEnabled ?? false);
@@ -408,18 +379,8 @@ const SettingsPage: React.FC = () => {
         closeToTray,
         // Advanced
         enableDHT,
-        enablePEX,
-        enableLSD,
         maxConnections,
         portMin,
-        portMax,
-        // Proxy
-        proxyEnabled,
-        proxyType,
-        proxyHost,
-        proxyPort,
-        proxyUsername,
-        proxyPassword,
         // Watch folder
         watchFolderEnabled,
         watchFolderPath,
@@ -482,12 +443,6 @@ const SettingsPage: React.FC = () => {
       setMaxActiveDownloads(settings.maxActiveDownloads);
       setMaxConnections(settings.maxConnections ?? 100);
       setPortMin(settings.portMin ?? 6881);
-      setPortMax(settings.portMax ?? 6889);
-      setProxyType(settings.proxyType ?? 'http');
-      setProxyHost(settings.proxyHost ?? '');
-      setProxyPort(settings.proxyPort ?? 8080);
-      setProxyUsername(settings.proxyUsername ?? '');
-      setProxyPassword(settings.proxyPassword ?? '');
       setWatchFolderPath(settings.watchFolderPath ?? '');
       setDiskGuardMinFreeMB(settings.diskGuardMinFreeMB ?? 2048);
       setDefaultSeedRatioLimit(settings.defaultSeedRatioLimit ?? 0);
@@ -876,82 +831,10 @@ const SettingsPage: React.FC = () => {
           <span>{t('settings.speedNote')}</span>
         </div>
 
-        <div className="settings-divider" />
-
-        <div className="settings-group">
-          <h3 className="settings-group-title">{t('settings.grp.proxy')}</h3>
-          {renderSettingItem(
-            t('settings.proxyEnable'),
-            t('settings.proxyEnable.desc'),
-            renderToggle(proxyEnabled, () => applyToggle(!proxyEnabled, setProxyEnabled, { proxyEnabled: !proxyEnabled }))
-          )}
-          {proxyEnabled && (
-            <>
-              {renderSettingItem(
-                t('settings.proxyType'),
-                t('settings.proxyType.desc'),
-                <select
-                  className="input-compact"
-                  value={proxyType}
-                  onChange={(e) => setProxyType(e.target.value as any)}
-                >
-                  <option value="http">HTTP</option>
-                  <option value="https">HTTPS</option>
-                  <option value="socks5">SOCKS5</option>
-                </select>
-              )}
-              {renderSettingItem(
-                t('settings.proxyHost'),
-                t('settings.proxyHost.desc'),
-                <input
-                  type="text"
-                  className="input-compact"
-                  placeholder="proxy.example.com"
-                  value={proxyHost}
-                  onChange={(e) => setProxyHost(e.target.value)}
-                />
-              )}
-              {renderSettingItem(
-                t('settings.proxyPort'),
-                t('settings.proxyPort.desc'),
-                <input
-                  type="number"
-                  className="input-compact input-mono"
-                  min="1"
-                  max="65535"
-                  value={proxyPort}
-                  onChange={(e) => setProxyPort(parseInt(e.target.value) || 8080)}
-                />
-              )}
-              {renderSettingItem(
-                t('settings.proxyUser'),
-                t('settings.proxyUser.desc'),
-                <input
-                  type="text"
-                  className="input-compact"
-                  placeholder="username"
-                  value={proxyUsername}
-                  onChange={(e) => setProxyUsername(e.target.value)}
-                />
-              )}
-              {renderSettingItem(
-                t('settings.proxyPass'),
-                t('settings.proxyPass.desc'),
-                <input
-                  type="password"
-                  className="input-compact"
-                  placeholder="••••••"
-                  value={proxyPassword}
-                  onChange={(e) => setProxyPassword(e.target.value)}
-                />
-              )}
-              <div className="settings-notice-compact">
-                <Icon name="info" size={14} />
-                <span>{t('settings.proxyNote')}</span>
-              </div>
-            </>
-          )}
-        </div>
+        {/* Proxy settings UI was removed: WebTorrent (the engine) has no proxy
+            support, so the old section silently did nothing — worse than none,
+            it gave a false sense of privacy. Bring it back only when traffic
+            can actually be routed through a proxy. */}
 
         <div className="settings-divider" />
 
@@ -986,16 +869,12 @@ const SettingsPage: React.FC = () => {
             t('settings.dht.desc'),
             renderToggle(enableDHT, () => applyToggle(!enableDHT, setEnableDHT, { enableDHT: !enableDHT }))
           )}
-          {renderSettingItem(
-            t('settings.pex'),
-            t('settings.pex.desc'),
-            renderToggle(enablePEX, () => applyToggle(!enablePEX, setEnablePEX, { enablePEX: !enablePEX }))
-          )}
-          {renderSettingItem(
-            t('settings.lsd'),
-            t('settings.lsd.desc'),
-            renderToggle(enableLSD, () => applyToggle(!enableLSD, setEnableLSD, { enableLSD: !enableLSD }))
-          )}
+          {/* PEX/LSD toggles removed: WebTorrent can't switch PEX off and has
+              no LSD implementation — the switches were placebo. */}
+          <div className="settings-notice-compact">
+            <Icon name="info" size={14} />
+            <span>{t('settings.protocols.note')}</span>
+          </div>
         </div>
 
         <div className="settings-divider" />
@@ -1020,33 +899,25 @@ const SettingsPage: React.FC = () => {
 
         <div className="settings-group">
           <h3 className="settings-group-title">{t('settings.grp.ports')}</h3>
-          <div className="setting-item">
-            <div className="setting-info">
-              <div className="setting-label">{t('settings.portRange')}</div>
-              <p className="setting-description">{t('settings.portRange.desc')}</p>
-            </div>
-            <div className="setting-control">
-              <div className="port-range-input">
-                <input
-                  type="number"
-                  className="input-compact input-mono"
-                  min="1024"
-                  max="65535"
-                  value={portMin}
-                  onChange={(e) => setPortMin(parseInt(e.target.value) || 6881)}
-                />
-                <span className="port-separator">—</span>
-                <input
-                  type="number"
-                  className="input-compact input-mono"
-                  min="1024"
-                  max="65535"
-                  value={portMax}
-                  onChange={(e) => setPortMax(parseInt(e.target.value) || 6889)}
-                />
-              </div>
-            </div>
-          </div>
+          {/* WebTorrent listens on ONE port, not a range — show a single field
+              (persisted as portMin for backwards compatibility). */}
+          {renderSettingItem(
+            t('settings.port'),
+            t('settings.port.desc'),
+            <input
+              type="number"
+              className="input-compact input-mono"
+              min="1024"
+              max="65535"
+              value={portMin}
+              onChange={(e) => setPortMin(parseInt(e.target.value) || 6881)}
+            />
+          )}
+        </div>
+
+        <div className="settings-notice-compact">
+          <Icon name="info" size={14} />
+          <span>{t('settings.advanced.restartNote')}</span>
         </div>
       </>
     );

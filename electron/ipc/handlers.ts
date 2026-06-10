@@ -53,15 +53,31 @@ function wrapHandler(name: string, handler: IpcHandler): IpcHandler {
   };
 }
 
-export function setupIpcHandlers(mainWindow: BrowserWindow): void {
+// ipcMain.handle() throws on double registration, and stats subscriptions
+// would stack — so handlers are registered exactly once. The window reference
+// is module-level and refreshed on every call (a window can be recreated,
+// e.g. macOS dock 'activate').
+let handlersRegistered = false;
+let mainWindow: BrowserWindow;
+
+export function setupIpcHandlers(window: BrowserWindow): void {
+  mainWindow = window;
+
+  const roomManager = getRoomManager();
+  roomManager.setMainWindow(window);
+
+  if (handlersRegistered) {
+    log.info('IPC handlers already registered — updated window reference only');
+    return;
+  }
+  handlersRegistered = true;
+
   const torrentManager = getTorrentManager();
 
   log.info('Setting up IPC handlers');
 
-  // Friend swarms: forward live room updates to this window, then re-join any
-  // persisted rooms shortly after startup so swarms reconnect on their own.
-  const roomManager = getRoomManager();
-  roomManager.setMainWindow(mainWindow);
+  // Friend swarms: re-join any persisted rooms shortly after startup so
+  // swarms reconnect on their own.
   setTimeout(() => { roomManager.restoreAll().catch((e) => log.warn('Room restore failed', { error: String(e) })); }, 4000);
 
   // Downloads
@@ -99,6 +115,20 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('downloads:stopSeeding', wrapHandler('downloads:stopSeeding',
     async (_event, id: string) => {
       return await torrentManager.stopSeeding(id);
+    }
+  ));
+
+  ipcMain.handle('downloads:pauseAll', wrapHandler('downloads:pauseAll',
+    async () => {
+      const paused = await torrentManager.pauseAllActive();
+      return { paused };
+    }
+  ));
+
+  ipcMain.handle('downloads:resumeAll', wrapHandler('downloads:resumeAll',
+    async () => {
+      const resumed = await torrentManager.resumeAllPaused();
+      return { resumed };
     }
   ));
 
@@ -166,14 +196,14 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): void {
   // ── Cast to device on the LAN (HLS / direct, with seeking) ───────────────
   ipcMain.handle('cast:start', wrapHandler('cast:start',
     async (_event, id: string, fileIndex: number) => {
-      const { getCastServer } = require('../torrent/cast-server');
+      const { getCastServer } = await import('../torrent/cast-server');
       return getCastServer().publish(id, fileIndex);
     }
   ));
 
   ipcMain.handle('cast:stop', wrapHandler('cast:stop',
     async (_event, id: string, fileIndex: number) => {
-      const { getCastServer } = require('../torrent/cast-server');
+      const { getCastServer } = await import('../torrent/cast-server');
       getCastServer().unpublish(id, fileIndex);
       return { ok: true };
     }
@@ -182,14 +212,14 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): void {
   // Remote streaming over WebRTC (watch outside the local network)
   ipcMain.handle('cast:remoteStart', wrapHandler('cast:remoteStart',
     async (_event, id: string, fileIndex: number) => {
-      const { getRemoteCastManager } = require('../sharing/remote-cast-manager');
+      const { getRemoteCastManager } = await import('../sharing/remote-cast-manager');
       return getRemoteCastManager().start(id, fileIndex);
     }
   ));
 
   ipcMain.handle('cast:remoteStop', wrapHandler('cast:remoteStop',
     async (_event, sessionId: string) => {
-      const { getRemoteCastManager } = require('../sharing/remote-cast-manager');
+      const { getRemoteCastManager } = await import('../sharing/remote-cast-manager');
       return getRemoteCastManager().stop(sessionId);
     }
   ));
@@ -197,14 +227,14 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): void {
   // Cast to TV (Chromecast / Android TV)
   ipcMain.handle('cast:tvList', wrapHandler('cast:tvList',
     async () => {
-      const { getChromecastManager } = require('../torrent/chromecast');
+      const { getChromecastManager } = await import('../torrent/chromecast');
       return getChromecastManager().list();
     }
   ));
 
   ipcMain.handle('cast:tvRefresh', wrapHandler('cast:tvRefresh',
     async () => {
-      const { getChromecastManager } = require('../torrent/chromecast');
+      const { getChromecastManager } = await import('../torrent/chromecast');
       const mgr = getChromecastManager();
       mgr.refresh();
       return mgr.list();
@@ -213,8 +243,8 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle('cast:tvPlay', wrapHandler('cast:tvPlay',
     async (_event, id: string, fileIndex: number, host: string) => {
-      const { getCastServer } = require('../torrent/cast-server');
-      const { getChromecastManager } = require('../torrent/chromecast');
+      const { getCastServer } = await import('../torrent/cast-server');
+      const { getChromecastManager } = await import('../torrent/chromecast');
       const media = await getCastServer().tvMedia(id, fileIndex);
       await getChromecastManager().play(host, media);
       return { ok: true };
@@ -223,7 +253,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle('cast:tvControl', wrapHandler('cast:tvControl',
     async (_event, host: string, action: 'pause' | 'resume' | 'stop') => {
-      const { getChromecastManager } = require('../torrent/chromecast');
+      const { getChromecastManager } = await import('../torrent/chromecast');
       const mgr = getChromecastManager();
       if (action === 'pause') await mgr.pause(host);
       else if (action === 'resume') await mgr.resume(host);
@@ -837,10 +867,14 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): void {
       const scheduler = await db.getScheduler();
       const privacyConfig = await db.getPrivacyConfig();
 
+      // Never write secrets to the export file in plaintext — the store keeps
+      // the proxy password encrypted at rest, the export must not undo that.
+      const exportableSettings = { ...settings, proxyPassword: '' };
+
       const exportData = {
         version: 1,
         exportedAt: new Date().toISOString(),
-        settings,
+        settings: exportableSettings,
         categories,
         scheduler,
         privacyConfig,
@@ -872,9 +906,12 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): void {
         throw new Error('Invalid settings file format');
       }
 
-      // Apply imported settings
+      // Apply imported settings. Drop an empty proxyPassword so importing a
+      // (secret-stripped) export doesn't wipe a configured password.
       if (importData.settings) {
-        await db.updateSettings(importData.settings);
+        const incoming = { ...importData.settings };
+        if (!incoming.proxyPassword) delete incoming.proxyPassword;
+        await db.updateSettings(incoming);
       }
       if (importData.scheduler) {
         await db.updateScheduler(importData.scheduler);

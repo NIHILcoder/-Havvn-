@@ -68,3 +68,6 @@ rel-created.json
 rel-payload.json
 *.output
 .claude/
+
+# ── Local website mockup (kept out of the repo) ─────────────
+website/
