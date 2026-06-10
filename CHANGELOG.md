@@ -4,6 +4,38 @@ All notable changes to TorrentHunt are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [1.8.2-beta] - 2026-06-10
+
+### Fixed
+- **Advanced settings now actually work.** DHT, max connections and the listening
+  port are applied to the torrent engine on launch (they were saved but never used).
+  The non-working Proxy section and the PEX/LSD toggles were removed — the engine
+  doesn't support them, so they only gave a false impression of doing something.
+- **Speed limits: "unlimited" no longer stalls traffic.** Removing a speed limit
+  used to set the rate to 0 B/s instead of unlimited, freezing all transfers until
+  the next restart.
+- **Adding a magnet with no peers no longer hangs forever.** It now times out after
+  two minutes with a clear error and can be retried.
+- **Seed-ratio limit works.** Torrents finished during the current session now stop
+  seeding at the configured ratio (the ratio was being read from stale counters).
+- **"Stop seeding" really stops.** It now drops the torrent instead of a soft pause
+  that left already-connected peers downloading from you.
+- **Much faster startup.** The window opens immediately instead of waiting for all
+  torrents to be re-verified on disk first (which could take a minute on a large
+  library); verification now runs in the background.
+- **Tray "Pause All / Resume All" work** (they previously did nothing), and there
+  are matching buttons in the Downloads toolbar.
+- **The app remembers its window size and position.**
+- **RSS fixes.** Links with escaped characters (`&amp;`) download correctly; enabling
+  a feed no longer grabs its entire back-catalogue at once; already-added items stop
+  being retried on every check.
+- **Scheduler** now handles time windows that cross midnight (e.g. 23:00–02:00).
+
+### Security
+- **Hardened the local streaming server** so a web page open in your browser can no
+  longer read the file you're streaming (cross-origin and DNS-rebinding requests are
+  now refused). Exported settings no longer contain your proxy password in clear text.
+
 ## [1.8.1-beta] - 2026-06-08
 
 ### Added
