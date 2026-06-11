@@ -4,6 +4,22 @@ All notable changes to TorrentHunt are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [1.8.7-beta] - 2026-06-11
+
+### Added
+- **Force recheck.** Right-click a torrent → **Force recheck** re-verifies the files
+  already on disk against the torrent's checksums — valid data is kept and only
+  missing or corrupt pieces re-download. Useful after a crash, a manual file change,
+  or to confirm a download is intact.
+- **Alternative ("turbo") speed limits.** A second set of speed caps you can switch
+  to instantly — from the new gauge button in the Downloads toolbar, the tray menu,
+  or Settings → Network. Use it as a quick "turbo" (unlimited) or "turtle" (throttle
+  while you work) toggle without editing your normal limits.
+- **Move completed downloads to a folder.** Optionally, when a download finishes, its
+  files are moved to a folder you choose and seeding continues from there
+  (Settings → Downloads). Works across drives; if anything goes wrong it safely keeps
+  seeding from the original location.
+
 ## [1.8.6-beta] - 2026-06-11
 
 ### Changed
