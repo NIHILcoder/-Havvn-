@@ -4,6 +4,19 @@ All notable changes to TorrentHunt are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [1.9.0-beta] - 2026-06-11
+
+### Added
+- **Mobile web remote with streaming.** Control your downloads from your phone — and
+  actually **watch or listen** to their files on it. Turn it on in **Settings → Network
+  → Remote / mobile access**, scan the QR with a phone on the same Wi-Fi, and you get a
+  clean mobile page: see every torrent, pause / resume / recheck / remove, add a magnet,
+  and tap a file to stream it (with seeking; mkv/avi/HEVC are transcoded on the fly).
+  Most clients offer a web remote but can't stream the content — this one can.
+  - **Privacy & security:** off by default; access requires a private token that's part
+    of the link (so only devices you share it with can connect); it's locked to your
+    local network and rejects spoofed requests. "New link" instantly revokes old ones.
+
 ## [1.8.7-beta] - 2026-06-11
 
 ### Added
