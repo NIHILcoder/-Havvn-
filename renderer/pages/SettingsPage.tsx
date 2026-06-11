@@ -63,6 +63,13 @@ const SettingsPage: React.FC = () => {
   const [maxDownKbps, setMaxDownKbps] = useState(0);
   const [maxUpKbps, setMaxUpKbps] = useState(0);
   const [maxActiveDownloads, setMaxActiveDownloads] = useState(3);
+  // Alternative ("turbo") speed limits
+  const [altSpeedEnabled, setAltSpeedEnabled] = useState(false);
+  const [altDownKbps, setAltDownKbps] = useState(0);
+  const [altUpKbps, setAltUpKbps] = useState(0);
+  // Auto-move completed
+  const [autoMoveEnabled, setAutoMoveEnabled] = useState(false);
+  const [autoMovePath, setAutoMovePath] = useState('');
 
   // Advanced settings (proxy UI removed — WebTorrent has no proxy support;
   // PEX/LSD toggles removed — not switchable/implemented in WebTorrent)
@@ -206,12 +213,16 @@ const SettingsPage: React.FC = () => {
       defaultDownloadDir !== s.defaultDownloadDir ||
       maxDownKbps !== s.maxDownKbps ||
       maxUpKbps !== s.maxUpKbps ||
+      altDownKbps !== (s.altDownKbps ?? 0) ||
+      altUpKbps !== (s.altUpKbps ?? 0) ||
       maxActiveDownloads !== s.maxActiveDownloads ||
       // Advanced
       maxConnections !== s.maxConnections ||
       portMin !== s.portMin ||
       // Watch folder
       watchFolderPath !== s.watchFolderPath ||
+      // Auto-move
+      autoMovePath !== (s.autoMovePath ?? '') ||
       // Disk guard
       diskGuardMinFreeMB !== (s.diskGuardMinFreeMB ?? 2048) ||
       // Seeding
@@ -219,9 +230,9 @@ const SettingsPage: React.FC = () => {
       defaultSeedTimeLimitMinutes !== s.defaultSeedTimeLimitMinutes;
     setHasChanges(changed);
   }, [
-    settings, defaultDownloadDir, maxDownKbps, maxUpKbps, maxActiveDownloads,
+    settings, defaultDownloadDir, maxDownKbps, maxUpKbps, altDownKbps, altUpKbps, maxActiveDownloads,
     maxConnections, portMin,
-    watchFolderPath, diskGuardMinFreeMB,
+    watchFolderPath, autoMovePath, diskGuardMinFreeMB,
     defaultSeedRatioLimit, defaultSeedTimeLimitMinutes,
   ]);
 
@@ -248,6 +259,11 @@ const SettingsPage: React.FC = () => {
       setMaxDownKbps(s.maxDownKbps);
       setMaxUpKbps(s.maxUpKbps);
       setMaxActiveDownloads(s.maxActiveDownloads);
+      setAltSpeedEnabled(s.altSpeedEnabled ?? false);
+      setAltDownKbps(s.altDownKbps ?? 0);
+      setAltUpKbps(s.altUpKbps ?? 0);
+      setAutoMoveEnabled(s.autoMoveEnabled ?? false);
+      setAutoMovePath(s.autoMovePath ?? '');
       setMinimizeToTray(s.minimizeToTray ?? false);
       setCloseToTray(s.closeToTray ?? false);
 
@@ -389,6 +405,9 @@ const SettingsPage: React.FC = () => {
         defaultDownloadDir,
         maxDownKbps,
         maxUpKbps,
+        altSpeedEnabled,
+        altDownKbps,
+        altUpKbps,
         maxActiveDownloads,
         minimizeToTray,
         closeToTray,
@@ -400,6 +419,9 @@ const SettingsPage: React.FC = () => {
         watchFolderEnabled,
         watchFolderPath,
         watchFolderDeleteAfterAdd,
+        // Auto-move
+        autoMoveEnabled,
+        autoMovePath,
         // Disk guard
         diskGuardEnabled,
         diskGuardMinFreeMB,
@@ -455,10 +477,13 @@ const SettingsPage: React.FC = () => {
       setDefaultDownloadDir(settings.defaultDownloadDir);
       setMaxDownKbps(settings.maxDownKbps);
       setMaxUpKbps(settings.maxUpKbps);
+      setAltDownKbps(settings.altDownKbps ?? 0);
+      setAltUpKbps(settings.altUpKbps ?? 0);
       setMaxActiveDownloads(settings.maxActiveDownloads);
       setMaxConnections(settings.maxConnections ?? 100);
       setPortMin(settings.portMin ?? 6881);
       setWatchFolderPath(settings.watchFolderPath ?? '');
+      setAutoMovePath(settings.autoMovePath ?? '');
       setDiskGuardMinFreeMB(settings.diskGuardMinFreeMB ?? 2048);
       setDefaultSeedRatioLimit(settings.defaultSeedRatioLimit ?? 0);
       setDefaultSeedTimeLimitMinutes(settings.defaultSeedTimeLimitMinutes ?? 0);
@@ -768,6 +793,42 @@ const SettingsPage: React.FC = () => {
 
         <div className="settings-divider" />
 
+        {/* Auto-move completed */}
+        <div className="settings-group">
+          <h3 className="settings-group-title">{t('settings.grp.autoMove')}</h3>
+          {renderSettingItem(
+            t('settings.autoMove'),
+            t('settings.autoMove.desc'),
+            renderToggle(autoMoveEnabled, () =>
+              applyToggle(!autoMoveEnabled, setAutoMoveEnabled, { autoMoveEnabled: !autoMoveEnabled })
+            )
+          )}
+          {autoMoveEnabled && renderSettingItem(
+            t('settings.autoMovePath'),
+            t('settings.autoMovePath.desc'),
+            <div className="path-input-row">
+              <input
+                type="text"
+                className="input-compact input-path"
+                placeholder={t('settings.autoMovePath.placeholder')}
+                value={autoMovePath}
+                onChange={e => setAutoMovePath(e.target.value)}
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={<Icon name="folder-open" size={14} />}
+                onClick={async () => {
+                  const p = await window.api.selectDirectory();
+                  if (p) setAutoMovePath(p);
+                }}
+              />
+            </div>
+          )}
+        </div>
+
+        <div className="settings-divider" />
+
         {/* Disk-space guard */}
         <div className="settings-group">
           <h3 className="settings-group-title">{t('settings.grp.diskGuard')}</h3>
@@ -844,6 +905,42 @@ const SettingsPage: React.FC = () => {
         <div className="settings-notice-compact">
           <Icon name="info" size={14} />
           <span>{t('settings.speedNote')}</span>
+        </div>
+
+        <div className="settings-divider" />
+
+        {/* Alternative ("turbo"/turtle) speed limits */}
+        <div className="settings-group">
+          <h3 className="settings-group-title">{t('settings.grp.altSpeed')}</h3>
+          {renderSettingItem(
+            t('settings.altSpeed'),
+            t('settings.altSpeed.desc'),
+            renderToggle(altSpeedEnabled, () =>
+              applyToggle(!altSpeedEnabled, setAltSpeedEnabled, { altSpeedEnabled: !altSpeedEnabled }, (v) => window.api.setAltSpeed(v))
+            )
+          )}
+          {renderSettingItem(
+            t('settings.altDown'),
+            t('settings.altDown.desc'),
+            <div className="speed-input-compact">
+              <input type="number" className="input-compact input-mono" min="0" value={altDownKbps}
+                onChange={(e) => setAltDownKbps(parseInt(e.target.value) || 0)} />
+              <span className="input-unit">KB/s</span>
+            </div>
+          )}
+          {renderSettingItem(
+            t('settings.altUp'),
+            t('settings.altUp.desc'),
+            <div className="speed-input-compact">
+              <input type="number" className="input-compact input-mono" min="0" value={altUpKbps}
+                onChange={(e) => setAltUpKbps(parseInt(e.target.value) || 0)} />
+              <span className="input-unit">KB/s</span>
+            </div>
+          )}
+          <div className="settings-notice-compact">
+            <Icon name="info" size={14} />
+            <span>{t('settings.altSpeed.note')}</span>
+          </div>
         </div>
 
         {/* Proxy settings UI was removed: WebTorrent (the engine) has no proxy

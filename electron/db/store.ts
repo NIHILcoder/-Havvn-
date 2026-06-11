@@ -64,6 +64,9 @@ const store = new Store<StoreSchema>({
       defaultDownloadDir: path.join(app.getPath('downloads'), 'TorrentHunt'),
       maxDownKbps: 0,
       maxUpKbps: 0,
+      altSpeedEnabled: false,
+      altDownKbps: 0,
+      altUpKbps: 0,
       maxActiveDownloads: 3,
       minimizeToTray: true,
       closeToTray: true,
@@ -88,6 +91,9 @@ const store = new Store<StoreSchema>({
       watchFolderEnabled: false,
       watchFolderPath: '',
       watchFolderDeleteAfterAdd: false,
+      // Auto-move completed
+      autoMoveEnabled: false,
+      autoMovePath: '',
       // Seeding limits
       defaultSeedRatioLimit: 0,
       defaultSeedTimeLimitMinutes: 0,

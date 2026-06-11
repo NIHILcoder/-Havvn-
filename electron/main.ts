@@ -160,6 +160,16 @@ function createTray(): void {
         });
       },
     },
+    {
+      label: 'Alternative speed limits',
+      type: 'checkbox',
+      checked: getTorrentManager().isAltSpeedEnabled(),
+      click: (item) => {
+        getTorrentManager().setAltSpeed(item.checked).catch((e) => {
+          logger.error('App', 'Tray alt-speed toggle failed', { error: String(e) });
+        });
+      },
+    },
     { type: 'separator' },
     {
       label: 'Quit TorrentHunt',
