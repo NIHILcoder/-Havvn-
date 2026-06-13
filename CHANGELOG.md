@@ -4,6 +4,42 @@ All notable changes to TorrentHunt are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [1.9.3-beta] - 2026-06-13
+
+A stability, performance and security release — lots of engine fixes, a major
+runtime update, and a lighter, faster app.
+
+### Fixed
+- **Your share ratio no longer resets.** Upload/download totals used to reset to
+  zero whenever a torrent was paused, rechecked, or the app restarted, so the
+  ratio was wrong and seed-ratio limits often never triggered. They now persist
+  correctly.
+- **The IP blocklist actually filters peers now.** Incoming peers were silently
+  never matched, overlapping ranges could be missed, compressed (`.gz`) lists
+  failed to load, and torrents restored at startup were never filtered — all
+  fixed.
+- **Tracker status is real.** The Trackers tab always showed every tracker as
+  "connected"; it now reports the true state (connected / updating / error) with
+  live seeders and leechers per tracker and the last-announce time.
+- **Add / remove tracker now works.** Those buttons did nothing before; you can
+  now add or remove trackers and the change sticks across restarts.
+- **Sequential download really downloads in order** instead of just pretending to.
+- **Faster, more reliable startup.** Torrents are restored in parallel, so a
+  single dead magnet link can no longer stall the whole app on launch.
+- Adding a torrent no longer gets rejected just because another download happens
+  to share the same name.
+- Search results no longer show raw `&amp;`-style codes in titles.
+
+### Changed
+- **Updated to Electron 42** (from 28), which was end-of-life — this brings the
+  latest Chromium security patches.
+- **App data is now split into separate, readable files** (downloads, settings,
+  RSS, blocklists, rooms…) instead of one big file. Saving download progress no
+  longer rewrites your whole RSS history and blocklist every few seconds.
+- **Lighter and faster UI.** The downloads list now stays smooth with hundreds of
+  torrents, and interface translations load on demand, shrinking the app.
+- The Trackers tab is now fully localized (including Russian).
+
 ## [1.9.2-beta] - 2026-06-11
 
 ### Fixed
