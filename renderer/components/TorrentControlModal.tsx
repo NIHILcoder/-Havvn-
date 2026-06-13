@@ -7,6 +7,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Download, TorrentFile, TrackerInfo, FilePriority, PeerInfo } from '../../shared/types';
 import { Button, Icon } from './index';
+import { useTranslation } from '../utils/i18nContext';
 import './TorrentControlModal.css';
 
 interface TorrentControlModalProps {
@@ -51,7 +52,17 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
   onClose,
   onUpdate,
 }) => {
+  const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>('download');
+
+  // Localized "Ns/Nm/Nh ago" for a tracker's last-announce timestamp.
+  const relTime = (ts: number): string => {
+    const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+    if (s < 60) return `${s}${t('time.sec')} ${t('time.ago')}`;
+    const m = Math.round(s / 60);
+    if (m < 60) return `${m}${t('time.min')} ${t('time.ago')}`;
+    return `${Math.round(m / 60)}${t('time.hour')} ${t('time.ago')}`;
+  };
 
   // Download tab state
   const [sequential, setSequential] = useState(download.sequentialDownload ?? false);
@@ -196,7 +207,7 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
     { id: 'seeding', label: 'Seeding', icon: 'upload' },
     { id: 'files', label: 'Files', icon: 'file' },
     { id: 'peers', label: 'Peers', icon: 'users' },
-    { id: 'trackers', label: 'Trackers', icon: 'server' },
+    { id: 'trackers', label: t('trackers.tab'), icon: 'server' },
   ];
 
   return (
@@ -510,47 +521,50 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
                   onClick={handleAddTracker}
                   icon={<Icon name="plus" size={14} />}
                 >
-                  Add
+                  {t('trackers.add')}
                 </Button>
               </div>
 
               {loadingTrackers ? (
                 <div className="tcm-loading">
                   <span className="spinner" />
-                  <span>Loading trackers...</span>
+                  <span>{t('trackers.loading')}</span>
                 </div>
               ) : trackers.length === 0 ? (
                 <div className="tcm-empty">
                   <Icon name="server" size={32} />
-                  <p>No trackers available.</p>
-                  <span>Add a tracker URL above or wait for the torrent to connect.</span>
+                  <p>{t('trackers.empty')}</p>
+                  <span>{t('trackers.emptyHint')}</span>
                 </div>
               ) : (
                 <div className="tcm-tracker-list">
-                  {trackers.map((tracker, idx) => (
+                  {trackers.map((tracker, idx) => {
+                    const statusLabel = t(`trackers.status.${tracker.status}` as Parameters<typeof t>[0]);
+                    return (
                     <div key={idx} className="tcm-tracker-row">
                       <div className="tcm-tracker-info">
                         <span
                           className={`tcm-tracker-dot ${tracker.status}`}
-                          title={tracker.status}
+                          title={statusLabel}
                         />
                         <div className="tcm-tracker-details">
                           <span className="tcm-tracker-url" title={tracker.url}>{tracker.url}</span>
                           <span className="tcm-tracker-meta">
-                            {tracker.peers} peers
-                            {tracker.lastAnnounce && ` · ${tracker.lastAnnounce}`}
+                            {tracker.peers} {t('trackers.peers')}
+                            {tracker.lastAnnounce ? ` · ${relTime(tracker.lastAnnounce)}` : ''}
                           </span>
                         </div>
                       </div>
                       <button
                         className="tcm-tracker-remove"
                         onClick={() => handleRemoveTracker(tracker.url)}
-                        title="Remove tracker"
+                        title={t('trackers.remove')}
                       >
                         <Icon name="trash" size={14} />
                       </button>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
