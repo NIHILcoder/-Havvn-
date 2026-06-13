@@ -1013,7 +1013,14 @@ export class TorrentManager {
       const addOptions: any = {
         path: savePath,
       };
-      
+
+      // Merge any user-added trackers into the announce list (webtorrent unions
+      // them with the torrent's own trackers). User-removed ones are pruned from
+      // the live client once it's built (see the 'ready' handler).
+      if (managed.download.customTrackers && managed.download.customTrackers.length > 0) {
+        addOptions.announce = managed.download.customTrackers;
+      }
+
       // If selectedFiles is provided, configure file selection
       if (selectedFiles && selectedFiles.length > 0) {
         log.info('Adding torrent with selective file download', {
@@ -1062,6 +1069,8 @@ export class TorrentManager {
         if (settled) return;
         settled = true;
         clearTimeout(metadataTimeout);
+        // Drop any trackers the user removed (their announce client is built now).
+        this.pruneRemovedTrackersLive(managed);
         // Apply file selection after torrent is ready
         if (selectedFiles && selectedFiles.length > 0) {
           try {
@@ -2542,15 +2551,6 @@ export class TorrentManager {
     } catch (_) { /* tracker client without EventEmitter — ignore */ }
   }
 
-  /** Short "Ns/Nm/Nh ago" string for the last-announce timestamp. */
-  private relativeTime(ts: number): string {
-    const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
-    if (s < 60) return `${s}s ago`;
-    const m = Math.round(s / 60);
-    if (m < 60) return `${m}m ago`;
-    return `${Math.round(m / 60)}h ago`;
-  }
-
   /**
    * Get current tracker info for a torrent. Reads the live tracker client
    * (torrent.discovery.tracker._trackers) — the previous code read a
@@ -2581,7 +2581,7 @@ export class TorrentManager {
           url,
           status,
           peers: stat ? stat.complete + stat.incomplete : 0,
-          lastAnnounce: stat ? this.relativeTime(stat.lastAnnounce) : undefined,
+          lastAnnounce: stat ? stat.lastAnnounce : undefined,
         };
       });
     } catch (_) {
@@ -2589,34 +2589,135 @@ export class TorrentManager {
     }
   }
 
-  /**
-   * Add a tracker URL to an active torrent.
-   */
-  addTracker(id: string, url: string): void {
-    const managed = this.managedTorrents.get(id);
-    if (!managed?.torrent) throw new TorrentError('Download not active', 'INVALID_STATE', id);
+  /** Strip a single trailing slash so URLs dedupe the way bittorrent-tracker does. */
+  private stripTrailingSlash(url: string): string {
+    const s = String(url || '').trim();
+    return s.endsWith('/') ? s.slice(0, -1) : s;
+  }
 
+  /** Validate + normalize a tracker URL, or throw a clear error. */
+  private normalizeTrackerUrl(raw: string): string {
+    const url = String(raw || '').trim();
+    if (!url) throw new TorrentError('Tracker URL is empty', 'INVALID_INPUT');
+    let proto: string;
+    try { proto = new URL(url).protocol; } catch { throw new TorrentError('Invalid tracker URL', 'INVALID_INPUT'); }
+    if (!['http:', 'https:', 'udp:', 'ws:', 'wss:'].includes(proto)) {
+      throw new TorrentError('Unsupported tracker protocol (use http/https/udp/ws)', 'INVALID_INPUT');
+    }
+    return this.stripTrailingSlash(url);
+  }
+
+  /** The bittorrent-tracker client class for a URL's protocol (or null). */
+  private trackerClassFor(url: string): any | null {
+    let proto = '';
+    try { proto = new URL(url).protocol; } catch { return null; }
     try {
-      (managed.torrent as any).addTracker?.(url);
-      log.info('Tracker added', { id, url });
-    } catch (err) {
-      log.warn('addTracker not supported by WebTorrent version', { error: err });
+      // bittorrent-tracker has no `exports` map, so deep requires resolve fine.
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      if (proto === 'http:' || proto === 'https:') return require('bittorrent-tracker/lib/client/http-tracker.js');
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      if (proto === 'udp:') return require('bittorrent-tracker/lib/client/udp-tracker.js');
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      if (proto === 'ws:' || proto === 'wss:') return require('bittorrent-tracker/lib/client/websocket-tracker.js');
+    } catch (_) { return null; }
+    return null;
+  }
+
+  /** Attach a tracker to the live tracker client and announce immediately. */
+  private applyTrackerLive(managed: ManagedTorrent, url: string): void {
+    const client: any = (managed.torrent as any)?.discovery?.tracker;
+    if (!client || !Array.isArray(client._trackers)) return; // not active — applies on next start
+    if (client._trackers.some((t: any) => this.stripTrailingSlash(t.announceUrl) === url)) return;
+    const TrackerClass = this.trackerClassFor(url);
+    if (!TrackerClass) return;
+    try {
+      const tracker = new TrackerClass(client, url);
+      client._trackers.push(tracker);
+      // Kick an immediate announce so peers start flowing without waiting a cycle.
+      try { tracker.announce(client._defaultAnnounceOpts({})); } catch (_) { /* announces on next cycle */ }
+      log.info('Tracker attached live', { id: managed.id, url });
+    } catch (e) {
+      log.warn('Live tracker add failed (applies on restart)', { id: managed.id, url, error: String(e) });
+    }
+  }
+
+  /** Destroy any live trackers the user has marked removed (called after add). */
+  private pruneRemovedTrackersLive(managed: ManagedTorrent): void {
+    const removed = managed.download.removedTrackers;
+    if (!removed || removed.length === 0) return;
+    const client: any = (managed.torrent as any)?.discovery?.tracker;
+    if (!client || !Array.isArray(client._trackers)) return;
+    const removedSet = new Set(removed.map((u) => this.stripTrailingSlash(u)));
+    for (let i = client._trackers.length - 1; i >= 0; i--) {
+      const t = client._trackers[i];
+      if (removedSet.has(this.stripTrailingSlash(t.announceUrl))) {
+        try { t.destroy?.(() => { /* noop */ }); } catch (_) { /* ignore */ }
+        client._trackers.splice(i, 1);
+      }
     }
   }
 
   /**
-   * Remove a tracker URL from an active torrent.
+   * Add a tracker URL. Persists it (merged into the announce list on every
+   * (re)start via the `announce` add-option) and attaches it to the live torrent
+   * immediately if active. webtorrent 1.x Torrents have no addTracker(), so this
+   * operates on the underlying bittorrent-tracker client directly.
    */
-  removeTracker(id: string, url: string): void {
+  async addTracker(id: string, url: string): Promise<void> {
+    await this.whenReady();
     const managed = this.managedTorrents.get(id);
-    if (!managed?.torrent) throw new TorrentError('Download not active', 'INVALID_STATE', id);
+    if (!managed) throw new TorrentError('Download not found', 'NOT_FOUND', id);
+    const normalized = this.normalizeTrackerUrl(url);
 
-    try {
-      (managed.torrent as any).removeTracker?.(url);
-      log.info('Tracker removed', { id, url });
-    } catch (err) {
-      log.warn('removeTracker not supported by WebTorrent version', { error: err });
+    const custom = new Set(managed.download.customTrackers ?? []);
+    custom.add(normalized);
+    const removed = new Set(managed.download.removedTrackers ?? []);
+    removed.delete(normalized);
+    managed.download.customTrackers = [...custom];
+    managed.download.removedTrackers = [...removed];
+    await db.updateDownloadFields(id, {
+      customTrackers: managed.download.customTrackers,
+      removedTrackers: managed.download.removedTrackers,
+    });
+
+    this.applyTrackerLive(managed, normalized);
+    log.info('Tracker added', { id, url: normalized });
+  }
+
+  /**
+   * Remove a tracker URL. Persists the removal (pruned from the live client after
+   * each start) and destroys it on the live torrent now. Works for both
+   * user-added and metadata trackers.
+   */
+  async removeTracker(id: string, url: string): Promise<void> {
+    await this.whenReady();
+    const managed = this.managedTorrents.get(id);
+    if (!managed) throw new TorrentError('Download not found', 'NOT_FOUND', id);
+    const normalized = this.stripTrailingSlash(url);
+
+    const custom = new Set(managed.download.customTrackers ?? []);
+    custom.delete(normalized);
+    const removed = new Set(managed.download.removedTrackers ?? []);
+    removed.add(normalized);
+    managed.download.customTrackers = [...custom];
+    managed.download.removedTrackers = [...removed];
+    await db.updateDownloadFields(id, {
+      customTrackers: managed.download.customTrackers,
+      removedTrackers: managed.download.removedTrackers,
+    });
+
+    const client: any = (managed.torrent as any)?.discovery?.tracker;
+    if (client && Array.isArray(client._trackers)) {
+      for (let i = client._trackers.length - 1; i >= 0; i--) {
+        const t = client._trackers[i];
+        if (this.stripTrailingSlash(t.announceUrl) === normalized) {
+          try { t.destroy?.(() => { /* noop */ }); } catch (_) { /* ignore */ }
+          client._trackers.splice(i, 1);
+        }
+      }
     }
+    managed.trackerStats?.delete(normalized);
+    log.info('Tracker removed', { id, url: normalized });
   }
 
   /**

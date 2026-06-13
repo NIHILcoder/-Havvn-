@@ -43,6 +43,8 @@ export interface Download {
   maxDownloadSpeed?: number;         // Per-torrent KB/s (0 = unlimited)
   maxUploadSpeed?: number;           // Per-torrent KB/s (0 = unlimited)
   filePriorities?: FilePriority[];   // Per-file priorities, indexed by file index
+  customTrackers?: string[];         // User-added trackers, merged into the announce list on (re)start
+  removedTrackers?: string[];        // User-removed trackers, pruned from the live tracker client after start
   createdAt: Date;
   updatedAt: Date;
   lastError: string | null;
@@ -158,7 +160,7 @@ export interface TrackerInfo {
   // successful announce yet; error = the tracker connection was torn down.
   status: 'connected' | 'updating' | 'disconnected' | 'error';
   peers: number;
-  lastAnnounce?: string;
+  lastAnnounce?: number; // epoch ms of the last announce (formatted/localized in the UI)
 }
 
 /** A single connected peer, surfaced in the per-torrent Peers tab. */

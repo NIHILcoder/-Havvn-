@@ -1094,13 +1094,13 @@ export function setupIpcHandlers(window: BrowserWindow): void {
 
   ipcMain.handle('downloads:addTracker', wrapHandler('downloads:addTracker',
     async (_event, id: string, url: string) => {
-      torrentManager.addTracker(id, url);
+      return await torrentManager.addTracker(id, url);
     }
   ));
 
   ipcMain.handle('downloads:removeTracker', wrapHandler('downloads:removeTracker',
     async (_event, id: string, url: string) => {
-      torrentManager.removeTracker(id, url);
+      return await torrentManager.removeTracker(id, url);
     }
   ));
 
