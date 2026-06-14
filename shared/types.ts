@@ -93,6 +93,7 @@ export interface RoomFile {
   addedBy: string;       // memberId of the member who first shared it
   addedByName: string;
   addedAt: number;
+  enc?: boolean;         // E2E rooms: the seeded torrent is ciphertext (decrypt after download)
 }
 
 /**
@@ -102,7 +103,8 @@ export interface RoomFile {
  * re-seeded without the original sharer having to re-add it.
  */
 export interface PersistedRoomFile extends RoomFile {
-  localPath?: string;
+  localPath?: string;   // plaintext on disk (original for shared, room folder for downloaded)
+  cipherPath?: string;  // E2E rooms only: the ciphertext we actually seed
 }
 
 /** A member of a room (including yourself). */
@@ -139,6 +141,7 @@ export interface RoomTransfer {
   haveLocally: boolean;
   released?: boolean;    // user stopped seeding this file to unlock it on disk
   localPath?: string;    // real on-disk path (original for shared, room folder for downloaded)
+  cipherPath?: string;   // E2E rooms only: the ciphertext we seed for this file
 }
 
 /** Full live state of one room, pushed to the renderer. */
@@ -151,6 +154,7 @@ export interface RoomState {
   createdAt: number;
   ownerId: string;       // memberId of the room owner ('' until learned)
   canManage: boolean;    // this install is the owner (may kick/rekey)
+  e2e: boolean;          // end-to-end encryption: file bytes seeded as ciphertext
   members: RoomMember[];
   files: RoomFile[];
   transfers: Record<string, RoomTransfer>;
@@ -729,7 +733,7 @@ export interface IpcApi {
   rooms: {
     getProfile: () => Promise<RoomProfile>;
     setProfile: (updates: Partial<Pick<RoomProfile, 'name' | 'avatarSeed'>>) => Promise<RoomProfile>;
-    create: (name: string) => Promise<RoomState>;
+    create: (name: string, e2e?: boolean) => Promise<RoomState>;
     join: (code: string) => Promise<RoomState>;
     leave: (roomId: string) => Promise<{ ok: boolean }>;
     list: () => Promise<RoomSummary[]>;

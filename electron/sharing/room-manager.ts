@@ -18,6 +18,7 @@ import { logger } from '../utils';
 import * as db from '../db/store';
 import { RoomState, RoomSummary, RoomProfile } from '../../shared/types';
 import { generateRoomCode, normalizeCode } from './room-crypto';
+import { generateRoomSecret } from './room-e2e';
 
 const log = logger.child('RoomManager');
 
@@ -110,6 +111,18 @@ export class RoomManager {
         }
       } catch { /* ignore */ }
     });
+    // A joiner learned the room's E2E mode + content secret from a peer — persist
+    // them so encrypted files keep decrypting after restart.
+    ipcMain.on('room-e2e', (_e, payload: { roomId: string; e2e: boolean; secret: string }) => {
+      try {
+        if (!payload?.roomId) return;
+        const r = db.getPersistedRooms().find((x) => x.roomId === payload.roomId);
+        if (r && (r.e2e !== payload.e2e || r.secret !== payload.secret)) {
+          db.savePersistedRoom({ ...r, e2e: payload.e2e, secret: payload.secret });
+          log.info('Room E2E config learned from peer', { roomId: payload.roomId, e2e: payload.e2e });
+        }
+      } catch { /* ignore */ }
+    });
     // A joiner learned the room's friendly name from a peer (it had only the
     // code) — persist it so the name survives restart and shows in the list even
     // before the room reconnects. Live UI updates ride the normal room-update.
@@ -180,7 +193,12 @@ export class RoomManager {
     return path.join(base, 'Rooms');
   }
 
-  private async joinPayload(roomId: string, name: string, code: string, folder: string, ownerId?: string) {
+  /** Where a room's ciphertext copies live in E2E mode (outside the room folder). */
+  private encCacheDir(roomId: string): string {
+    return path.join(app.getPath('userData'), 'room-enc', roomId);
+  }
+
+  private async joinPayload(roomId: string, name: string, code: string, folder: string, ownerId?: string, e2e?: boolean, secret?: string) {
     const profile = db.getRoomProfile();
     let useTurn = true;
     try { useTurn = (await db.getSettings()).shareUseTurn !== false; } catch { /* default on */ }
@@ -196,6 +214,9 @@ export class RoomManager {
         ownerId: ownerId ?? '',
         mutes: db.getRoomMutes(roomId),
         history: db.getRoomHistory(roomId),
+        e2e: e2e ?? false,
+        secret: secret ?? '',
+        cacheDir: this.encCacheDir(roomId),
       },
     };
   }
@@ -213,15 +234,18 @@ export class RoomManager {
     return profile;
   }
 
-  async createRoom(name: string): Promise<RoomState> {
+  async createRoom(name: string, e2e = false): Promise<RoomState> {
     const roomId = uuidv4();
     const code = generateRoomCode();
     const folder = path.join(await this.roomsBase(), slugify(name) + '-' + roomId.slice(0, 6));
     fs.mkdirSync(folder, { recursive: true });
     const createdAt = Date.now();
     const ownerId = db.getRoomProfile().memberId; // the creator owns the room
-    db.savePersistedRoom({ roomId, name, code, folder, createdAt, ownerId });
-    const { type, payload } = await this.joinPayload(roomId, name, code, folder, ownerId);
+    // E2E rooms get a content secret (separate from the rotating gossip key) so a
+    // later kick/rekey doesn't strand access to already-shared files.
+    const secret = e2e ? generateRoomSecret() : undefined;
+    db.savePersistedRoom({ roomId, name, code, folder, createdAt, ownerId, e2e, secret });
+    const { type, payload } = await this.joinPayload(roomId, name, code, folder, ownerId, e2e, secret);
     const state = await this.call<RoomState>(type, { payload });
     state.createdAt = createdAt;
     this.cache.set(roomId, state);
@@ -248,7 +272,7 @@ export class RoomManager {
   }
 
   private async reactivate(r: db.PersistedRoom): Promise<RoomState> {
-    const { type, payload } = await this.joinPayload(r.roomId, r.name, r.code, r.folder, r.ownerId);
+    const { type, payload } = await this.joinPayload(r.roomId, r.name, r.code, r.folder, r.ownerId, r.e2e, r.secret);
     const state = await this.call<RoomState>(type, { payload });
     state.createdAt = r.createdAt;
     this.cache.set(r.roomId, state);
@@ -262,6 +286,7 @@ export class RoomManager {
     db.clearRoomManifest(roomId);
     db.clearRoomHistory(roomId);
     db.clearRoomMutes(roomId);
+    try { fs.rmSync(this.encCacheDir(roomId), { recursive: true, force: true }); } catch { /* ignore */ }
     this.cache.delete(roomId);
     return { ok: true };
   }

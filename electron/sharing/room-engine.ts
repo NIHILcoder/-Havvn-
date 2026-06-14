@@ -26,6 +26,7 @@ import fs from 'fs';
 import path from 'path';
 import WebTorrent from 'webtorrent';
 import { deriveKey, topicHash, randomPeerId, encrypt, decrypt, generateRoomCode } from './room-crypto';
+import { encryptFile, decryptFile } from './room-e2e';
 import { RoomFile, RoomMember, RoomState, RoomTransfer, PersistedRoomFile, RoomEvent } from '../../shared/types';
 import crypto from 'crypto';
 
@@ -54,7 +55,7 @@ function log(msg: string): void { try { ipcRenderer.send('room-log', msg); } cat
 
 // ── Gossip message shapes (post-decrypt) ───────────────────────────────────
 type Msg =
-  | { t: 'hello'; memberId: string; name: string; avatarSeed: string; have: string[]; files: RoomFile[]; tombs: string[]; roomName: string; ownerId: string }
+  | { t: 'hello'; memberId: string; name: string; avatarSeed: string; have: string[]; files: RoomFile[]; tombs: string[]; roomName: string; ownerId: string; e2e: boolean; secret: string }
   | { t: 'add'; file: RoomFile }
   | { t: 'have'; memberId: string; fileId: string }
   | { t: 'ping'; memberId: string; name: string; avatarSeed: string; have: string[]; roomName: string; ownerId: string }
@@ -82,6 +83,9 @@ interface Room {
   started: boolean;
   self: { memberId: string; name: string; avatarSeed: string };
   ownerId: string;                       // memberId of the owner ('' until learned)
+  e2e: boolean;                          // end-to-end encryption (ciphertext on the wire)
+  secret: string;                        // E2E content key (32-byte hex; '' until learned)
+  cacheDir: string;                      // where ciphertext copies live (outside the room folder)
   wires: Map<number, Wire>;
   members: Map<string, RoomMember>;      // by memberId (excludes self)
   files: Map<string, RoomFile>;          // by fileId
@@ -145,6 +149,7 @@ function buildState(room: Room): RoomState {
     createdAt: 0,
     ownerId: room.ownerId,
     canManage: !!room.ownerId && room.ownerId === room.self.memberId,
+    e2e: room.e2e,
     members,
     files: Array.from(room.files.values()).sort((a, b) => a.addedAt - b.addedAt),
     transfers,
@@ -188,7 +193,51 @@ function helloMsg(room: Room): Msg {
     tombs: Array.from(room.tombstones), // share deletions so peers converge
     roomName: room.name, // so a joiner (who only knows the code) learns the name
     ownerId: room.ownerId, // so joiners learn who the owner is
+    e2e: room.e2e, // E2E mode + content key ride the encrypted gossip channel
+    secret: room.secret,
   };
+}
+
+/** Learn the room's E2E mode + content secret from a peer (HELLO). The secret is
+ *  separate from the rotating gossip key, so it survives kicks. */
+function maybeAdoptE2E(room: Room, e2e?: boolean, secret?: string): void {
+  let changed = false;
+  if (typeof e2e === 'boolean' && e2e !== room.e2e) { room.e2e = e2e; changed = true; }
+  if (secret && secret !== room.secret) { room.secret = secret; changed = true; }
+  if (changed) {
+    try { ipcRenderer.send('room-e2e', { roomId: room.roomId, e2e: room.e2e, secret: room.secret }); } catch { /* ignore */ }
+    // A just-learned secret may unblock ciphertext we already downloaded.
+    if (room.secret) void decryptPending(room);
+  }
+}
+
+/** Decrypt one E2E file's cached ciphertext into the room folder (plaintext). */
+async function decryptOne(room: Room, file: RoomFile, cipherPath: string): Promise<void> {
+  if (!room.secret) return;
+  const plain = path.join(room.folder, file.name);
+  try {
+    await decryptFile(cipherPath, plain, room.secret);
+    setTransfer(room, file.fileId, { progress: 1, status: 'seeding', haveLocally: true, localPath: plain, cipherPath });
+    persistManifest(room, file, plain, cipherPath);
+    broadcast(room, { t: 'have', memberId: room.self.memberId, fileId: file.fileId });
+    pushState(room, true);
+  } catch (e) {
+    setTransfer(room, file.fileId, { status: 'error', cipherPath });
+    log('e2e decrypt failed: ' + String(e));
+  }
+}
+
+/** Decrypt any downloaded-but-still-encrypted files now that we have the secret. */
+async function decryptPending(room: Room): Promise<void> {
+  if (!room.e2e || !room.secret) return;
+  for (const [fileId, tr] of room.transfers) {
+    const file = room.files.get(fileId);
+    if (!file || !file.enc || !tr.cipherPath) continue;
+    const plain = path.join(room.folder, file.name);
+    if (tr.haveLocally && fs.existsSync(plain)) continue;
+    if (!fs.existsSync(tr.cipherPath)) continue;
+    await decryptOne(room, file, tr.cipherPath);
+  }
 }
 
 /** Append an activity-log event (in memory + persisted) and refresh the UI. */
@@ -251,6 +300,7 @@ function onMessage(room: Room, wire: Wire, raw: any): void {
       m.have = Array.from(new Set(msg.have || []));
       maybeAdoptRoomName(room, msg.roomName);
       maybeAdoptOwner(room, msg.ownerId);
+      maybeAdoptE2E(room, msg.e2e, msg.secret);
       if (isNew) logEvent(room, { type: 'joined', actorId: msg.memberId, actorName: msg.name || '?' });
       // Apply peer deletions first so their HELLO file list can't re-add them.
       for (const id of msg.tombs || []) applyTombstone(room, id);
@@ -335,6 +385,11 @@ function applyTombstone(room: Room, fileId: string, by?: { id: string; name: str
       fs.unlinkSync(lp);
     }
   } catch (e) { log('tombstone unlink failed: ' + String(e)); }
+  // E2E: also drop the ciphertext copy we kept for seeding.
+  try {
+    const cp = tr?.cipherPath;
+    if (cp && fs.existsSync(cp)) fs.unlinkSync(cp);
+  } catch (e) { log('tombstone cipher unlink failed: ' + String(e)); }
 }
 
 function attachWire(room: Room, peer: any): void {
@@ -369,39 +424,59 @@ function setTransfer(room: Room, fileId: string, patch: Partial<RoomTransfer>): 
 /** Persist a manifest entry to the main process so the room resumes its file
  *  list — and re-seeds — on the next launch. localPath lets us re-seed a file
  *  shared from its original location (outside the room folder). */
-function persistManifest(room: Room, file: RoomFile, localPath?: string): void {
-  const entry: PersistedRoomFile = { ...file, ...(localPath ? { localPath } : {}) };
+function persistManifest(room: Room, file: RoomFile, localPath?: string, cipherPath?: string): void {
+  const entry: PersistedRoomFile = { ...file, ...(localPath ? { localPath } : {}), ...(cipherPath ? { cipherPath } : {}) };
   try { ipcRenderer.send('room-manifest-add', { roomId: room.roomId, file: entry }); } catch { /* ignore */ }
 }
 
-/** Seed a local file the user added, returning a RoomFile manifest entry. */
+/** Seed a local file the user added, returning a RoomFile manifest entry. In an
+ *  E2E room we encrypt the file into the cache first and seed THAT ciphertext;
+ *  the swarm never sees plaintext. localPath still points at the original so the
+ *  sharer can watch/open it directly. */
 function seedLocal(room: Room, filePath: string): Promise<RoomFile> {
   const c = ensureClient(room.iceServers);
   const name = path.basename(filePath);
   return new Promise<RoomFile>((resolve, reject) => {
     if (!fs.existsSync(filePath)) return reject(new Error('File not found: ' + filePath));
-    let settled = false;
-    const onErr = (e: any) => { if (!settled) { settled = true; reject(e instanceof Error ? e : new Error(String(e))); } };
-    c.once('error', onErr);
-    try {
-      c.seed(filePath, { announce: ROOM_TRACKERS, name } as any, (torrent: any) => {
-        if (settled) return; settled = true;
-        c.removeListener('error', onErr);
-        const file: RoomFile = {
-          fileId: torrent.infoHash,
-          name,
-          size: torrent.length || 0,
-          infoHash: torrent.infoHash,
-          magnetURI: torrent.magnetURI,
-          addedBy: room.self.memberId,
-          addedByName: room.self.name || 'You',
-          addedAt: Date.now(),
-        };
-        setTransfer(room, file.fileId, { progress: 1, status: 'seeding', haveLocally: true, localPath: filePath });
-        wireTorrentStats(room, torrent);
-        resolve(file);
-      });
-    } catch (e) { onErr(e); }
+
+    const plainSize = (() => { try { return fs.statSync(filePath).size; } catch { return 0; } })();
+
+    const doSeed = (seedPath: string, seedName: string, cipherPath?: string) => {
+      let settled = false;
+      const onErr = (e: any) => { if (!settled) { settled = true; reject(e instanceof Error ? e : new Error(String(e))); } };
+      c.once('error', onErr);
+      try {
+        c.seed(seedPath, { announce: ROOM_TRACKERS, name: seedName } as any, (torrent: any) => {
+          if (settled) return; settled = true;
+          c.removeListener('error', onErr);
+          const file: RoomFile = {
+            fileId: torrent.infoHash,
+            name,
+            size: room.e2e ? plainSize : (torrent.length || 0),
+            infoHash: torrent.infoHash,
+            magnetURI: torrent.magnetURI,
+            addedBy: room.self.memberId,
+            addedByName: room.self.name || 'You',
+            addedAt: Date.now(),
+            ...(room.e2e ? { enc: true } : {}),
+          };
+          setTransfer(room, file.fileId, { progress: 1, status: 'seeding', haveLocally: true, localPath: filePath, ...(cipherPath ? { cipherPath } : {}) });
+          wireTorrentStats(room, torrent);
+          resolve(file);
+        });
+      } catch (e) { onErr(e); }
+    };
+
+    if (room.e2e) {
+      if (!room.secret) { reject(new Error('Room encryption key not available yet')); return; }
+      try { fs.mkdirSync(room.cacheDir, { recursive: true }); } catch { /* ignore */ }
+      const cipherPath = path.join(room.cacheDir, `${Date.now()}_${crypto.randomBytes(4).toString('hex')}_${name}.enc`);
+      encryptFile(filePath, cipherPath, room.secret)
+        .then(() => doSeed(cipherPath, `${name}.enc`, cipherPath))
+        .catch((e) => reject(e instanceof Error ? e : new Error(String(e))));
+    } else {
+      doSeed(filePath, name);
+    }
   });
 }
 
@@ -411,6 +486,37 @@ function ensureLocal(room: Room, file: RoomFile): void {
   if (room.tombstones.has(file.fileId)) return; // deleted — don't fetch it again
   const c = ensureClient(room.iceServers);
   if (c.get(file.infoHash)) return; // already adding/seeding
+
+  // E2E: the swarm carries ciphertext. Download it into the cache (never the
+  // room folder), then decrypt the plaintext into the folder for watch/open.
+  if (room.e2e) {
+    try { fs.mkdirSync(room.cacheDir, { recursive: true }); } catch { /* ignore */ }
+    const plain = path.join(room.folder, file.name);
+    const cipherName = `${file.name}.enc`;
+    const cachedCipher = path.join(room.cacheDir, cipherName);
+    if (fs.existsSync(cachedCipher)) {
+      // Already have the ciphertext — re-seed it and (re)derive the plaintext.
+      const havePlain = fs.existsSync(plain);
+      setTransfer(room, file.fileId, { status: 'seeding', progress: 1, haveLocally: havePlain, ...(havePlain ? { localPath: plain } : {}), cipherPath: cachedCipher });
+      try { c.seed(cachedCipher, { announce: ROOM_TRACKERS, name: cipherName } as any, (t: any) => wireTorrentStats(room, t)); }
+      catch (e) { log('e2e reseed failed: ' + String(e)); }
+      if (room.secret && !havePlain) void decryptOne(room, file, cachedCipher);
+      return;
+    }
+    setTransfer(room, file.fileId, { status: 'downloading', progress: 0, cipherPath: cachedCipher });
+    try {
+      c.add(file.magnetURI, { path: room.cacheDir, announce: ROOM_TRACKERS } as any, (torrent: any) => {
+        wireTorrentStats(room, torrent);
+        torrent.on('done', () => {
+          const landedCipher = path.join(room.cacheDir, torrent.name || cipherName);
+          setTransfer(room, file.fileId, { progress: 1, downSpeed: 0, cipherPath: landedCipher });
+          if (room.secret) void decryptOne(room, file, landedCipher);
+          else { persistManifest(room, file, undefined, landedCipher); log('e2e: ciphertext ready, awaiting room key for ' + file.name); pushState(room, true); }
+        });
+      });
+    } catch (e) { setTransfer(room, file.fileId, { status: 'error' }); log('e2e download add failed: ' + String(e)); }
+    return;
+  }
 
   const onDisk = path.join(room.folder, file.name);
   if (fs.existsSync(onDisk)) {
@@ -452,10 +558,28 @@ function restoreManifestFile(room: Room, pf: PersistedRoomFile): void {
   const file: RoomFile = {
     fileId: pf.fileId, name: pf.name, size: pf.size, infoHash: pf.infoHash,
     magnetURI: pf.magnetURI, addedBy: pf.addedBy, addedByName: pf.addedByName, addedAt: pf.addedAt,
+    ...(pf.enc ? { enc: true } : {}),
   };
   room.files.set(file.fileId, file);
   const c = ensureClient(room.iceServers);
   if (c.get(file.infoHash)) return; // already seeding/adding
+
+  // E2E: re-seed the cached CIPHERTEXT (never the plaintext) and make sure the
+  // plaintext exists in the folder for watch/open.
+  if (room.e2e) {
+    const plain = path.join(room.folder, file.name);
+    if (pf.cipherPath && fs.existsSync(pf.cipherPath)) {
+      const havePlain = fs.existsSync(plain);
+      setTransfer(room, file.fileId, { progress: 1, status: 'seeding', haveLocally: havePlain, ...(havePlain ? { localPath: plain } : {}), cipherPath: pf.cipherPath });
+      try { c.seed(pf.cipherPath, { announce: ROOM_TRACKERS, name: `${file.name}.enc` } as any, (t: any) => wireTorrentStats(room, t)); }
+      catch (e) { log('e2e manifest reseed failed: ' + String(e)); }
+      if (room.secret && !havePlain) void decryptOne(room, file, pf.cipherPath);
+      return;
+    }
+    ensureLocal(room, file); // no cached ciphertext — re-download it
+    return;
+  }
+
   if (pf.localPath && fs.existsSync(pf.localPath)) {
     setTransfer(room, file.fileId, { progress: 1, status: 'seeding', haveLocally: true, localPath: pf.localPath });
     try { c.seed(pf.localPath, { announce: ROOM_TRACKERS, name: file.name } as any, (t: any) => wireTorrentStats(room, t)); }
@@ -566,7 +690,7 @@ function kickMember(room: Room, memberId: string): void {
 
 // ── Room lifecycle ───────────────────────────────────────────────────────────
 function startRoom(p: { roomId: string; name: string; code: string; folder: string;
-  self: { memberId: string; name: string; avatarSeed: string }; useTurn: boolean; turnServers?: any[]; tombstones?: string[]; manifest?: PersistedRoomFile[]; ownerId?: string; mutes?: string[]; history?: RoomEvent[] }): RoomState {
+  self: { memberId: string; name: string; avatarSeed: string }; useTurn: boolean; turnServers?: any[]; tombstones?: string[]; manifest?: PersistedRoomFile[]; ownerId?: string; mutes?: string[]; history?: RoomEvent[]; e2e?: boolean; secret?: string; cacheDir?: string }): RoomState {
   let room = rooms.get(p.roomId);
   if (room) return buildState(room);
 
@@ -589,6 +713,9 @@ function startRoom(p: { roomId: string; name: string; code: string; folder: stri
     started: false,
     self: p.self,
     ownerId: p.ownerId || '',
+    e2e: p.e2e || false,
+    secret: p.secret || '',
+    cacheDir: p.cacheDir || '',
     wires: new Map(),
     members: new Map(),
     files: new Map(),
@@ -612,17 +739,21 @@ function startRoom(p: { roomId: string; name: string; code: string; folder: stri
   for (const pf of p.manifest || []) restoreManifestFile(room, pf);
 
   // Adopt any files sitting in the room folder that the manifest didn't already
-  // cover (re-share on restart).
-  try {
-    const known = new Set(Array.from(room.files.values()).map((f) => f.name));
-    for (const entry of fs.readdirSync(room.folder)) {
-      if (known.has(entry)) continue;
-      const full = path.join(room.folder, entry);
-      if (fs.statSync(full).isFile()) {
-        seedLocal(room, full).then((f) => { mergeFileLocal(room!, f, full); }).catch(() => { /* ignore */ });
+  // cover (re-share on restart). Skipped for E2E rooms — loose plaintext in the
+  // folder must NOT be seeded as-is (it would leak); E2E files are restored from
+  // the manifest's ciphertext above.
+  if (!room.e2e) {
+    try {
+      const known = new Set(Array.from(room.files.values()).map((f) => f.name));
+      for (const entry of fs.readdirSync(room.folder)) {
+        if (known.has(entry)) continue;
+        const full = path.join(room.folder, entry);
+        if (fs.statSync(full).isFile()) {
+          seedLocal(room, full).then((f) => { mergeFileLocal(room!, f, full); }).catch(() => { /* ignore */ });
+        }
       }
-    }
-  } catch { /* folder may be empty */ }
+    } catch { /* folder may be empty */ }
+  }
 
   // Rendezvous tracker (announces the current topicHash; recreated on rekey).
   attachTracker(room);
@@ -645,7 +776,8 @@ function mergeFileLocal(room: Room, file: RoomFile, localPath?: string): void {
   if (!room.files.has(file.fileId)) {
     room.files.set(file.fileId, file);
     setTransfer(room, file.fileId, { progress: 1, status: 'seeding', haveLocally: true, ...(localPath ? { localPath } : {}) });
-    persistManifest(room, file, localPath);
+    const cipherPath = room.transfers.get(file.fileId)?.cipherPath; // set by seedLocal in E2E rooms
+    persistManifest(room, file, localPath, cipherPath);
     logEvent(room, { type: 'file-added', actorId: file.addedBy, actorName: file.addedByName || 'You', fileName: file.name });
     broadcast(room, { t: 'add', file });
     pushState(room, true);

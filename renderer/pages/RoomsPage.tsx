@@ -58,6 +58,7 @@ const RoomsPage: React.FC = () => {
   // Lightweight inline dialogs
   const [dialog, setDialog] = useState<null | 'create' | 'join' | 'profile' | 'invite'>(null);
   const [createName, setCreateName] = useState('');
+  const [createE2E, setCreateE2E] = useState(false);
   const [joinCode, setJoinCode] = useState('');
   const [profileName, setProfileName] = useState('');
 
@@ -104,12 +105,13 @@ const RoomsPage: React.FC = () => {
   const handleCreate = async () => {
     setBusy(true);
     try {
-      const state = await window.api.rooms.create(createName.trim() || 'My Room');
+      const state = await window.api.rooms.create(createName.trim() || 'My Room', createE2E);
       await refreshList();
       setSelectedId(state.roomId);
       setRoom(state);
       setDialog('invite');
       setCreateName('');
+      setCreateE2E(false);
     } catch (e) { toast.error(String(e instanceof Error ? e.message : e)); }
     finally { setBusy(false); }
   };
@@ -259,6 +261,17 @@ const RoomsPage: React.FC = () => {
                   onChange={(e) => setCreateName(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
                 />
+                <button
+                  type="button"
+                  className={`rooms-e2e-toggle ${createE2E ? 'on' : ''}`}
+                  onClick={() => setCreateE2E((v) => !v)}
+                >
+                  <span className="rooms-e2e-check">{createE2E && <Icon name="check" size={12} />}</span>
+                  <span className="rooms-e2e-text">
+                    <span className="rooms-e2e-label"><Icon name="lock" size={12} /> {t('rooms.e2e')} <em>{t('rooms.e2eExperimental')}</em></span>
+                    <span className="rooms-e2e-hint">{t('rooms.e2eHint')}</span>
+                  </span>
+                </button>
                 <div className="rooms-modal-actions">
                   <Button variant="ghost" onClick={() => setDialog(null)} disabled={busy}>{t('common.cancel')}</Button>
                   <Button variant="primary" onClick={handleCreate} loading={busy}>{t('rooms.create')}</Button>
@@ -361,6 +374,11 @@ const RoomDetail: React.FC<DetailProps> = ({ room, onAddFiles, onOpenFolder, onI
       <div className="room-detail-head">
         <div className="room-detail-title">
           <h2>{room.name}</h2>
+          {room.e2e && (
+            <span className="room-e2e-badge" title={t('rooms.e2eHint')}>
+              <Icon name="lock" size={12} /> {t('rooms.encrypted')}
+            </span>
+          )}
           <span className={`room-conn ${room.connected ? 'on' : 'off'}`}>
             <span className="dot" />
             {room.connected ? `${t('rooms.connected')} · ${room.peerCount}` : t('rooms.connecting')}

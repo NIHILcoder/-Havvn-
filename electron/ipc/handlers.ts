@@ -338,7 +338,7 @@ export function setupIpcHandlers(window: BrowserWindow): void {
   ));
 
   ipcMain.handle('rooms:create', wrapHandler('rooms:create',
-    async (_event, name: string) => roomManager.createRoom(typeof name === 'string' ? name.trim() : '')
+    async (_event, name: string, e2e?: boolean) => roomManager.createRoom(typeof name === 'string' ? name.trim() : '', !!e2e)
   ));
 
   ipcMain.handle('rooms:join', wrapHandler('rooms:join',

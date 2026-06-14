@@ -220,6 +220,55 @@
 .room-member:hover .room-member-kick { opacity: 1; }
 .room-member-kick:hover { color: var(--color-status-error, #ef4444); background: var(--color-bg-hover); }
 
+/* E2E create toggle */
+.rooms-e2e-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  width: 100%;
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  text-align: left;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+.rooms-e2e-toggle:hover { border-color: var(--color-border-hover); }
+.rooms-e2e-toggle.on { border-color: var(--color-text-primary); }
+.rooms-e2e-check {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-bg-primary);
+  background: transparent;
+}
+.rooms-e2e-toggle.on .rooms-e2e-check { background: var(--color-text-primary); border-color: var(--color-text-primary); }
+.rooms-e2e-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rooms-e2e-label { display: flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 600; color: var(--color-text-primary); }
+.rooms-e2e-label em { font-style: normal; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--color-text-tertiary); border: 1px solid var(--color-border); border-radius: var(--radius-full); padding: 1px 6px; }
+.rooms-e2e-hint { font-size: 11px; line-height: 1.4; color: var(--color-text-tertiary); }
+
+/* E2E room badge */
+.room-e2e-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-tertiary);
+  border-radius: var(--radius-full);
+  padding: 2px 8px;
+}
+
 /* Activity log */
 .room-history { display: flex; flex-direction: column; gap: 2px; }
 .room-history-item {

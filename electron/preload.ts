@@ -487,7 +487,7 @@ const api: IpcApi = {
     getProfile: (): Promise<RoomProfile> => ipcRenderer.invoke('rooms:getProfile'),
     setProfile: (updates: Partial<Pick<RoomProfile, 'name' | 'avatarSeed'>>): Promise<RoomProfile> =>
       ipcRenderer.invoke('rooms:setProfile', updates),
-    create: (name: string): Promise<RoomState> => ipcRenderer.invoke('rooms:create', name),
+    create: (name: string, e2e?: boolean): Promise<RoomState> => ipcRenderer.invoke('rooms:create', name, e2e),
     join: (code: string): Promise<RoomState> => ipcRenderer.invoke('rooms:join', code),
     leave: (roomId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('rooms:leave', roomId),
     list: (): Promise<RoomSummary[]> => ipcRenderer.invoke('rooms:list'),

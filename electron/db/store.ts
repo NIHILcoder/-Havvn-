@@ -89,6 +89,8 @@ export interface PersistedRoom {
   folder: string;
   createdAt: number;
   ownerId?: string;  // memberId of the room owner (creator); learned via gossip for joiners
+  e2e?: boolean;     // end-to-end encryption mode (set at creation; learned via gossip)
+  secret?: string;   // E2E content key (32-byte hex); distributed over encrypted gossip
 }
 
 const defaultCategories: Category[] = [
