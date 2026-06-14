@@ -651,7 +651,11 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
 
   // Other state
   const [isDragging, setIsDragging] = useState(false);
-  const [dragCounter, setDragCounter] = useState(0);
+  // Drag depth as a ref, not state: dragenter/dragleave fire for every nested
+  // child the cursor crosses, so reading a stale state snapshot in dragleave used
+  // to desync the count and leave the overlay stuck visible (it would cover the
+  // whole UI). A ref mutates synchronously, so the count stays correct.
+  const dragCounter = useRef(0);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
@@ -689,21 +693,23 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
   }, []);
 
   // Drag and drop handlers
+  const isFileDrag = (e: React.DragEvent): boolean =>
+    !!e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
+
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setDragCounter(prev => prev + 1);
-    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
-      setIsDragging(true);
-    }
+    if (!isFileDrag(e)) return; // ignore internal element drags (rows, etc.)
+    dragCounter.current += 1;
+    setIsDragging(true);
   };
 
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    const newCounter = dragCounter - 1;
-    setDragCounter(newCounter);
-    if (newCounter === 0) {
+    if (!isFileDrag(e)) return;
+    dragCounter.current = Math.max(0, dragCounter.current - 1);
+    if (dragCounter.current === 0) {
       setIsDragging(false);
     }
   };
@@ -717,7 +723,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
-    setDragCounter(0);
+    dragCounter.current = 0;
 
     const files = e.dataTransfer.files;
     if (files && files.length > 0) {
@@ -741,6 +747,25 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
       }
     }
   };
+
+  // Safety net for the drop overlay: if a drag is interrupted — the file dialog
+  // opens mid-drag, the pointer leaves the window, or the window loses focus —
+  // the dragleave/drop event may never fire and the overlay would stay stuck
+  // covering the UI. Force-clear it on these window-level events.
+  useEffect(() => {
+    const clear = () => { dragCounter.current = 0; setIsDragging(false); };
+    const onWindowDragLeave = (e: DragEvent) => { if (e.relatedTarget === null) clear(); };
+    window.addEventListener('drop', clear);
+    window.addEventListener('dragend', clear);
+    window.addEventListener('blur', clear);
+    window.addEventListener('dragleave', onWindowDragLeave);
+    return () => {
+      window.removeEventListener('drop', clear);
+      window.removeEventListener('dragend', clear);
+      window.removeEventListener('blur', clear);
+      window.removeEventListener('dragleave', onWindowDragLeave);
+    };
+  }, []);
 
   // Load downloads on mount
   useEffect(() => {
