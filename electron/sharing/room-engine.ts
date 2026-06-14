@@ -25,7 +25,7 @@ import { ipcRenderer } from 'electron';
 import fs from 'fs';
 import path from 'path';
 import WebTorrent from 'webtorrent';
-import { deriveKey, topicHash, randomPeerId, encrypt, decrypt } from './room-crypto';
+import { deriveKey, topicHash, randomPeerId, encrypt, decrypt, generateRoomCode } from './room-crypto';
 import { RoomFile, RoomMember, RoomState, RoomTransfer, PersistedRoomFile, RoomEvent } from '../../shared/types';
 import crypto from 'crypto';
 
@@ -60,6 +60,9 @@ type Msg =
   | { t: 'ping'; memberId: string; name: string; avatarSeed: string; have: string[]; roomName: string; ownerId: string }
   // Remove a shared file from the room (everyone drops it; tombstone prevents resurrection).
   | { t: 'del'; fileId: string; memberId: string }
+  // Owner kicked a member: rotate the room to a new code. Sent encrypted with the
+  // OLD key to everyone EXCEPT the kicked member, who never learns the new code.
+  | { t: 'rekey'; newCode: string; kickedId: string; kickedName: string; by: string }
   // Watch-together: relayed verbatim to peers; the renderers keep playback in sync
   // and show who's in the session ('join'/'leave'/'beat' presence).
   | { t: 'sync'; fileId: string; action: 'play' | 'pause' | 'seek' | 'state' | 'join' | 'leave' | 'beat'; position: number; rate: number; at: number; memberId: string; name: string; avatarSeed: string; playing: boolean };
@@ -285,6 +288,16 @@ function onMessage(room: Room, wire: Wire, raw: any): void {
       pushState(room, true);
       break;
     }
+    case 'rekey': {
+      // Decryption already succeeded, so this came in under the CURRENT key.
+      if (msg.kickedId === room.self.memberId) break; // we're the one being kicked — never adopt
+      if (room.code === msg.newCode) break;            // already applied
+      const oldKey = room.key;
+      // Relay to our other peers (still under the old key) so multi-hop rooms converge.
+      sendRekey(room, oldKey, msg, msg.kickedId, wire.id);
+      applyLocalRekey(room, msg.newCode, msg.kickedId, msg.kickedName);
+      break;
+    }
     case 'sync': {
       // Relay watch-together control + presence to the main process → renderer.
       try {
@@ -472,6 +485,85 @@ function wireTorrentStats(room: Room, torrent: any): void {
   update();
 }
 
+// ── Rendezvous tracker (recreated when the room is rekeyed) ──────────────────
+function attachTracker(room: Room): void {
+  try {
+    const tracker = new TrackerClient({
+      infoHash: room.topic,
+      peerId: room.peerId,
+      announce: ROOM_TRACKERS,
+      port: 6881,
+      rtcConfig: { iceServers: room.iceServers },
+      wrtc: nativeWrtc,
+    });
+    room.tracker = tracker;
+    tracker.on('peer', (peer: any) => attachWire(room, peer));
+    tracker.on('warning', () => { /* tracker noise */ });
+    tracker.on('error', (e: any) => log('tracker error: ' + (e?.message || e)));
+    tracker.on('update', () => { room.started = true; });
+    tracker.start();
+    room.started = true;
+    log('Tracker announced: ' + room.name + ' (' + room.topic.slice(0, 8) + ')');
+  } catch (e) {
+    log('tracker start failed: ' + String(e));
+  }
+}
+
+function restartTracker(room: Room): void {
+  try { room.tracker?.stop(); room.tracker?.destroy(); } catch { /* ignore */ }
+  room.tracker = null;
+  attachTracker(room);
+}
+
+// ── Kick = key rotation ──────────────────────────────────────────────────────
+// A serverless room has no membership authority, so a real kick means rotating
+// the secret: the owner mints a new code and hands it to everyone EXCEPT the
+// kicked member. The kicked member stays stranded on the old topicHash; everyone
+// else re-announces on the new one.
+
+/** Send a rekey to all known, non-kicked wires using the OLD key (so they can
+ *  still read it). Never sent to the kicked member — that's the whole point. */
+function sendRekey(room: Room, oldKey: Buffer, msg: Msg, kickedId: string, exceptWireId?: number): void {
+  for (const wire of room.wires.values()) {
+    if (exceptWireId !== undefined && wire.id === exceptWireId) continue;
+    if (!wire.memberId || wire.memberId === kickedId) continue; // never leak the new code to the kicked member
+    try { if (wire.peer && wire.peer.connected) wire.peer.send(encrypt(oldKey, msg)); } catch { /* ignore */ }
+  }
+}
+
+/** Switch this room onto a new code: drop the kicked member, re-key, re-announce. */
+function applyLocalRekey(room: Room, newCode: string, kickedId: string, kickedName: string): void {
+  if (room.code === newCode) return; // already applied (dedupe)
+  room.members.delete(kickedId);
+  for (const wire of Array.from(room.wires.values())) {
+    if (wire.memberId === kickedId) { try { wire.peer.destroy(); } catch { /* ignore */ } room.wires.delete(wire.id); }
+  }
+  room.code = newCode;
+  room.key = deriveKey(newCode);
+  room.topic = topicHash(newCode);
+  try { ipcRenderer.send('room-rekey', { roomId: room.roomId, code: newCode }); } catch { /* ignore */ }
+  restartTracker(room);
+  const ownerName = room.ownerId === room.self.memberId
+    ? (room.self.name || 'You')
+    : (room.members.get(room.ownerId)?.name || '?');
+  logEvent(room, { type: 'kicked', actorId: room.ownerId, actorName: ownerName, targetName: kickedName });
+  // Re-greet remaining peers under the NEW key so presence reconverges.
+  broadcast(room, helloMsg(room));
+  pushState(room, true);
+}
+
+/** Owner-only: remove a member by rotating the room code away from them. */
+function kickMember(room: Room, memberId: string): void {
+  if (room.ownerId !== room.self.memberId) throw new Error('Only the room owner can remove members');
+  if (memberId === room.self.memberId) throw new Error('You cannot remove yourself');
+  const kickedName = room.members.get(memberId)?.name || '?';
+  const newCode = generateRoomCode();
+  const oldKey = room.key;
+  const msg: Msg = { t: 'rekey', newCode, kickedId: memberId, kickedName, by: room.self.memberId };
+  sendRekey(room, oldKey, msg, memberId);
+  applyLocalRekey(room, newCode, memberId, kickedName);
+}
+
 // ── Room lifecycle ───────────────────────────────────────────────────────────
 function startRoom(p: { roomId: string; name: string; code: string; folder: string;
   self: { memberId: string; name: string; avatarSeed: string }; useTurn: boolean; turnServers?: any[]; tombstones?: string[]; manifest?: PersistedRoomFile[]; ownerId?: string; mutes?: string[]; history?: RoomEvent[] }): RoomState {
@@ -532,27 +624,8 @@ function startRoom(p: { roomId: string; name: string; code: string; folder: stri
     }
   } catch { /* folder may be empty */ }
 
-  // Rendezvous tracker.
-  try {
-    const tracker = new TrackerClient({
-      infoHash: room.topic,
-      peerId: room.peerId,
-      announce: ROOM_TRACKERS,
-      port: 6881,
-      rtcConfig: { iceServers },
-      wrtc: nativeWrtc,
-    });
-    room.tracker = tracker;
-    tracker.on('peer', (peer: any) => attachWire(room!, peer));
-    tracker.on('warning', () => { /* tracker noise */ });
-    tracker.on('error', (e: any) => log('tracker error: ' + (e?.message || e)));
-    tracker.on('update', () => { room!.started = true; });
-    tracker.start();
-    room.started = true;
-    log('Room joined: ' + p.name + ' (' + room.topic.slice(0, 8) + ')');
-  } catch (e) {
-    log('tracker start failed: ' + String(e));
-  }
+  // Rendezvous tracker (announces the current topicHash; recreated on rekey).
+  attachTracker(room);
 
   // Heartbeat.
   const beat = setInterval(() => {
@@ -652,6 +725,12 @@ ipcRenderer.on('room-cmd', async (_e, msg: any) => {
         broadcast(r, { t: 'del', fileId: msg.fileId, memberId: r.self.memberId });
         pushState(r, true);
       }
+      data = { ok: true };
+    }
+    else if (type === 'kick') {
+      const r = rooms.get(msg.roomId);
+      if (!r) throw new Error('Room not active');
+      kickMember(r, String(msg.memberId || ''));
       data = { ok: true };
     }
     else if (type === 'mute') {

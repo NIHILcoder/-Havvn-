@@ -504,6 +504,8 @@ const api: IpcApi = {
       ipcRenderer.invoke('rooms:removeFile', roomId, fileId),
     setMuted: (roomId: string, memberId: string, muted: boolean): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke('rooms:setMuted', roomId, memberId, muted),
+    kick: (roomId: string, memberId: string): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke('rooms:kick', roomId, memberId),
   },
 
   onRoomUpdate: (callback: (state: RoomState) => void): (() => void) => {

@@ -742,6 +742,7 @@ export interface IpcApi {
     broadcastSync: (roomId: string, payload: { fileId: string; action: string; position: number; rate?: number; playing?: boolean }) => Promise<{ ok: boolean }>;
     removeFile: (roomId: string, fileId: string) => Promise<{ ok: boolean }>;
     setMuted: (roomId: string, memberId: string, muted: boolean) => Promise<{ ok: boolean }>;
+    kick: (roomId: string, memberId: string) => Promise<{ ok: boolean }>;
   };
   onRoomUpdate: (callback: (state: RoomState) => void) => () => void;
   onRoomSync: (callback: (msg: { roomId: string; fileId: string; action: string; position: number; rate: number; at: number; memberId: string; name: string; avatarSeed?: string; playing?: boolean }) => void) => () => void;

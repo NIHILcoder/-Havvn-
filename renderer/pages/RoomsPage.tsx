@@ -403,6 +403,21 @@ const RoomDetail: React.FC<DetailProps> = ({ room, onAddFiles, onOpenFolder, onI
                   <Icon name={m.muted ? 'eye' : 'eye-off'} size={13} />
                 </button>
               )}
+              {room.canManage && !m.isSelf && m.role !== 'owner' && (
+                <button
+                  className="room-member-kick"
+                  title={t('rooms.kick')}
+                  onClick={() => {
+                    if (window.confirm(t('rooms.kickConfirm'))) {
+                      window.api.rooms.kick(room.roomId, m.memberId)
+                        .then(() => toast.success(t('rooms.kicked')))
+                        .catch((e) => toast.error(String(e instanceof Error ? e.message : e)));
+                    }
+                  }}
+                >
+                  <Icon name="x-circle" size={13} />
+                </button>
+              )}
             </div>
           ))}
         </div>

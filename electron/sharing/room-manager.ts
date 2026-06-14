@@ -98,6 +98,18 @@ export class RoomManager {
         }
       } catch { /* ignore */ }
     });
+    // The room was rekeyed (a member was kicked) — persist the new invite code so
+    // reconnecting/restarting lands on the new swarm, not the abandoned one.
+    ipcMain.on('room-rekey', (_e, payload: { roomId: string; code: string }) => {
+      try {
+        if (!payload?.roomId || !payload?.code) return;
+        const r = db.getPersistedRooms().find((x) => x.roomId === payload.roomId);
+        if (r && r.code !== payload.code) {
+          db.savePersistedRoom({ ...r, code: payload.code });
+          log.info('Room rekeyed', { roomId: payload.roomId });
+        }
+      } catch { /* ignore */ }
+    });
     // A joiner learned the room's friendly name from a peer (it had only the
     // code) — persist it so the name survives restart and shows in the list even
     // before the room reconnects. Live UI updates ride the normal room-update.
@@ -333,6 +345,11 @@ export class RoomManager {
       this.win.webContents.send('room-cmd', { type: 'removeFile', reqId: ++this.reqSeq, roomId, fileId });
     }
     return { ok: true };
+  }
+
+  /** Owner-only: remove a member by rotating the room code (engine enforces it). */
+  async kick(roomId: string, memberId: string): Promise<{ ok: boolean }> {
+    return this.call<{ ok: boolean }>('kick', { roomId, memberId }, 8000);
   }
 
   /** Locally hide/ignore a member on this install (reversible, never broadcast). */
