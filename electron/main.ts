@@ -262,7 +262,10 @@ async function createWindow(): Promise<void> {
     minWidth: 800,
     minHeight: 600,
     ...(appIconPath ? { icon: appIconPath } : {}),
-    show: !startHidden, // Don't show window if launched hidden at startup
+    // Stay hidden until the renderer has painted its first frame (the splash),
+    // so the user never sees an empty window. Shown via 'ready-to-show' below
+    // (unless launched hidden to tray).
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -310,11 +313,15 @@ async function createWindow(): Promise<void> {
     // No DevTools in production
   }
 
-  // Show window once ready (after content loaded) if not starting hidden
+  // Show the window once its first frame (the splash) has painted, so the user
+  // never sees an empty window. Belt-and-suspenders: also show after a short
+  // timeout in case 'ready-to-show' is delayed, so the window can't get stuck
+  // hidden. show() is idempotent.
   if (!startHidden) {
-    mainWindow.once('ready-to-show', () => {
-      mainWindow?.show();
-    });
+    let shown = false;
+    const reveal = () => { if (shown) return; shown = true; if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show(); };
+    mainWindow.once('ready-to-show', reveal);
+    setTimeout(reveal, 3000);
   }
 
   // === Tray behavior: Minimize to Tray ===

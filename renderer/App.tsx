@@ -60,6 +60,10 @@ const AppContent: React.FC = () => {
         setDownloads(list.filter(d => d.status !== 'removed'));
       } catch (error) {
         console.error('Failed to load downloads:', error);
+      } finally {
+        // Initial data is in (or failed) — fade out the startup splash. Idempotent
+        // and runs even on error, so the splash can never trap the user.
+        (window as unknown as { __thDismissSplash?: () => void }).__thDismissSplash?.();
       }
     };
     loadDownloads();

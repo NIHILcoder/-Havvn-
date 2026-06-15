@@ -7,8 +7,88 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <title>TorrentHunt</title>
+  <style>
+    /* Startup splash — inlined so it paints in the very first frame, before the
+       app bundle parses. Held until the UI has its data, then faded out, so the
+       app never appears to build itself piece by piece. */
+    #th-splash {
+      position: fixed; inset: 0; z-index: 99999;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px;
+      background: #0B0E17;
+      color: #f4f4f5;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      transition: opacity .45s ease;
+    }
+    #th-splash.th-splash-out { opacity: 0; pointer-events: none; }
+    .th-mark { position: relative; width: 88px; height: 88px; display: grid; place-items: center; }
+    .th-ring {
+      position: absolute; inset: 0; border-radius: 22px;
+      border: 2px solid rgba(255,255,255,.10);
+      border-top-color: rgba(255,255,255,.85);
+      animation: th-spin 1s linear infinite;
+    }
+    .th-tile {
+      width: 64px; height: 64px; border-radius: 16px;
+      display: grid; place-items: center;
+      background: linear-gradient(135deg, #20283a, #11151f);
+      border: 1px solid rgba(255,255,255,.08);
+      box-shadow: 0 10px 30px rgba(0,0,0,.45);
+      animation: th-pulse 2.2s ease-in-out infinite;
+    }
+    .th-tile svg { width: 30px; height: 30px; stroke: #f4f4f5; stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+    .th-name { font-size: 17px; font-weight: 700; letter-spacing: .2px; }
+    .th-name b { font-weight: 800; }
+    .th-bar { width: 168px; height: 3px; border-radius: 3px; background: rgba(255,255,255,.08); overflow: hidden; }
+    .th-bar::before {
+      content: ''; display: block; width: 40%; height: 100%; border-radius: 3px;
+      background: rgba(255,255,255,.7);
+      animation: th-slide 1.15s ease-in-out infinite;
+    }
+    @keyframes th-spin { to { transform: rotate(360deg); } }
+    @keyframes th-pulse { 0%,100% { box-shadow: 0 10px 30px rgba(0,0,0,.45); } 50% { box-shadow: 0 10px 40px rgba(255,255,255,.10); } }
+    @keyframes th-slide { 0% { transform: translateX(-120%); } 100% { transform: translateX(320%); } }
+    @media (prefers-reduced-motion: reduce) {
+      .th-ring, .th-tile, .th-bar::before { animation: none; }
+      .th-ring { border-top-color: rgba(255,255,255,.4); }
+    }
+  </style>
 </head>
 <body>
   <div id="root"></div>
+
+  <div id="th-splash" role="status" aria-label="Loading TorrentHunt">
+    <div class="th-mark">
+      <div class="th-ring"></div>
+      <div class="th-tile">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <path d="M7 10l5 5 5-5"/>
+          <path d="M12 15V3"/>
+        </svg>
+      </div>
+    </div>
+    <div class="th-name">Torrent<b>Hunt</b></div>
+    <div class="th-bar"></div>
+  </div>
+
+  <script>
+    // Dismiss the splash once the app reports its data is ready (window.__thDismissSplash),
+    // but keep it up for a minimum so it never flashes, and force it down after a max
+    // so a slow/stuck engine can never trap the user behind it.
+    (function () {
+      var MIN = 600, MAX = 7000, t0 = Date.now(), gone = false;
+      function go() {
+        if (gone) return; gone = true;
+        var s = document.getElementById('th-splash');
+        if (!s) return;
+        s.classList.add('th-splash-out');
+        setTimeout(function () { if (s && s.parentNode) s.parentNode.removeChild(s); }, 500);
+      }
+      window.__thDismissSplash = function () {
+        setTimeout(go, Math.max(0, MIN - (Date.now() - t0)));
+      };
+      setTimeout(go, MAX);
+    })();
+  </script>
 </body>
 </html>
