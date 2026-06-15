@@ -5,7 +5,9 @@
  * Pure dark contrasts, pure black backgrounds, and sleek B&W micro-animations.
  */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+/* Inter is now bundled (self-hosted via @fontsource/inter, imported in index.tsx).
+   The previous Google Fonts @import was blocked by the production CSP, so packaged
+   builds silently fell back to system fonts. */
 
 :root {
   /* === Dark Theme (Default) - Monochrome Pitch Black === */
