@@ -6,7 +6,9 @@
 import fs from 'fs';
 import path from 'path';
 import { logger } from '../utils';
-import { getTorrentManager } from './manager';
+// Import the proxy via the barrel — NEVER from './manager' directly, which would
+// load WebTorrent into the main process and spin up a second engine.
+import { getTorrentManager } from './index';
 
 const log = logger.child('WatchFolder');
 

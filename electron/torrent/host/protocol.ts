@@ -49,7 +49,7 @@ export interface DbRequest {
 }
 export interface EventMsg {
   kind: 'event';
-  event: 'stats' | 'complete';
+  event: 'stats' | 'complete' | 'state';
   payload: unknown;
 }
 

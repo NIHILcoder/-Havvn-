@@ -7,6 +7,7 @@ import https from 'https';
 import http from 'http';
 import { URL } from 'url';
 import { getHostEnv } from './host/env';
+import { TorrentError } from './errors';
 import {
   Download,
   DownloadStatus,
@@ -25,7 +26,7 @@ import {
   canRecheck,
   isActiveState,
 } from '../../shared/state-machine';
-import * as db from '../db/store';
+import * as db from './host/db-bridge';
 import { logger, checkDiskSpace, formatBytes } from '../utils';
 import { classifyMediaKind, isDirectlyPlayable } from '../../shared/media';
 import { spawn, ChildProcess } from 'child_process';
@@ -146,20 +147,6 @@ type CompletionCallback = (info: { id: string; name: string }) => void;
 
 
 /**
- * Error class for torrent operation failures
- */
-export class TorrentError extends Error {
-  constructor(
-    message: string,
-    public readonly code: string,
-    public readonly downloadId?: string
-  ) {
-    super(message);
-    this.name = 'TorrentError';
-  }
-}
-
-/**
  * TorrentManager wraps WebTorrent and provides:
  * - Strict state machine for status transitions
  * - Duplicate detection via infoHash
@@ -205,6 +192,10 @@ export class TorrentManager {
   private maxConnections = 55;
   private maxConnectionsGlobal = 200;
   private static readonly MIN_CONNS_PER_TORRENT = 20;
+  // IP blocklist filtering runs here (where the WebTorrent client lives). Main
+  // ships the merged, sorted ranges via applyIpBlocklist(); wires are hooked once.
+  private blockedRanges: Array<[number, number]> = [];
+  private blocklistHooked = false;
   // Alternative ("turbo"/turtle) speed limits and whether they're active.
   private altSpeedEnabled = false;
   private altDownKbps = 0;
@@ -2021,6 +2012,49 @@ export class TorrentManager {
   get ffmpegBinary(): string | null { return this.ffmpegPath; }
 
   /**
+   * Apply IP-blocklist filtering to the live client. Main owns the lists/parsing
+   * and ships the merged, sorted [start,end] ranges; we drop any peer whose IPv4
+   * falls inside a range. Wires are hooked once; later calls just swap the ranges
+   * (the hook reads this.blockedRanges live).
+   */
+  applyIpBlocklist(ranges: Array<[number, number]>): void {
+    this.blockedRanges = ranges;
+    if (this.blocklistHooked || !this.client) return;
+    this.blocklistHooked = true;
+
+    const ipToNum = (ip: string): number | null => {
+      const stripped = ip.replace(/^::ffff:/i, '');
+      const m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(stripped);
+      if (!m) return null;
+      const p = [m[1], m[2], m[3], m[4]].map(Number);
+      if (p.some((n) => n < 0 || n > 255)) return null;
+      return ((p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3]) >>> 0;
+    };
+    const isBlocked = (ipNum: number): boolean => {
+      const r = this.blockedRanges;
+      let lo = 0, hi = r.length - 1;
+      while (lo <= hi) {
+        const mid = (lo + hi) >>> 1;
+        if (ipNum < r[mid][0]) hi = mid - 1;
+        else if (ipNum > r[mid][1]) lo = mid + 1;
+        else return true;
+      }
+      return false;
+    };
+    const checkWire = (wire: any): void => {
+      const n = typeof wire?.remoteAddress === 'string' ? ipToNum(wire.remoteAddress) : null;
+      if (n !== null && isBlocked(n)) { try { wire.destroy(); } catch { /* ignore */ } }
+    };
+    const hookTorrent = (torrent: any): void => {
+      torrent.on('wire', checkWire);
+      for (const w of (torrent.wires || [])) checkWire(w);
+    };
+    this.client.on('torrent', hookTorrent);
+    for (const t of (((this.client as any).torrents) || [])) hookTorrent(t);
+    log.info('IP blocklist filtering active in torrent host', { ranges: ranges.length });
+  }
+
+  /**
    * The TCP port the engine listens on for incoming peers, for UPnP forwarding.
    * Prefers the live value WebTorrent resolves once its TCP pool is listening;
    * falls back to the configured fixed port (Settings → Advanced).
@@ -2908,12 +2942,7 @@ export class TorrentManager {
   }
 }
 
-// Singleton instance
-let torrentManager: TorrentManager | null = null;
-
-export function getTorrentManager(): TorrentManager {
-  if (!torrentManager) {
-    torrentManager = new TorrentManager();
-  }
-  return torrentManager;
-}
+// NOTE: no getTorrentManager() singleton here. The real manager is instantiated
+// by the torrent-host utilityProcess (new TorrentManager()); the main process uses
+// the proxy from ./host/manager-proxy. Importing this file is value-importing
+// WebTorrent, so only the host may do it.

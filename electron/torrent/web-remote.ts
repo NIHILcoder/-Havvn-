@@ -23,7 +23,7 @@ import { CastServer } from './cast-server';
 
 const log = logger.child('WebRemote');
 
-type Mgr = import('./manager').TorrentManager;
+type Mgr = import('./host/manager-proxy').TorrentManagerProxy;
 
 export class WebRemoteServer {
   private server: http.Server | null = null;
@@ -208,9 +208,8 @@ export class WebRemoteServer {
   /** Publish the file on the cast server and redirect the phone to its player. */
   private async watch(res: http.ServerResponse, id: string, fileIndex: number): Promise<void> {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { getCastServer } = require('./cast-server');
-      const out = await getCastServer().publish(id, fileIndex);
+      // Cast server runs in the torrent host; publish via the manager proxy.
+      const out = await this.mgr().castPublish(id, fileIndex);
       if (!out || !out.url) { res.writeHead(503); res.end('no network address'); return; }
       res.writeHead(302, { Location: out.url }); res.end();
     } catch (e) {

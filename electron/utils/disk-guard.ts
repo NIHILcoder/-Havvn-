@@ -15,7 +15,7 @@
 import { BrowserWindow, Notification } from 'electron';
 import { logger, checkDiskSpace, formatBytes, getAppIconPath } from './index';
 import * as db from '../db/store';
-import { getTorrentManager } from '../torrent/manager';
+import { getTorrentManager } from '../torrent';
 
 const log = logger.child('DiskGuard');
 

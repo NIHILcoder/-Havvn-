@@ -533,12 +533,13 @@ async function initializeApp(): Promise<void> {
     });
   }
 
-  // Initialize IP blocklist (load from store, apply to client)
+  // Initialize IP blocklist: load from store in main, ship the ranges to the
+  // torrent host (where the WebTorrent client lives) to do the peer filtering.
   try {
     const torrentManager = getTorrentManager();
     const blocklistService = getIPBlocklistService();
     await blocklistService.loadAll();
-    blocklistService.applyToClient((torrentManager as any).client);
+    await torrentManager.applyIpBlocklist(blocklistService.getRanges());
     logger.info('App', 'IP blocklist service initialized.');
   } catch (e) {
     logger.error('App', 'Failed to initialize IP blocklist', { error: e });
@@ -680,13 +681,8 @@ async function cleanup(): Promise<void> {
     logger.error('App', 'Error destroying room manager', { error: e });
   }
 
-  try {
-    const { getCastServer } = await import('./torrent/cast-server');
-    getCastServer().destroy();
-    logger.info('App', 'Cast server destroyed.');
-  } catch (e) {
-    logger.error('App', 'Error destroying cast server', { error: e });
-  }
+  // The cast server now lives in the torrent host process; it is torn down when
+  // the torrent manager (proxy) is destroyed above, which kills the host.
 
   try {
     const { getWebRemoteServer } = await import('./torrent/web-remote');

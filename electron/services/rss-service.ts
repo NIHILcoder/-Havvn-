@@ -10,7 +10,7 @@ import { app } from 'electron';
 import { logger } from '../utils';
 import * as db from '../db/store';
 import { RSSFeed, RSSItem } from '../../shared/types';
-import { getTorrentManager } from '../torrent/manager';
+import { getTorrentManager } from '../torrent';
 
 const log = logger.child('RSSService');
 

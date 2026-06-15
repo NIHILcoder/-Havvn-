@@ -14,7 +14,7 @@ import { detectVPN } from './vpn-detector';
 import { logger } from './logger';
 import { getAppIconPath } from './index';
 import * as db from '../db/store';
-import { getTorrentManager } from '../torrent/manager';
+import { getTorrentManager } from '../torrent';
 
 const log = logger.child('VPNGuard');
 

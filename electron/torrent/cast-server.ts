@@ -482,13 +482,22 @@ function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
 }
 
+// The real (in-host) torrent manager, injected by the torrent-host on startup.
+// The cast server lives in the host process precisely because its resolver is
+// SYNCHRONOUS — it needs the live torrent's file metadata, which only the
+// in-process manager can return without an async hop.
+interface CastManager {
+  getCastFileInfo(id: string, fileIndex: number): FileInfo | null;
+  readonly ffmpegBinary: string | null;
+}
+let castManager: CastManager | null = null;
+export function setCastManager(m: CastManager): void { castManager = m; }
+
 let castServer: CastServer | null = null;
 export function getCastServer(): CastServer {
   if (!castServer) {
-    // Lazy require avoids a load-time cycle with the manager.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { getTorrentManager } = require('./index');
-    const mgr = getTorrentManager();
+    if (!castManager) throw new Error('Cast server used before setCastManager()');
+    const mgr = castManager;
     castServer = new CastServer(
       (id: string, idx: number) => mgr.getCastFileInfo(id, idx),
       () => mgr.ffmpegBinary,

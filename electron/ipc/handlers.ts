@@ -253,15 +253,14 @@ export function setupIpcHandlers(window: BrowserWindow): void {
   // ── Cast to device on the LAN (HLS / direct, with seeking) ───────────────
   ipcMain.handle('cast:start', wrapHandler('cast:start',
     async (_event, id: string, fileIndex: number) => {
-      const { getCastServer } = await import('../torrent/cast-server');
-      return getCastServer().publish(id, fileIndex);
+      // Cast server runs in the torrent host; forward via the manager proxy.
+      return torrentManager.castPublish(id, fileIndex);
     }
   ));
 
   ipcMain.handle('cast:stop', wrapHandler('cast:stop',
     async (_event, id: string, fileIndex: number) => {
-      const { getCastServer } = await import('../torrent/cast-server');
-      getCastServer().unpublish(id, fileIndex);
+      await torrentManager.castUnpublish(id, fileIndex);
       return { ok: true };
     }
   ));
@@ -300,9 +299,8 @@ export function setupIpcHandlers(window: BrowserWindow): void {
 
   ipcMain.handle('cast:tvPlay', wrapHandler('cast:tvPlay',
     async (_event, id: string, fileIndex: number, host: string) => {
-      const { getCastServer } = await import('../torrent/cast-server');
       const { getChromecastManager } = await import('../torrent/chromecast');
-      const media = await getCastServer().tvMedia(id, fileIndex);
+      const media = await torrentManager.castTvMedia(id, fileIndex);
       await getChromecastManager().play(host, media);
       return { ok: true };
     }
@@ -1246,6 +1244,7 @@ export function setupIpcHandlers(window: BrowserWindow): void {
       const blSvc = getIPBlocklistService();
       try {
         const count = await blSvc.updateBlocklist(bl.id);
+        await torrentManager.applyIpBlocklist(blSvc.getRanges());
         return { ...bl, entryCount: count };
       } catch (err) {
         log.warn('Failed to download blocklist on add', { error: err });
@@ -1262,6 +1261,7 @@ export function setupIpcHandlers(window: BrowserWindow): void {
     async (_event, id: string) => {
       const blSvc = getIPBlocklistService();
       const count = await blSvc.updateBlocklist(id);
+      await torrentManager.applyIpBlocklist(blSvc.getRanges());
       return { entryCount: count };
     }
   ));
@@ -1272,6 +1272,7 @@ export function setupIpcHandlers(window: BrowserWindow): void {
       // Reload blocklist data
       const blSvc = getIPBlocklistService();
       await blSvc.loadAll();
+      await torrentManager.applyIpBlocklist(blSvc.getRanges());
     }
   ));
 

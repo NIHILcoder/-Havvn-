@@ -90,7 +90,7 @@ export class RemoteCastManager {
 
   /** Publish a file for remote viewing; returns the shareable watch link. */
   async start(downloadId: string, fileIndex: number): Promise<{ url: string; sessionId: string }> {
-    const info = getTorrentManager().getCastFileInfo(downloadId, fileIndex);
+    const info = await getTorrentManager().getCastFileInfo(downloadId, fileIndex);
     if (!info) throw new Error('File not available');
     if (info.kind === 'other') throw new Error('This file is not a playable media file');
     const ffmpeg = getTorrentManager().ffmpegBinary;

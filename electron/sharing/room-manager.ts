@@ -359,8 +359,9 @@ export class RoomManager {
     const tr = state?.transfers?.[fileId];
     const abs = (tr?.localPath && fs.existsSync(tr.localPath)) ? tr.localPath : path.join(folder, file.name);
     if (!fs.existsSync(abs)) throw new Error('This file is not fully downloaded yet');
-    const { getCastServer } = await import('../torrent/cast-server');
-    return getCastServer().publishDiskFile(abs);
+    // The cast server runs in the torrent host; publish the room file there.
+    const { getTorrentManager } = await import('../torrent');
+    return getTorrentManager().castPublishDiskFile(abs);
   }
 
   /** Remove a shared file from the room for everyone (persists a tombstone). */

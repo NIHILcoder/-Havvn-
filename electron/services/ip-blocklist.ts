@@ -29,6 +29,15 @@ export class IPBlocklistService {
   }
 
   /**
+   * The merged, sorted blocked ranges as [start, end] number pairs. The actual
+   * peer filtering runs in the torrent-host process (where the WebTorrent client
+   * lives), so main ships these over to the host via the manager proxy.
+   */
+  getRanges(): Array<[number, number]> {
+    return this.ranges.map((r) => [r.start, r.end]);
+  }
+
+  /**
    * Load all enabled blocklists from store and merge into in-memory ranges.
    */
   async loadAll(): Promise<void> {
