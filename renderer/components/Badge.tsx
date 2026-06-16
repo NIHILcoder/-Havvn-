@@ -4,8 +4,8 @@
 
 import React from 'react';
 import { DownloadStatus } from '../../shared/types';
-import { getStatusDisplayText } from '../../shared/state-machine';
 import { Icon, IconName } from './Icon';
+import { useTranslation } from '../utils/i18nContext';
 
 interface BadgeProps {
   children?: React.ReactNode;
@@ -55,15 +55,16 @@ const getStatusIcon = (status: DownloadStatus): IconName => {
   }
 };
 
-export const StatusBadge: React.FC<StatusBadgeProps> = ({ 
-  status, 
+export const StatusBadge: React.FC<StatusBadgeProps> = ({
+  status,
   className = '',
-  showIcon = true 
+  showIcon = true
 }) => {
+  const { t } = useTranslation();
   return (
     <Badge variant={status} className={`status-badge ${className}`}>
       {showIcon && <Icon name={getStatusIcon(status)} size={12} />}
-      <span>{getStatusDisplayText(status)}</span>
+      <span>{t(`status.${status}`)}</span>
     </Badge>
   );
 };

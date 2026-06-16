@@ -12,8 +12,10 @@ export type HealthLevel = 'healthy' | 'ok' | 'weak' | 'dead' | 'unknown';
 export interface TorrentHealth {
   score: number;        // 0–100
   level: HealthLevel;
-  label: string;
-  reason: string;       // short tooltip explanation
+  label: string;        // English fallback
+  // i18n key suffix → health.<labelKey>
+  labelKey: 'complete' | 'paused' | 'error' | 'queued' | 'noPeers' | 'healthy' | 'ok' | 'weak' | 'poor';
+  reason: string;       // short tooltip explanation (English)
 }
 
 interface HealthInput {
@@ -27,16 +29,16 @@ interface HealthInput {
 export function computeTorrentHealth(s: HealthInput): TorrentHealth {
   // States where a swarm score is meaningless
   if (s.status === 'completed' || s.status === 'seeding') {
-    return { score: 100, level: 'healthy', label: 'Complete', reason: 'Download finished.' };
+    return { score: 100, level: 'healthy', label: 'Complete', labelKey: 'complete', reason: 'Download finished.' };
   }
   if (s.status === 'paused') {
-    return { score: 0, level: 'unknown', label: 'Paused', reason: 'Paused — no live swarm data.' };
+    return { score: 0, level: 'unknown', label: 'Paused', labelKey: 'paused', reason: 'Paused — no live swarm data.' };
   }
   if (s.status === 'error') {
-    return { score: 0, level: 'dead', label: 'Error', reason: 'Torrent is in an error state.' };
+    return { score: 0, level: 'dead', label: 'Error', labelKey: 'error', reason: 'Torrent is in an error state.' };
   }
   if (s.status === 'queued') {
-    return { score: 0, level: 'unknown', label: 'Queued', reason: 'Waiting to start.' };
+    return { score: 0, level: 'unknown', label: 'Queued', labelKey: 'queued', reason: 'Waiting to start.' };
   }
 
   const seeds = Math.max(0, s.seeds || 0);
@@ -45,7 +47,7 @@ export function computeTorrentHealth(s: HealthInput): TorrentHealth {
 
   // No connections at all and not moving → effectively dead
   if (seeds === 0 && peers === 0 && !downloading) {
-    return { score: 5, level: 'dead', label: 'No peers', reason: 'No seeds or peers found — this torrent may be dead.' };
+    return { score: 5, level: 'dead', label: 'No peers', labelKey: 'noPeers', reason: 'No seeds or peers found — this torrent may be dead.' };
   }
 
   // Seed availability is the dominant factor (need someone with the full file)
@@ -67,13 +69,14 @@ export function computeTorrentHealth(s: HealthInput): TorrentHealth {
 
   let level: HealthLevel;
   let label: string;
-  if (score >= 70) { level = 'healthy'; label = 'Healthy'; }
-  else if (score >= 45) { level = 'ok'; label = 'OK'; }
-  else if (score >= 20) { level = 'weak'; label = 'Weak'; }
-  else { level = 'dead'; label = 'Poor'; }
+  let labelKey: TorrentHealth['labelKey'];
+  if (score >= 70) { level = 'healthy'; label = 'Healthy'; labelKey = 'healthy'; }
+  else if (score >= 45) { level = 'ok'; label = 'OK'; labelKey = 'ok'; }
+  else if (score >= 20) { level = 'weak'; label = 'Weak'; labelKey = 'weak'; }
+  else { level = 'dead'; label = 'Poor'; labelKey = 'poor'; }
 
   const reason = `${seeds} seed${seeds === 1 ? '' : 's'}, ${peers} peer${peers === 1 ? '' : 's'}` +
     (downloading ? ', downloading' : ', stalled');
 
-  return { score, level, label, reason };
+  return { score, level, label, labelKey, reason };
 }

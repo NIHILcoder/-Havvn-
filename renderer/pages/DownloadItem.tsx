@@ -8,6 +8,7 @@ import { Download, DownloadStats } from '../../shared/types';
 import { canPause } from '../../shared/state-machine';
 import { Button, Icon, ProgressBar, StatusBadge, HealthBadge } from '../components';
 import { ViewMode, formatBytes, formatSpeed, formatEta, getTypeIcon } from './download-helpers';
+import { useTranslation } from '../utils/i18nContext';
 
 export interface DownloadItemProps {
   download: Download;
@@ -44,6 +45,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
   onOpenFolder,
   onShowFiles,
 }) => {
+  const { t } = useTranslation();
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
 
   const currentStats = stats || {
@@ -91,7 +93,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
           className="download-compact-main"
           onClick={() => onToggleExpand?.(download.id)}
           role="button"
-          title="Click for details"
+          title={t('downloads.clickDetails')}
         >
           <span className={`download-expand-chevron ${expanded ? 'expanded' : ''}`}>
             <Icon name="chevron-down" size={14} />
@@ -152,7 +154,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
               iconOnly
               icon={<Icon name="pause" size={14} />}
               onClick={() => onPause(download.id)}
-              title="Pause"
+              title={t('downloads.pause')}
             />
           )}
 
@@ -163,7 +165,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
               iconOnly
               icon={<Icon name="folder" size={14} />}
               onClick={() => onOpenFolder(download.savePath)}
-              title="Open folder"
+              title={t('downloads.openFolder')}
             />
           )}
 
@@ -174,7 +176,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
               iconOnly
               icon={<Icon name="play" size={14} />}
               onClick={() => onResume(download.id)}
-              title="Resume"
+              title={t('downloads.resume')}
             />
           )}
 
@@ -185,7 +187,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
               iconOnly
               icon={<Icon name="refresh" size={14} />}
               onClick={() => onRetry(download.id)}
-              title="Retry"
+              title={t('downloads.retry')}
             />
           )}
 
@@ -195,7 +197,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
             iconOnly
             icon={<Icon name="list" size={14} />}
             onClick={() => onShowFiles(download.id)}
-            title="Files"
+            title={t('downloads.files')}
           />
 
           {!showRemoveConfirm ? (
@@ -205,7 +207,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
               iconOnly
               icon={<Icon name="trash" size={14} />}
               onClick={() => setShowRemoveConfirm(true)}
-              title="Remove"
+              title={t('downloads.remove')}
             />
           ) : (
             <div className="remove-confirm">
@@ -217,7 +219,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
                   setShowRemoveConfirm(false);
                 }}
               >
-                + Files
+                {t('downloads.deleteWithFiles')}
               </Button>
               <Button
                 size="sm"
@@ -226,7 +228,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
                   setShowRemoveConfirm(false);
                 }}
               >
-                Keep
+                {t('downloads.keepFiles')}
               </Button>
               <Button
                 variant="ghost"
@@ -261,7 +263,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
         <div
           className={`download-item-title ${viewMode === 'compact' ? 'collapsible' : ''}`}
           onClick={viewMode === 'compact' ? () => onToggleExpand?.(download.id) : undefined}
-          title={viewMode === 'compact' ? 'Collapse' : undefined}
+          title={viewMode === 'compact' ? t('downloads.collapse') : undefined}
         >
           {viewMode === 'compact' && (
             <span className="download-expand-chevron expanded"><Icon name="chevron-down" size={14} /></span>
@@ -278,7 +280,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
               icon={<Icon name="pause" size={16} />}
               onClick={() => onPause(download.id)}
             >
-              Pause
+              {t('downloads.pause')}
             </Button>
           )}
 
@@ -289,7 +291,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
               icon={<Icon name="play" size={16} />}
               onClick={() => onResume(download.id)}
             >
-              Resume
+              {t('downloads.resume')}
             </Button>
           )}
 
@@ -300,7 +302,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
               icon={<Icon name="stop" size={16} />}
               onClick={() => onStopSeeding(download.id)}
             >
-              Stop Seeding
+              {t('downloads.stopSeeding')}
             </Button>
           )}
 
@@ -311,7 +313,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
               icon={<Icon name="refresh" size={16} />}
               onClick={() => onRetry(download.id)}
             >
-              Retry
+              {t('downloads.retry')}
             </Button>
           )}
 
@@ -321,7 +323,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
             icon={<Icon name="list" size={16} />}
             onClick={() => onShowFiles(download.id)}
           >
-            Files
+            {t('downloads.files')}
           </Button>
 
           {(status === 'completed' || status === 'seeding') && (
@@ -331,7 +333,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
               icon={<Icon name="folder" size={16} />}
               onClick={() => onOpenFolder(download.savePath)}
             >
-              Open Folder
+              {t('downloads.openFolder')}
             </Button>
           )}
 
@@ -342,7 +344,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
               icon={<Icon name="trash" size={16} />}
               onClick={() => setShowRemoveConfirm(true)}
             >
-              Remove
+              {t('downloads.remove')}
             </Button>
           ) : (
             <div className="remove-confirm">
@@ -354,7 +356,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
                   setShowRemoveConfirm(false);
                 }}
               >
-                Delete Files
+                {t('downloads.deleteWithFiles')}
               </Button>
               <Button
                 size="sm"
@@ -363,7 +365,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
                   setShowRemoveConfirm(false);
                 }}
               >
-                Keep Files
+                {t('downloads.keepFiles')}
               </Button>
               <Button
                 variant="ghost"
@@ -397,7 +399,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
           <div className="stat-item">
             <Icon name="download" size={12} />
             <div className="stat-content">
-              <span className="stat-label">Down</span>
+              <span className="stat-label">{t('downloads.statDown')}</span>
               <span className="stat-value">{formatBytes(currentStats.downloadedBytes)}</span>
             </div>
           </div>
@@ -405,7 +407,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
           <div className="stat-item">
             <Icon name="upload" size={12} />
             <div className="stat-content">
-              <span className="stat-label">Up</span>
+              <span className="stat-label">{t('downloads.statUp')}</span>
               <span className="stat-value">{formatBytes(currentStats.uploadedBytes)}</span>
             </div>
           </div>
@@ -413,7 +415,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
           <div className="stat-item">
             <Icon name="percent" size={12} />
             <div className="stat-content">
-              <span className="stat-label">Ratio</span>
+              <span className="stat-label">{t('downloads.statRatio')}</span>
               <span className="stat-value">
                 {currentStats.downloadedBytes > 0
                   ? (currentStats.uploadedBytes / currentStats.downloadedBytes).toFixed(2)
@@ -425,7 +427,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
           <div className="stat-item">
             <Icon name="hard-drive" size={12} />
             <div className="stat-content">
-              <span className="stat-label">Size</span>
+              <span className="stat-label">{t('downloads.statSize')}</span>
               <span className="stat-value">
                 {currentStats.progress > 0
                   ? formatBytes(Math.round(currentStats.downloadedBytes / currentStats.progress))
@@ -439,7 +441,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
               <div className="stat-item">
                 <Icon name="activity" size={12} />
                 <div className="stat-content">
-                  <span className="stat-label">Speed</span>
+                  <span className="stat-label">{t('downloads.statSpeed')}</span>
                   <span className="stat-value">{formatSpeed(currentStats.downSpeedBps)}</span>
                 </div>
               </div>
@@ -447,7 +449,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
               <div className="stat-item">
                 <Icon name="clock" size={12} />
                 <div className="stat-content">
-                  <span className="stat-label">ETA</span>
+                  <span className="stat-label">{t('downloads.statEta')}</span>
                   <span className="stat-value">{formatEta(currentStats.etaSeconds)}</span>
                 </div>
               </div>
@@ -455,7 +457,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
               <div className="stat-item">
                 <Icon name="users" size={12} />
                 <div className="stat-content">
-                  <span className="stat-label">Peers</span>
+                  <span className="stat-label">{t('downloads.statPeers')}</span>
                   <span className="stat-value">{currentStats.peers}</span>
                 </div>
               </div>
@@ -463,7 +465,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
               <div className="stat-item">
                 <Icon name="activity" size={12} />
                 <div className="stat-content">
-                  <span className="stat-label">Health</span>
+                  <span className="stat-label">{t('downloads.statHealth')}</span>
                   <span className="stat-value">
                     <HealthBadge
                       status={status}
@@ -484,7 +486,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
               <div className="stat-item">
                 <Icon name="activity" size={12} />
                 <div className="stat-content">
-                  <span className="stat-label">Speed</span>
+                  <span className="stat-label">{t('downloads.statSpeed')}</span>
                   <span className="stat-value">{formatSpeed(currentStats.upSpeedBps)}</span>
                 </div>
               </div>
@@ -492,7 +494,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
               <div className="stat-item">
                 <Icon name="users" size={12} />
                 <div className="stat-content">
-                  <span className="stat-label">Peers</span>
+                  <span className="stat-label">{t('downloads.statPeers')}</span>
                   <span className="stat-value">{currentStats.peers}</span>
                 </div>
               </div>

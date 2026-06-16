@@ -31,6 +31,7 @@ import {
   formatBytes, formatSpeed, formatEta, formatDate, getTypeIcon,
 } from './download-helpers';
 import { DownloadItem } from './DownloadItem';
+import { useTranslation } from '../utils/i18nContext';
 
 
 interface DownloadsPageProps {
@@ -47,6 +48,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
   openTorrentUri,
   onOpenHandled
 }) => {
+  const { t } = useTranslation();
   const [downloads, setDownloads] = useState<Download[]>([]);
   const [stats, setStats] = useState<Map<string, DownloadStats>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -740,7 +742,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
       onDrop={handleDrop}
     >
       <div className="page-header">
-        <h1 className="page-title">Downloads</h1>
+        <h1 className="page-title">{t('downloads.title')}</h1>
         <div className="page-actions">
           <div className="view-mode-toggle">
             <Button
@@ -749,7 +751,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
               iconOnly
               icon={<Icon name="list" size={16} />}
               onClick={() => setViewMode('compact')}
-              title="Compact view"
+              title={t('downloads.compactView')}
             />
             <Button
               variant={viewMode === 'detailed' ? 'primary' : 'ghost'}
@@ -757,7 +759,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
               iconOnly
               icon={<Icon name="grid" size={16} />}
               onClick={() => setViewMode('detailed')}
-              title="Detailed view"
+              title={t('downloads.detailedView')}
             />
           </div>
           <Button
@@ -766,7 +768,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
             iconOnly
             icon={<Icon name="pause" size={16} />}
             onClick={handlePauseAll}
-            title="Pause all"
+            title={t('downloads.pauseAll')}
           />
           <Button
             variant="ghost"
@@ -774,7 +776,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
             iconOnly
             icon={<Icon name="play" size={16} />}
             onClick={handleResumeAll}
-            title="Resume all"
+            title={t('downloads.resumeAll')}
           />
           <Button
             variant={altSpeed ? 'primary' : 'ghost'}
@@ -782,7 +784,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
             iconOnly
             icon={<Icon name="gauge" size={16} />}
             onClick={handleToggleAltSpeed}
-            title={altSpeed ? 'Alternative speed limits: ON' : 'Alternative speed limits: OFF'}
+            title={altSpeed ? t('downloads.altSpeedOn') : t('downloads.altSpeedOff')}
           />
           <Button
             variant="ghost"
@@ -790,7 +792,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
             iconOnly
             icon={<Icon name="refresh" size={16} />}
             onClick={loadDownloads}
-            title="Refresh"
+            title={t('downloads.refresh')}
           />
           {/* Export Dropdown */}
           <div className="dropdown-wrapper">
@@ -799,9 +801,9 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
               size="sm"
               icon={<Icon name="download" size={16} />}
               onClick={() => setShowExportMenu(!showExportMenu)}
-              title="Export downloads list"
+              title={t('downloads.exportList')}
             >
-              Export
+              {t('downloads.export')}
             </Button>
             {showExportMenu && (
               <div className="dropdown-menu export-dropdown">
@@ -810,14 +812,14 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
                   onClick={() => handleExport('json')}
                 >
                   <Icon name="file" size={16} />
-                  <span>Export as JSON</span>
+                  <span>{t('downloads.exportJson')}</span>
                 </button>
                 <button
                   className="dropdown-item"
                   onClick={() => handleExport('csv')}
                 >
                   <Icon name="grid" size={16} />
-                  <span>Export as CSV</span>
+                  <span>{t('downloads.exportCsv')}</span>
                 </button>
               </div>
             )}
@@ -829,7 +831,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
             onClick={handleAddTorrentFile}
             className="add-torrent-btn"
           >
-            <span className="btn-text">Add Torrent</span>
+            <span className="btn-text">{t('downloads.addTorrent')}</span>
           </Button>
         </div>
       </div>
@@ -842,17 +844,17 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
               <div className="global-stat-item">
                 <Icon name="download" size={14} />
                 <span className="global-stat-value">{globalStats.total}</span>
-                <span className="global-stat-label">Total</span>
+                <span className="global-stat-label">{t('downloads.total')}</span>
               </div>
               <div className="global-stat-item">
                 <Icon name="activity" size={14} />
                 <span className="global-stat-value">{globalStats.active}</span>
-                <span className="global-stat-label">Active</span>
+                <span className="global-stat-label">{t('downloads.active')}</span>
               </div>
               <div className="global-stat-item">
                 <Icon name="check-circle" size={14} />
                 <span className="global-stat-value">{globalStats.completed}</span>
-                <span className="global-stat-label">Done</span>
+                <span className="global-stat-label">{t('downloads.done')}</span>
               </div>
             </div>
 
@@ -879,7 +881,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
                 <input
                   ref={searchInputRef}
                   type="text"
-                  placeholder="Search downloads... (Ctrl+F)"
+                  placeholder={t('downloads.searchPlaceholder')}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="modern-search-input"
@@ -888,7 +890,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
                   <button
                     className="modern-search-clear"
                     onClick={() => setSearchQuery('')}
-                    title="Clear search"
+                    title={t('downloads.clearSearch')}
                   >
                     <Icon name="x" size={16} />
                   </button>
@@ -899,7 +901,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
               {(searchQuery || filterMode !== 'all') && (
                 <div className="results-count">
                   <Icon name="info" size={14} />
-                  <span>{sortedDownloads.length} result{sortedDownloads.length !== 1 ? 's' : ''}</span>
+                  <span>{sortedDownloads.length} {t('downloads.resultsLabel')}</span>
                 </div>
               )}
             </div>
@@ -908,14 +910,14 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
             <div className="sort-options-section">
               <span className="section-label">
                 <Icon name="arrow-down" size={14} />
-                Sort by:
+                {t('downloads.sortBy')}
               </span>
               <div className="sort-chips">
                 <button
                   className={`sort-chip ${sortMode === 'added' ? 'active' : ''}`}
                   onClick={() => handleHeaderSort('added')}
                 >
-                  <span>Date Added</span>
+                  <span>{t('downloads.sortAdded')}</span>
                   {sortMode === 'added' && (
                     <Icon name={sortDirection === 'asc' ? 'arrow-up' : 'arrow-down'} size={14} />
                   )}
@@ -924,7 +926,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
                   className={`sort-chip ${sortMode === 'name' ? 'active' : ''}`}
                   onClick={() => handleHeaderSort('name')}
                 >
-                  <span>Name</span>
+                  <span>{t('downloads.sortName')}</span>
                   {sortMode === 'name' && (
                     <Icon name={sortDirection === 'asc' ? 'arrow-up' : 'arrow-down'} size={14} />
                   )}
@@ -933,7 +935,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
                   className={`sort-chip ${sortMode === 'progress' ? 'active' : ''}`}
                   onClick={() => handleHeaderSort('progress')}
                 >
-                  <span>Progress</span>
+                  <span>{t('downloads.sortProgress')}</span>
                   {sortMode === 'progress' && (
                     <Icon name={sortDirection === 'asc' ? 'arrow-up' : 'arrow-down'} size={14} />
                   )}
@@ -942,7 +944,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
                   className={`sort-chip ${sortMode === 'speed' ? 'active' : ''}`}
                   onClick={() => handleHeaderSort('speed')}
                 >
-                  <span>Speed</span>
+                  <span>{t('downloads.sortSpeed')}</span>
                   {sortMode === 'speed' && (
                     <Icon name={sortDirection === 'asc' ? 'arrow-up' : 'arrow-down'} size={14} />
                   )}
@@ -959,10 +961,10 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
                     setSortMode('added');
                     setSortDirection('desc');
                   }}
-                  title="Reset all filters"
+                  title={t('downloads.resetFilters')}
                 >
                   <Icon name="x" size={14} />
-                  <span>Clear All</span>
+                  <span>{t('downloads.clearAll')}</span>
                 </button>
               )}
             </div>
@@ -973,13 +975,13 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
         {selectedIds.size > 0 && (
           <div className="bulk-actions-bar">
             <div className="bulk-actions-info">
-              <span className="bulk-actions-count">{selectedIds.size} selected</span>
+              <span className="bulk-actions-count">{selectedIds.size} {t('downloads.selected')}</span>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => setSelectedIds(new Set())}
               >
-                Clear selection
+                {t('downloads.clearSelection')}
               </Button>
             </div>
             <div className="bulk-actions-buttons">
@@ -994,7 +996,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
                   setSelectedIds(new Set());
                 }}
               >
-                Pause
+                {t('downloads.pause')}
               </Button>
               <Button
                 variant="secondary"
@@ -1007,7 +1009,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
                   setSelectedIds(new Set());
                 }}
               >
-                Resume
+                {t('downloads.resume')}
               </Button>
               <Button
                 variant="danger"
@@ -1022,7 +1024,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
                   }
                 }}
               >
-                Remove
+                {t('downloads.remove')}
               </Button>
             </div>
           </div>
@@ -1032,8 +1034,8 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
         <div className={`drop-zone ${isDragging ? 'drop-zone-active' : ''}`}>
           <Icon name="upload" size={48} />
           <div className="drop-zone-text">
-            <p className="drop-zone-title">Drop torrent file here</p>
-            <p className="drop-zone-subtitle">to start downloading</p>
+            <p className="drop-zone-title">{t('downloads.dropTitle')}</p>
+            <p className="drop-zone-subtitle">{t('downloads.dropSubtitle')}</p>
           </div>
         </div>
 
@@ -1055,14 +1057,14 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
                 icon={<Icon name="plus" size={16} />}
                 onClick={handleAddTorrentFile}
               >
-                Add Selected Torrent
+                {t('downloads.addSelected')}
               </Button>
               <Button
                 variant="ghost"
                 iconOnly
                 icon={<Icon name="x" size={16} />}
                 onClick={handleClearSelection}
-                title="Clear selection"
+                title={t('downloads.clearSelection')}
               />
             </div>
           </div>
@@ -1072,14 +1074,14 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
         {sortedDownloads.length === 0 && downloads.length === 0 ? (
           <EmptyState
             icon="download"
-            title="No downloads yet"
-            description="Add a magnet link or torrent file to start downloading. You can also use Search to find legal open-source software."
+            title={t('downloads.emptyTitle')}
+            description={t('downloads.emptyDesc')}
           />
         ) : sortedDownloads.length === 0 ? (
           <EmptyState
             icon="search"
-            title="No downloads match this filter"
-            description="Try selecting a different filter or adding more downloads."
+            title={t('downloads.noMatchTitle')}
+            description={t('downloads.noMatchDesc')}
           />
         ) : (
           <div ref={scrollParentRef} className="downloads-scroll">
