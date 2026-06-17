@@ -6,13 +6,23 @@
 
 import https from 'https';
 import http from 'http';
+import fs from 'fs';
+import path from 'path';
+import { execFile } from 'child_process';
 import { URL } from 'url';
 import { app } from 'electron';
 import { logger } from '../utils';
 import * as db from '../db/store';
 import { SearchProvider, SearchResult } from '../../shared/types';
+import { parseScriptOutput } from '../../shared/search-parse';
+import { detectPython } from './python-detector';
 
 const log = logger.child('SearchService');
+
+// Hard limits for the script-provider sandbox: a plugin can't run forever or
+// flood us with output.
+const SCRIPT_TIMEOUT_MS = 25000;
+const SCRIPT_MAX_BUFFER = 8 * 1024 * 1024; // 8 MB of stdout
 
 export class SearchService {
 
@@ -71,6 +81,8 @@ export class SearchService {
         return this.searchTorznab(provider, query, category);
       case 'custom':
         return this.searchCustom(provider, query, category);
+      case 'script':
+        return this.searchScript(provider, query, category);
       default:
         // 'archive' (Internet Archive) was removed: archive.org disabled public
         // .torrent downloads in late 2024 (HTTP 401), so it can't serve torrents.
@@ -214,6 +226,82 @@ export class SearchService {
       category: r.category || undefined,
       infoHash: r.infoHash || r.hash || undefined,
     }));
+  }
+
+  /**
+   * Script provider — runs a local Python plugin the user explicitly added.
+   * Contract (kept deliberately small so the engine has ONE parse path):
+   *   - We invoke:  <python> <script.py> <query> <category>
+   *     (category is "" when none is selected).
+   *   - The script MUST print to stdout a JSON array of result objects:
+   *       { title, magnetUri?, torrentUrl?, size?, seeds?, leechers?,
+   *         publishDate?, category?, infoHash? }
+   *   - Anything on stderr is treated as diagnostics, never parsed.
+   *
+   * Security posture: execFile (no shell → no command injection), a hard
+   * timeout + output cap, the script must be a user-provided .py file, and
+   * every parsed field is coerced/clamped before it reaches the UI. The whole
+   * point of language-side qBittorrent compatibility lives in a userland
+   * adapter script, NOT here — this stays a single, auditable code path.
+   */
+  private async searchScript(provider: SearchProvider, query: string, category?: string): Promise<SearchResult[]> {
+    const raw = (provider.url || '').trim();
+    if (!raw) throw new Error('No script path configured');
+    if (!/\.py$/i.test(raw)) {
+      throw new Error('Script provider must point to a .py file');
+    }
+    // Resolve to an absolute path so a leading "-" can never be parsed as a
+    // Python flag (e.g. "-c.py"), and so cwd-relative paths are unambiguous.
+    const scriptPath = path.resolve(raw);
+    let stat: fs.Stats;
+    try {
+      stat = fs.statSync(scriptPath);
+    } catch {
+      throw new Error(`Script not found: ${scriptPath}`);
+    }
+    if (!stat.isFile()) throw new Error('Script path is not a file');
+
+    const py = await detectPython();
+    if (!py) {
+      throw new Error('Python 3 was not found on your system — install it and try again');
+    }
+
+    const args = [...py.baseArgs, scriptPath, query, category || ''];
+    log.info('Running script provider', { name: provider.name, command: py.command });
+
+    const stdout = await new Promise<string>((resolve, reject) => {
+      const child = execFile(
+        py.command,
+        args,
+        {
+          timeout: SCRIPT_TIMEOUT_MS,
+          maxBuffer: SCRIPT_MAX_BUFFER,
+          windowsHide: true,
+          cwd: path.dirname(scriptPath),
+          env: { ...process.env, PYTHONUNBUFFERED: '1', PYTHONIOENCODING: 'utf-8' },
+        },
+        (err, out, errOut) => {
+          if (err) {
+            const code = (err as NodeJS.ErrnoException).code;
+            const detail = (errOut || '').toString().trim().slice(0, 400);
+            if (code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') {
+              reject(new Error('Script produced too much output'));
+            } else if ((err as any).killed) {
+              reject(new Error('Script timed out'));
+            } else {
+              reject(new Error(detail || err.message || 'Script failed'));
+            }
+            return;
+          }
+          resolve((out || '').toString());
+        }
+      );
+      // A plugin should never need stdin; close it so a script that reads stdin
+      // gets EOF immediately instead of blocking until the timeout.
+      child.stdin?.end();
+    });
+
+    return parseScriptOutput(stdout, provider.name);
   }
 
   private extractXMLTag(xml: string, tag: string): string | null {
