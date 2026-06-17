@@ -4,6 +4,27 @@ All notable changes to TorrentHunt are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [2.1.0] - 2026-06-17
+
+### Added
+- **Python script search providers.** Alongside Jackett / Torznab / Custom JSON,
+  you can now add a **Python Script** provider: point it at a local `.py` plugin
+  and TorrentHunt runs it to fetch results — no Jackett/Prowlarr server required.
+  The app auto-detects your system Python 3 (nothing is bundled) and shows a live
+  status pill; pick the script with a **Browse…** file picker.
+- **qBittorrent plugin compatibility.** A bundled adapter
+  (`docs/search-plugins/qbittorrent_adapter.py`) provides the `novaprinter` /
+  `helpers` shims existing qBittorrent (nova3) search plugins expect, so the large
+  community plugin ecosystem works through the script provider.
+- **Plugin docs + example** under `docs/search-plugins/` (contract, runnable
+  template, adapter) and first unit tests for the result sanitizer.
+
+### Security
+- Script output is treated as untrusted: every field is coerced and length-capped,
+  the row count is bounded, and only `magnet:` / `http(s)` links are accepted
+  (so `file://`, `javascript:`, `data:` results are dropped). Scripts run via
+  `execFile` (no shell), with stdin closed and hard timeout + output caps.
+
 ## [2.0.1] - 2026-06-17
 
 ### Added
