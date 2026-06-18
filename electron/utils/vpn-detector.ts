@@ -22,7 +22,6 @@ export interface VPNDetectionResult {
   confidence: 'high' | 'medium' | 'low' | 'unknown';
   indicators: {
     vpnInterface: boolean;
-    ipMismatch: boolean;
     vpnDNS: boolean;
     vpnRoutes: boolean;
   };
@@ -40,7 +39,6 @@ export interface VPNDetectionResult {
 export async function detectVPN(): Promise<VPNDetectionResult> {
   const indicators = {
     vpnInterface: false,
-    ipMismatch: false,
     vpnDNS: false,
     vpnRoutes: false,
   };
@@ -56,17 +54,15 @@ export async function detectVPN(): Promise<VPNDetectionResult> {
     details.detectedInterfaces = interfaceResult.vpnInterfaces;
     details.vpnProvider = interfaceResult.provider;
 
-    // Check 2: Public IP vs Local IP
+    // Check 2: Fetch public IP for display purposes only.
+    // We do NOT use "publicIP !== localIP" as a VPN signal: behind any home NAT
+    // the local IP (192.168.x.x) always differs from the public ISP IP, making
+    // that comparison a permanent false-positive for non-VPN users.
     try {
-      const publicIP = await getPublicIP();
-      const localIP = getLocalIP();
-      details.publicIP = publicIP;
-      details.localIP = localIP;
-
-      // If IPs differ significantly, likely using VPN
-      indicators.ipMismatch = publicIP !== localIP;
+      details.publicIP = await getPublicIP();
+      details.localIP = getLocalIP();
     } catch (error) {
-      logger.warn('Failed to check IP mismatch:', error instanceof Error ? error.message : String(error));
+      logger.warn('Failed to get public IP:', error instanceof Error ? error.message : String(error));
     }
 
     // Check 3: DNS servers (VPN providers use specific DNS)
@@ -329,12 +325,12 @@ function calculateConfidence(indicators: VPNDetectionResult['indicators']): {
   isVPNActive: boolean;
   confidence: 'high' | 'medium' | 'low' | 'unknown';
 } {
+  // Three reliable signals: vpnInterface, vpnDNS, vpnRoutes (ipMismatch removed —
+  // it was always true behind any home NAT and caused false positives).
   const trueCount = Object.values(indicators).filter(Boolean).length;
 
-  if (trueCount >= 3) {
+  if (trueCount >= 2) {
     return { isVPNActive: true, confidence: 'high' };
-  } else if (trueCount === 2) {
-    return { isVPNActive: true, confidence: 'medium' };
   } else if (trueCount === 1) {
     return { isVPNActive: true, confidence: 'low' };
   } else {
@@ -389,18 +385,21 @@ export async function getIpInfo(): Promise<{
   const vpn = await detectVPN();
   const ip = vpn.details.publicIP;
   const geo = ip ? await fetchIpGeo(ip) : {};
-  // Heuristic leak signal: no VPN detected AND the IP belongs to an org that
-  // doesn't look like a VPN/hosting provider.
   const orgL = (geo.org || '').toLowerCase();
+  // Secondary VPN signal: the public IP resolves to a VPN/hosting provider even
+  // if no VPN interface was found (catches IKEv2/SSTP/WireGuard clients that use
+  // non-standard interface names on Windows).
   const looksLikeVpnHost = /vpn|mullvad|nord|proton|express|hosting|datacenter|data center|m247|leaseweb|ovh|server|cloud|colo|host/.test(orgL);
-  const exposedIsp = !vpn.isVPNActive && !!geo.org && !looksLikeVpnHost;
+  const vpnActive = vpn.isVPNActive || looksLikeVpnHost;
+  // Leak signal: no VPN and the IP looks like a consumer ISP (not a VPN host).
+  const exposedIsp = !vpnActive && !!geo.org;
   return {
     ip,
     country: geo.country,
     region: geo.region,
     city: geo.city,
     org: geo.org,
-    vpnActive: vpn.isVPNActive,
+    vpnActive,
     vpnProvider: vpn.details.vpnProvider,
     confidence: vpn.confidence,
     interfaces: vpn.details.detectedInterfaces,
