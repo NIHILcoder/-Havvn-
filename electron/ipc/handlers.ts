@@ -820,6 +820,11 @@ export function setupIpcHandlers(window: BrowserWindow): void {
     }
   ));
 
+  // Live adaptive-throttle / network-health snapshot for the Network settings panel.
+  ipcMain.handle('network:getHealth', wrapHandler('network:getHealth',
+    async () => torrentManager.getNetworkHealth()
+  ));
+
   ipcMain.handle('privacy:showVPNWarning', wrapHandler('privacy:showVPNWarning',
     async () => {
       const result = await detectVPN();

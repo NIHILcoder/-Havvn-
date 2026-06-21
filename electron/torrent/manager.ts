@@ -19,6 +19,7 @@ import {
   FilePriority,
   TrackerInfo,
   PeerInfo,
+  NetworkHealth,
 } from '../../shared/types';
 import {
   isValidTransition,
@@ -2482,6 +2483,23 @@ export class TorrentManager {
 
   /** Current alt-speed state (for the toolbar/tray toggle to read on load). */
   isAltSpeedEnabled(): boolean { return this.altSpeedEnabled; }
+
+  /** Live snapshot for the adaptive-throttle indicator in the UI. */
+  getNetworkHealth(): NetworkHealth {
+    const st = this.adaptive?.getState() ?? null;
+    let uploadBps = 0;
+    try { uploadBps = (this.client as any)?.uploadSpeed ?? 0; } catch { /* client not up yet */ }
+    return {
+      adaptive: {
+        active: this.adaptiveUploadEnabled && !!st?.active,
+        latencyMs: st?.latencyMs ?? null,
+        baselineMs: st?.baselineMs != null ? Math.round(st.baselineMs) : null,
+        capKbps: st && st.capBytes > 0 ? Math.round(st.capBytes / 1024) : -1,
+        congested: st?.congested ?? false,
+      },
+      uploadBps,
+    };
+  }
 
   // ============================================================
   // Priority 1: New Engine Features

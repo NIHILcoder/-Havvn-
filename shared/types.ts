@@ -348,6 +348,18 @@ export interface IpInfo {
   fetchedAt: number;
 }
 
+// Live network-health snapshot for the adaptive-throttle indicator.
+export interface NetworkHealth {
+  adaptive: {
+    active: boolean;          // throttle enabled AND its probe loop is running
+    latencyMs: number | null; // last measured WAN round-trip
+    baselineMs: number | null;// unloaded baseline it compares against
+    capKbps: number;          // current adaptive upload ceiling, -1 = unlimited
+    congested: boolean;       // last sample exceeded the congestion threshold
+  };
+  uploadBps: number;          // current aggregate upload throughput (bytes/sec)
+}
+
 // Scheduler types
 export interface ScheduleEntry {
   id: string;
@@ -674,6 +686,7 @@ export interface IpcApi {
   updatePrivacyConfig: (updates: Partial<PrivacyConfig>) => Promise<PrivacyConfig>;
   checkVPN: () => Promise<VPNDetectionResult>;
   getIpInfo: () => Promise<IpInfo>;
+  getNetworkHealth: () => Promise<NetworkHealth>;
   isEncryptionAvailable: () => Promise<boolean>;
   clearAllData: () => Promise<{ success: boolean }>;
   openLogsFolder: () => Promise<{ ok: boolean }>;

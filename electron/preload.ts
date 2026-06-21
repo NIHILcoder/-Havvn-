@@ -230,6 +230,10 @@ const api: IpcApi = {
     return ipcRenderer.invoke('privacy:getIpInfo');
   },
 
+  getNetworkHealth: () => {
+    return ipcRenderer.invoke('network:getHealth');
+  },
+
   isEncryptionAvailable: () => {
     return ipcRenderer.invoke('privacy:isEncryptionAvailable');
   },

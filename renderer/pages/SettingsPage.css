@@ -819,3 +819,44 @@
 .web-remote-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .web-remote-warn { color: #f59e0b; }
 .web-remote-warn svg { color: #f59e0b; }
+
+/* ── Adaptive upload throttle: live indicator ──────────────────────────── */
+.privacy-status.warn {
+  background: rgba(245, 158, 11, 0.12); color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+.adaptive-health {
+  margin: 4px 0 12px;
+  padding: 12px 14px;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md, 8px);
+}
+.adaptive-health-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin-bottom: 10px;
+}
+.adaptive-health-cap {
+  font-family: var(--font-family-mono, ui-monospace, monospace);
+  font-size: 13px; font-weight: 600; color: var(--color-text-primary);
+}
+.adaptive-bar {
+  position: relative; height: 6px; border-radius: 999px;
+  background: var(--color-bg-secondary, rgba(255, 255, 255, 0.06));
+  overflow: hidden; margin-bottom: 10px;
+}
+.adaptive-bar-fill {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  background: #22c55e; border-radius: 999px;
+  transition: width 0.6s ease, background 0.3s ease;
+}
+.adaptive-bar-fill.congested { background: #f59e0b; }
+.adaptive-bar-marker {
+  position: absolute; top: -2px; bottom: -2px; width: 2px;
+  background: var(--color-text-tertiary); opacity: 0.7;
+}
+.adaptive-health-metrics {
+  display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  font-size: 12px; color: var(--color-text-secondary);
+}
+.adaptive-health-metrics strong { color: var(--color-text-primary); font-weight: 600; }

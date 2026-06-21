@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { AppSettings, SchedulerConfig, ScheduleEntry, PortForwardStatus } from '../../shared/types';
+import { AppSettings, SchedulerConfig, ScheduleEntry, PortForwardStatus, NetworkHealth } from '../../shared/types';
 import {
   Button,
   Icon,
@@ -64,6 +64,7 @@ const SettingsPage: React.FC = () => {
   const [maxDownKbps, setMaxDownKbps] = useState(0);
   const [maxUpKbps, setMaxUpKbps] = useState(0);
   const [adaptiveUpload, setAdaptiveUpload] = useState(false);
+  const [netHealth, setNetHealth] = useState<NetworkHealth | null>(null);
   const [maxActiveDownloads, setMaxActiveDownloads] = useState(3);
   // Alternative ("turbo") speed limits
   const [altSpeedEnabled, setAltSpeedEnabled] = useState(false);
@@ -209,6 +210,19 @@ const SettingsPage: React.FC = () => {
     const iv = setInterval(tick, 3000);
     return () => { alive = false; clearInterval(iv); };
   }, [activeCategory]);
+
+  // Poll live network health while the Network tab is open AND adaptive throttle
+  // is on — drives the live latency/cap indicator. Matches the throttle's 2s loop.
+  useEffect(() => {
+    if (activeCategory !== 'network' || !adaptiveUpload) { setNetHealth(null); return; }
+    let alive = true;
+    const tick = () => {
+      window.api.getNetworkHealth().then((h) => { if (alive) setNetHealth(h); }).catch(() => {});
+    };
+    tick();
+    const iv = setInterval(tick, 2000);
+    return () => { alive = false; clearInterval(iv); };
+  }, [activeCategory, adaptiveUpload]);
 
   // Track unsaved changes across ALL persisted fields (not just a handful),
   // so the Save bar appears whenever anything actually changed.
@@ -929,6 +943,7 @@ const SettingsPage: React.FC = () => {
             t('settings.adaptiveUpload.desc'),
             renderToggle(adaptiveUpload, () => applyToggle(!adaptiveUpload, setAdaptiveUpload, { adaptiveUpload: !adaptiveUpload }))
           )}
+          {adaptiveUpload && renderAdaptiveHealth()}
           <div className="settings-notice-compact">
             <Icon name="info" size={14} />
             <span>{t('settings.adaptiveUpload.note')}</span>
@@ -1154,6 +1169,56 @@ const SettingsPage: React.FC = () => {
       >
         <Icon name={m.icon} size={14} /> {tk(m.key)}{portTxt}
       </span>
+    );
+  }
+
+  // Live indicator for the adaptive upload throttle: shows the control loop's
+  // current latency vs its unloaded baseline, the cap it has settled on, and the
+  // upload rate flowing through it — so the user can watch it adapt in real time.
+  function renderAdaptiveHealth() {
+    const a = netHealth?.adaptive;
+    const tk = t as (k: string) => string;
+    const fmtSpeed = (bps: number): string => {
+      if (bps >= 1024 * 1024) return `${(bps / (1024 * 1024)).toFixed(1)} MB/s`;
+      if (bps >= 1024) return `${Math.round(bps / 1024)} KB/s`;
+      return `${Math.round(bps)} B/s`;
+    };
+
+    // Pill state: measuring → easing (congested) → tuning (capped, clear) → clear.
+    let cls = 'off', icon: 'loader' | 'alert-triangle' | 'activity' | 'check-circle' = 'loader', key = 'settings.adaptive.state.measuring';
+    if (a && a.latencyMs != null) {
+      if (a.congested) { cls = 'warn'; icon = 'alert-triangle'; key = 'settings.adaptive.state.easing'; }
+      else if (a.capKbps > 0) { cls = 'on'; icon = 'activity'; key = 'settings.adaptive.state.tuning'; }
+      else { cls = 'on'; icon = 'check-circle'; key = 'settings.adaptive.state.clear'; }
+    }
+
+    // Latency bar: fill grows with latency relative to a 3× baseline span; a
+    // marker sits at the baseline so congestion (fill past the marker) is visible.
+    const base = a?.baselineMs ?? null;
+    const lat = a?.latencyMs ?? null;
+    const span = base && base > 0 ? base * 3 : 150;
+    const fillPct = lat != null ? Math.min(100, Math.round((lat / span) * 100)) : 0;
+    const basePct = base && base > 0 ? Math.min(100, Math.round((base / span) * 100)) : 33;
+
+    return (
+      <div className="adaptive-health">
+        <div className="adaptive-health-head">
+          <span className={`privacy-status ${cls}`}>
+            <Icon name={icon} size={14} /> {tk(key)}
+          </span>
+          <span className="adaptive-health-cap">
+            {a && a.capKbps > 0 ? `${a.capKbps} KB/s` : t('settings.adaptive.unlimited')}
+          </span>
+        </div>
+        <div className="adaptive-bar" title={t('settings.adaptive.latency')}>
+          <div className={`adaptive-bar-fill ${a?.congested ? 'congested' : ''}`} style={{ width: `${fillPct}%` }} />
+          <div className="adaptive-bar-marker" style={{ left: `${basePct}%` }} />
+        </div>
+        <div className="adaptive-health-metrics">
+          <span>{t('settings.adaptive.latency')}: <strong>{lat != null ? `${lat} ms` : '—'}</strong>{base != null ? ` / ${base} ms` : ''}</span>
+          <span>{t('settings.adaptive.upload')}: <strong>{netHealth ? fmtSpeed(netHealth.uploadBps) : '—'}</strong></span>
+        </div>
+      </div>
     );
   }
 
