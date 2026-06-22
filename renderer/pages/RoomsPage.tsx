@@ -392,6 +392,15 @@ const RoomDetail: React.FC<DetailProps> = ({ room, onAddFiles, onOpenFolder, onI
         </div>
       </div>
 
+      {/* Removed-from-room banner */}
+      {room.kicked && (
+        <div className="room-kicked-banner">
+          <Icon name="alert-triangle" size={16} />
+          <span>{room.kickedBy ? `${t('rooms.kickedBanner')} (${room.kickedBy})` : t('rooms.kickedBanner')}</span>
+          <Button variant="danger" size="sm" onClick={onLeave} disabled={busy} icon={<Icon name="x" size={14} />}>{t('rooms.leave')}</Button>
+        </div>
+      )}
+
       {/* Members */}
       <div className="room-section">
         <div className="room-section-title">{t('rooms.members')} · {totalMembers}</div>

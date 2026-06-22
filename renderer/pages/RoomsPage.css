@@ -520,3 +520,19 @@
 .room-watcher.playing .room-watcher-dot { background: #22c55e; }
 .room-watcher.paused .room-watcher-dot { background: #f59e0b; }
 .room-player-alone { font-size: 12px; color: var(--color-text-tertiary, #6b6b73); }
+
+/* "You were removed from this room" banner */
+.room-kicked-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md, 8px);
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+  font-size: 13px;
+  font-weight: 500;
+}
+.room-kicked-banner span { flex: 1; }
+.room-kicked-banner svg { flex-shrink: 0; }

@@ -64,6 +64,10 @@ type Msg =
   // Owner kicked a member: rotate the room to a new code. Sent encrypted with the
   // OLD key to everyone EXCEPT the kicked member, who never learns the new code.
   | { t: 'rekey'; newCode: string; kickedId: string; kickedName: string; by: string }
+  // Explicit notice sent to the member being removed (under the CURRENT key,
+  // which they can still read) right before the room rotates away from them, so
+  // they get a clear "you were removed" instead of silently going stale.
+  | { t: 'kicked'; targetId: string; by: string; byName: string }
   // Watch-together: relayed verbatim to peers; the renderers keep playback in sync
   // and show who's in the session ('join'/'leave'/'beat' presence).
   | { t: 'sync'; fileId: string; action: 'play' | 'pause' | 'seek' | 'state' | 'join' | 'leave' | 'beat'; position: number; rate: number; at: number; memberId: string; name: string; avatarSeed: string; playing: boolean };
@@ -93,6 +97,8 @@ interface Room {
   tombstones: Set<string>;               // deleted fileIds — never re-add them
   mutes: Set<string>;                    // locally-muted memberIds (per install)
   history: RoomEvent[];                  // activity log, newest last (capped)
+  kicked: boolean;                       // the owner removed us (session-only)
+  kickedBy: string;                      // who removed us (display name)
   snapshotTimer: any;
   lastSnapshot: number;
 }
@@ -157,6 +163,8 @@ function buildState(room: Room): RoomState {
     history: room.history.slice(-100),
     connected: room.started,
     peerCount: onlinePeers,
+    kicked: room.kicked,
+    ...(room.kicked ? { kickedBy: room.kickedBy } : {}),
   };
 }
 
@@ -368,6 +376,13 @@ function onMessage(room: Room, wire: Wire, raw: any): void {
       // Relay to our other peers (still under the old key) so multi-hop rooms converge.
       sendRekey(room, oldKey, msg, msg.kickedId, wire.id);
       applyLocalRekey(room, msg.newCode, msg.kickedId, msg.kickedName);
+      break;
+    }
+    case 'kicked': {
+      // The owner removed us. Decryption already succeeded, so it's authentic
+      // (came in under the room key we still hold). Only act if WE are the target.
+      if (msg.targetId !== room.self.memberId) break;
+      markKicked(room, msg.byName || '?');
       break;
     }
     case 'sync': {
@@ -698,16 +713,42 @@ function applyLocalRekey(room: Room, newCode: string, kickedId: string, kickedNa
   pushState(room, true);
 }
 
+/** We were removed by the owner: surface it in the UI, stop announcing, and drop
+ *  every wire so we don't linger in the swarm the room just rotated away from. */
+function markKicked(room: Room, byName: string): void {
+  if (room.kicked) return;
+  room.kicked = true;
+  room.kickedBy = byName;
+  logEvent(room, { type: 'kicked', actorId: room.ownerId, actorName: byName, targetName: room.self.name || 'You' });
+  try { room.tracker?.stop(); room.tracker?.destroy(); } catch { /* ignore */ }
+  room.tracker = null;
+  for (const wire of room.wires.values()) { try { wire.peer.destroy(); } catch { /* ignore */ } }
+  room.wires.clear();
+  room.started = false;
+  pushState(room, true);
+}
+
 /** Owner-only: remove a member by rotating the room code away from them. */
 function kickMember(room: Room, memberId: string): void {
   if (room.ownerId !== room.self.memberId) throw new Error('Only the room owner can remove members');
   if (memberId === room.self.memberId) throw new Error('You cannot remove yourself');
   const kickedName = room.members.get(memberId)?.name || '?';
+  // 1. Tell the kicked member explicitly, under the CURRENT key they can still
+  //    read, on every wire we have to them — so they get a clear notice.
+  const notice: Msg = { t: 'kicked', targetId: memberId, by: room.self.memberId, byName: room.self.name || 'You' };
+  for (const wire of room.wires.values()) {
+    if (wire.memberId === memberId) sendTo(room, wire, notice);
+  }
+  // 2. Rotate the room away from them. Deferred briefly so the notice flushes on
+  //    the data channel before applyLocalRekey tears that wire down.
   const newCode = generateRoomCode();
   const oldKey = room.key;
-  const msg: Msg = { t: 'rekey', newCode, kickedId: memberId, kickedName, by: room.self.memberId };
-  sendRekey(room, oldKey, msg, memberId);
-  applyLocalRekey(room, newCode, memberId, kickedName);
+  const rekey: Msg = { t: 'rekey', newCode, kickedId: memberId, kickedName, by: room.self.memberId };
+  setTimeout(() => {
+    if (!rooms.get(room.roomId)) return; // room was left/destroyed meanwhile
+    sendRekey(room, oldKey, rekey, memberId);
+    applyLocalRekey(room, newCode, memberId, kickedName);
+  }, 300);
 }
 
 // ── Room lifecycle ───────────────────────────────────────────────────────────
@@ -745,6 +786,8 @@ function startRoom(p: { roomId: string; name: string; code: string; folder: stri
     tombstones: new Set(p.tombstones || []),
     mutes: new Set(p.mutes || []),
     history: (p.history || []).slice(-200),
+    kicked: false,
+    kickedBy: '',
     snapshotTimer: null,
     lastSnapshot: 0,
   };

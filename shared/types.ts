@@ -161,6 +161,8 @@ export interface RoomState {
   history: RoomEvent[];  // recent activity, newest last
   connected: boolean;    // tracker rendezvous connected
   peerCount: number;     // live gossip peers right now
+  kicked?: boolean;      // the owner removed us from this room (session-only)
+  kickedBy?: string;     // display name of who removed us
 }
 
 /** Lightweight room listing entry. */
