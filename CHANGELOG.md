@@ -4,7 +4,7 @@ All notable changes to TorrentHunt are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [2.3.0] - 2026-06-24
 
 ### Added
 - **RuTracker search (via a bundled plugin) + provider logins.** Search providers
