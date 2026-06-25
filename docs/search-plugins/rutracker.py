@@ -33,6 +33,7 @@ import re
 import json
 import gzip
 import io
+import html
 import http.cookiejar
 import urllib.request
 import urllib.parse
@@ -119,31 +120,39 @@ def _set_session_cookie(jar, base, value):
 # --------------------------------------------------------------------------
 # Parsing (pure functions — exercised by --selftest)
 # --------------------------------------------------------------------------
-def parse_search_rows(html):
+def parse_search_rows(page):
     """Extract result rows from a tracker.php results page.
 
     Each row yields: topic id, title, size (bytes), seeds, leechers, category.
-    Tolerant of attribute order; skips anything it can't parse."""
+    The TITLE is the topic link (href=viewtopic.php?t=ID); the CATEGORY is the
+    forum link (href=tracker.php?f=ID). NOTE: RuTracker puts data-topic_id on the
+    <tr> itself, so the title must be matched by the viewtopic href — not by
+    data-topic_id, which would grab the first <a> in the row (the forum link)."""
     rows = []
-    # Each result is a <tr ... id="trs-tr-NNN" ...> ... </tr> block.
-    for block in re.split(r'<tr[^>]*\bid="trs-tr-', html)[1:]:
-        # Title + topic id.
-        m = re.search(r'data-topic_id="(\d+)"[^>]*>(.*?)</a>', block, re.DOTALL)
-        if not m:
-            m = re.search(r'href="tracker\.php\?[^"]*t=(\d+)"[^>]*class="[^"]*tLink[^"]*"[^>]*>(.*?)</a>', block, re.DOTALL)
-        if not m:
+    for block in re.split(r'<tr[^>]*\bid="trs-tr-', page)[1:]:
+        block = block.split('</tr>', 1)[0]  # keep this row only
+
+        # Title: the topic-title link. Prefer the one inside the t-title cell;
+        # fall back to any viewtopic.php?t= link carrying the tLink class.
+        mt = re.search(r'class="t-title"[^>]*>.*?<a[^>]*href="[^"]*viewtopic\.php\?t=(\d+)[^"]*"[^>]*>(.*?)</a>', block, re.DOTALL)
+        if not mt:
+            mt = re.search(r'<a[^>]*class="[^"]*tLink[^"]*"[^>]*href="[^"]*viewtopic\.php\?t=(\d+)[^"]*"[^>]*>(.*?)</a>', block, re.DOTALL)
+        if not mt:
+            mt = re.search(r'<a[^>]*href="[^"]*viewtopic\.php\?t=(\d+)[^"]*"[^>]*>(.*?)</a>', block, re.DOTALL)
+        if not mt:
             continue
-        topic_id = m.group(1)
-        title = _strip_tags(m.group(2)).strip()
+        topic_id = mt.group(1)
+        title = _clean(mt.group(2))
         if not title:
             continue
+
         # Size in bytes (data-ts_text on the size cell), else humanized text.
         size = 0
-        ms = re.search(r'class="[^"]*tor-size"[^>]*data-ts_text="(\d+)"', block)
+        ms = re.search(r'class="[^"]*tor-size[^"]*"[^>]*data-ts_text="(-?\d+)"', block)
         if ms:
-            size = int(ms.group(1))
+            size = max(0, int(ms.group(1)))
         else:
-            mh = re.search(r'class="[^"]*tor-size"[^>]*>\s*([\d.,]+)\s*([KMGT]?B)', block)
+            mh = re.search(r'class="[^"]*tor-size[^"]*"[^>]*>\s*([\d.,]+)\s*([KMGT]?B)', block)
             if mh:
                 size = _human_to_bytes(mh.group(1), mh.group(2))
         seeds = _first_int(re.search(r'class="[^"]*seedmed[^"]*"[^>]*>\s*(\d+)', block))
@@ -151,21 +160,20 @@ def parse_search_rows(html):
         cat = ""
         mc = re.search(r'class="[^"]*f-name[^"]*"[^>]*>\s*<a[^>]*>(.*?)</a>', block, re.DOTALL)
         if mc:
-            cat = _strip_tags(mc.group(1)).strip()
+            cat = _clean(mc.group(1))
         rows.append({"id": topic_id, "title": title, "size": size,
                      "seeds": seeds, "leech": leech, "category": cat})
     return rows
 
 
-def parse_magnet(html):
-    m = MAGNET_RE.search(html)
+def parse_magnet(page):
+    m = MAGNET_RE.search(page)
     return m.group(1) if m else None
 
 
-def _strip_tags(s):
-    s = re.sub(r"<[^>]+>", "", s)
-    return (s.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
-             .replace("&quot;", '"').replace("&#039;", "'").replace("&nbsp;", " "))
+def _clean(s):
+    """Strip tags and decode HTML entities (handles &amp;, &radic;, &#NNN;, …)."""
+    return html.unescape(re.sub(r"<[^>]+>", "", s)).strip()
 
 
 def _first_int(match):
@@ -246,13 +254,16 @@ def search(query):
 
 
 def _selftest():
-    """Offline parser check — no network, no credentials."""
+    """Offline parser check — no network, no credentials. Mirrors RuTracker's
+    real layout: data-topic_id on the <tr>, a status cell (√), the forum link
+    BEFORE the title — so it catches the old bug of grabbing the forum as title."""
     sample_search = '''
       <table id="tor-tbl"><tbody>
-      <tr id="trs-tr-1" class="tCenter hl-tr">
-        <td class="row1 f-name-col"><div class="f-name"><a class="gen f">Linux</a></div></td>
+      <tr id="trs-tr-6543210" data-topic_id="6543210" class="tCenter hl-tr">
+        <td class="row1 t-ico"><span class="tor-icon">&radic;</span></td>
+        <td class="row1 f-name-col"><div class="f-name"><a class="gen f" href="tracker.php?f=123">Linux</a></div></td>
         <td class="row4 med tLeft t-title-col tt">
-          <div class="t-title"><a data-topic_id="6543210" class="tLink hl-tags bold" href="viewtopic.php?t=6543210">Ubuntu 24.04 LTS amd64</a></div></td>
+          <div class="t-title"><a data-topic_id="6543210" class="tLink hl-tags bold" href="viewtopic.php?t=6543210">Ubuntu 24.04 LTS amd64 &amp; tools</a></div></td>
         <td class="row4 small nowrap tor-size" data-ts_text="1610612736"><a class="small tr-dl dl-stub">1.5&nbsp;GB&nbsp;↓</a></td>
         <td class="row4 nowrap"><b class="seedmed">42</b></td>
         <td class="row4 leechmed">7</td>
@@ -261,10 +272,12 @@ def _selftest():
     rows = parse_search_rows(sample_search)
     assert len(rows) == 1, rows
     r = rows[0]
-    assert r["id"] == "6543210" and r["title"].startswith("Ubuntu"), r
+    assert r["id"] == "6543210", r
+    assert r["title"] == "Ubuntu 24.04 LTS amd64 & tools", r   # the topic title, entities decoded
+    assert "√" not in r["title"] and "Linux" not in r["title"], r  # NOT the forum/status
     assert r["size"] == 1610612736, r
     assert r["seeds"] == 42 and r["leech"] == 7, r
-    assert r["category"] == "Linux", r
+    assert r["category"] == "Linux", r                          # the forum is the category
     magnet = parse_magnet(sample_topic)
     assert magnet and magnet.startswith("magnet:?xt=urn:btih:0123456789abcdef"), magnet
     print("selftest OK:", json.dumps(rows, ensure_ascii=False))
