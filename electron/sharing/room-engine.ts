@@ -48,6 +48,16 @@ const PING_INTERVAL = 15000;   // heartbeat to peers
 const OFFLINE_AFTER = 45000;   // mark a member offline after this silence
 const SNAPSHOT_THROTTLE = 700; // min ms between pushed state snapshots per room
 
+// ── Peer-relay (gossip flooding) ──────────────────────────────────────────────
+// Two members who can't form a direct WebRTC wire (NAT) still converge if some
+// reachable member is connected to both: every node re-broadcasts gossip it hasn't
+// seen to its OTHER wires (deduped by a per-message id, bounded by a hop count),
+// so any node with ≥2 wires implicitly relays. Free, no servers — the "relay" is
+// just another member. Targeted/keyed messages (rekey, kicked) are NOT flooded.
+const RELAY_TTL = 4;                 // max hops a gossip message travels
+const SEEN_GID_CAP = 4096;           // dedup memory per room (FIFO)
+const RELAYABLE = new Set(['hello', 'ping', 'add', 'have', 'del', 'chat', 'sync', 'bye']);
+
 function log(msg: string): void { try { ipcRenderer.send('room-log', msg); } catch { /* ignore */ } }
 
 // ── Gossip message shapes (post-decrypt) ───────────────────────────────────
@@ -105,6 +115,8 @@ interface Room {
   history: RoomEvent[];                  // activity log, newest last (capped)
   chat: RoomChatMessage[];               // chat messages, newest last (capped)
   identities: Map<string, string>;       // memberId → Ed25519 public key (PEM), TOFU-bound
+  seenGids: Set<string>;                 // relay dedup — gossip ids already processed
+  seenGidOrder: string[];                // FIFO order for capping seenGids
   kicked: boolean;                       // the owner removed us (session-only)
   kickedBy: string;                      // who removed us (display name)
   snapshotTimer: any;
@@ -196,7 +208,36 @@ function sendTo(room: Room, wire: Wire, msg: Msg): void {
   } catch (e) { log('send failed: ' + String(e)); }
 }
 
+/** Remember a gossip id so we neither reprocess nor re-relay it (FIFO-capped). */
+function markSeen(room: Room, gid: string): void {
+  if (!gid || room.seenGids.has(gid)) return;
+  room.seenGids.add(gid);
+  room.seenGidOrder.push(gid);
+  if (room.seenGidOrder.length > SEEN_GID_CAP) {
+    const old = room.seenGidOrder.shift();
+    if (old) room.seenGids.delete(old);
+  }
+}
+
+/** Re-broadcast a relayed gossip message to every wire except where it came from. */
+function forwardRelay(room: Room, msg: any, fromWireId: number): void {
+  if (typeof msg._t !== 'number' || msg._t <= 1) return;
+  const fwd = { ...msg, _t: msg._t - 1 };
+  for (const wire of room.wires.values()) {
+    if (wire.id === fromWireId) continue;
+    sendTo(room, wire, fwd as Msg);
+  }
+}
+
 function broadcast(room: Room, msg: Msg): void {
+  // Tag relayable messages so any member connected to two others forwards them on
+  // (peer-relay). We record our own id first so the flood echoing back is ignored.
+  const m = msg as any;
+  if (RELAYABLE.has(msg.t) && !m._g) {
+    m._g = crypto.randomBytes(6).toString('hex');
+    m._t = RELAY_TTL;
+    markSeen(room, m._g);
+  }
   for (const wire of room.wires.values()) sendTo(room, wire, msg);
 }
 
@@ -372,16 +413,32 @@ function onMessage(room: Room, wire: Wire, raw: any): void {
     // Wrong key / not a member / corrupt — ignore silently.
     return;
   }
-  // Self-connection guard: any identity-bearing message carrying OUR memberId
-  // came from a loopback wire — drop it (and the wire) so we never add ourselves
-  // as a remote member. ('add'/'rekey' carry no memberId and are idempotent.)
-  if ((msg as any).memberId && (msg as any).memberId === room.self.memberId) {
-    dropSelfWire(room, wire);
+  const meta = msg as any;
+  // `direct` = arrived straight from its author (undecremented hop count), vs a
+  // relayed copy forwarded by another member. Only direct messages identify the
+  // wire's peer; relayed ones must not mislabel the relaying wire.
+  const direct = typeof meta._t !== 'number' || meta._t >= RELAY_TTL;
+
+  // Self-connection guard: our OWN message arriving DIRECTLY came from a tracker
+  // loopback wire (paired us with ourselves) — drop that wire. A relayed echo of
+  // our own message is not a loopback; it's caught by the dedup below instead.
+  if (meta.memberId && meta.memberId === room.self.memberId) {
+    if (direct) dropSelfWire(room, wire);
     return;
   }
+
+  // Peer-relay: drop anything we've already handled (incl. our own flooded echo),
+  // otherwise remember it and forward it onward before processing locally.
+  const gid: string = meta._g || '';
+  if (gid) {
+    if (room.seenGids.has(gid)) return;
+    markSeen(room, gid);
+    forwardRelay(room, meta, wire.id);
+  }
+
   switch (msg.t) {
     case 'hello': {
-      wire.memberId = msg.memberId;
+      if (direct) wire.memberId = msg.memberId;
       const isNew = !room.members.has(msg.memberId);
       const m = touchMember(room, msg.memberId, msg.name, msg.avatarSeed);
       m.have = Array.from(new Set(msg.have || []));
@@ -396,7 +453,7 @@ function onMessage(room: Room, wire: Wire, raw: any): void {
       break;
     }
     case 'ping': {
-      wire.memberId = msg.memberId;
+      if (direct) wire.memberId = msg.memberId;
       const isNew = !room.members.has(msg.memberId);
       const m = touchMember(room, msg.memberId, msg.name, msg.avatarSeed);
       m.have = Array.from(new Set(msg.have || []));
@@ -870,6 +927,8 @@ function startRoom(p: { roomId: string; name: string; code: string; folder: stri
     history: (p.history || []).slice(-200),
     chat: (p.chat || []).slice(-200),
     identities: new Map(Object.entries(p.identities || {})),
+    seenGids: new Set(),
+    seenGidOrder: [],
     kicked: false,
     kickedBy: '',
     snapshotTimer: null,
