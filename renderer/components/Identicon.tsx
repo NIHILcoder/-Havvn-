@@ -14,7 +14,7 @@
  * by simply changing their avatarSeed — which already syncs to peers.
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useId } from 'react';
 
 export const AVATAR_STYLES = ['mirror', 'grid', 'rings', 'bauhaus'] as const;
 export type AvatarStyle = (typeof AVATAR_STYLES)[number];
@@ -69,21 +69,16 @@ export function makeAvatarSeed(style: AvatarStyle, base: string): string {
 }
 
 interface Palette {
-  gradId: string;
-  clipId: string;
   c1: string;
   c2: string;
   angle: number;
   fg: string;
 }
 
-function palette(seed: string, rng: () => number): Palette {
+function palette(rng: () => number): Palette {
   const h1 = Math.floor(rng() * 360);
   const h2 = (h1 + 35 + Math.floor(rng() * 90)) % 360;
-  const uid = (hashSeed(seed) >>> 0).toString(36);
   return {
-    gradId: 'idg-' + uid,
-    clipId: 'idc-' + uid,
     c1: `hsl(${h1} 72% 56%)`,
     c2: `hsl(${h2} 70% 44%)`,
     angle: Math.floor(rng() * 360),
@@ -236,8 +231,17 @@ function buildBauhaus(rng: () => number, size: number, fg: string): React.ReactN
 
 export const Identicon: React.FC<IdenticonProps> = ({ seed, size = 40, online, ring, className, title }) => {
   const { style, base } = useMemo(() => parseAvatar(seed), [seed]);
-  const pal = useMemo(() => palette(seed, mulberry32(hashSeed(base))), [seed, base]);
+  const pal = useMemo(() => palette(mulberry32(hashSeed(base))), [base]);
   const fg = pal.fg;
+
+  // Unique per rendered instance — NOT derived from the seed. The same avatar is
+  // shown in several places/sizes at once (header chip, member grid, chat), so
+  // seed-derived ids would collide and one instance's clipPath (sized to its own
+  // box) would crop another → the duplicated "you" avatar appears cut off.
+  const rawId = useId();
+  const uid = rawId.replace(/:/g, '');
+  const gradId = 'idg-' + uid;
+  const clipId = 'idc-' + uid;
 
   const fgNodes = useMemo(() => {
     // A fresh stream seeded from the base so the foreground is stable per seed
@@ -263,16 +267,16 @@ export const Identicon: React.FC<IdenticonProps> = ({ seed, size = 40, online, r
     >
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={title || 'avatar'}>
         <defs>
-          <linearGradient id={pal.gradId} gradientTransform={`rotate(${pal.angle} 0.5 0.5)`}>
+          <linearGradient id={gradId} gradientTransform={`rotate(${pal.angle} 0.5 0.5)`}>
             <stop offset="0%" stopColor={pal.c1} />
             <stop offset="100%" stopColor={pal.c2} />
           </linearGradient>
-          <clipPath id={pal.clipId}>
+          <clipPath id={clipId}>
             <rect width={size} height={size} rx={radius} ry={radius} />
           </clipPath>
         </defs>
-        <g clipPath={`url(#${pal.clipId})`}>
-          <rect width={size} height={size} fill={`url(#${pal.gradId})`} />
+        <g clipPath={`url(#${clipId})`}>
+          <rect width={size} height={size} fill={`url(#${gradId})`} />
           {fgNodes}
         </g>
       </svg>
