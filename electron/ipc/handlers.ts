@@ -408,6 +408,10 @@ export function setupIpcHandlers(window: BrowserWindow): void {
     async (_event, roomId: string, memberId: string) => roomManager.kick(roomId, memberId)
   ));
 
+  ipcMain.handle('rooms:sendChat', wrapHandler('rooms:sendChat',
+    async (_event, roomId: string, text: string) => roomManager.sendChat(roomId, text)
+  ));
+
   ipcMain.handle('downloads:getTorrentInfo', wrapHandler('downloads:getTorrentInfo',
     async (_event, params: { torrentPath?: string; magnetUri?: string }) => {
       return torrentManager.getTorrentInfo(params);

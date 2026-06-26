@@ -542,6 +542,8 @@ const api: IpcApi = {
       ipcRenderer.invoke('rooms:setMuted', roomId, memberId, muted),
     kick: (roomId: string, memberId: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke('rooms:kick', roomId, memberId),
+    sendChat: (roomId: string, text: string): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke('rooms:sendChat', roomId, text),
   },
 
   onRoomUpdate: (callback: (state: RoomState) => void): (() => void) => {

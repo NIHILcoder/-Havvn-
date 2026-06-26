@@ -19,7 +19,7 @@
  */
 
 import Store from 'electron-store';
-import { Download, AppSettings, SourceType, Category, SchedulerConfig, UserReputation, ReputationTransaction, PrivacyConfig, RSSFeed, RSSItem, SearchProvider, IPBlocklist, RoomProfile, PersistedRoomFile, RoomEvent, NetworkProfile } from '../../shared/types';
+import { Download, AppSettings, SourceType, Category, SchedulerConfig, UserReputation, ReputationTransaction, PrivacyConfig, RSSFeed, RSSItem, SearchProvider, IPBlocklist, RoomProfile, PersistedRoomFile, RoomEvent, RoomChatMessage, NetworkProfile } from '../../shared/types';
 import { v4 as uuidv4 } from 'uuid';
 import { app } from 'electron';
 import path from 'path';
@@ -67,6 +67,9 @@ interface RoomsSchema {
   roomManifests: Record<string, PersistedRoomFile[]>; // roomId → known files (resume on restart)
   roomHistory: Record<string, RoomEvent[]>;  // roomId → activity log (capped)
   roomMutes: Record<string, string[]>;       // roomId → locally-muted memberIds
+  roomChats: Record<string, RoomChatMessage[]>; // roomId → chat log (capped, text encrypted at rest)
+  roomIdentity: { pub: string; priv: string } | null; // this install's Ed25519 signing keypair (priv encrypted)
+  roomIdentities: Record<string, Record<string, string>>; // roomId → (memberId → pubKey), TOFU binding
 }
 
 interface ReputationSchema {
@@ -215,7 +218,7 @@ const searchStore = new Store<SearchSchema>({
 
 const roomsStore = new Store<RoomsSchema>({
   name: 'rooms',
-  defaults: { rooms: {}, roomProfile: null, roomTombstones: {}, roomManifests: {}, roomHistory: {}, roomMutes: {} },
+  defaults: { rooms: {}, roomProfile: null, roomTombstones: {}, roomManifests: {}, roomHistory: {}, roomMutes: {}, roomChats: {}, roomIdentity: null, roomIdentities: {} },
 });
 
 const reputationStore = new Store<ReputationSchema>({
@@ -329,6 +332,75 @@ export function clearRoomHistory(roomId: string): void {
   const all = roomsStore.get('roomHistory') ?? {};
   delete all[roomId];
   roomsStore.set('roomHistory', all);
+}
+
+// === Room chat (gossiped messages, persisted locally + capped) ===
+// Message text is encrypted at rest (safeStorage/DPAPI) so the on-disk log is
+// not readable plaintext; metadata (id/at/sender) stays clear for indexing.
+
+export function getRoomChats(roomId: string): RoomChatMessage[] {
+  const list = (roomsStore.get('roomChats') ?? {})[roomId] ?? [];
+  return list.map((m) => ({ ...m, text: decryptSecret(m.text) }));
+}
+
+export function appendRoomChats(roomId: string, messages: RoomChatMessage[]): void {
+  if (!messages.length) return;
+  const all = roomsStore.get('roomChats') ?? {};
+  const seen = new Set((all[roomId] ?? []).map((m) => m.id));
+  const fresh = messages
+    .filter((m) => m.id && !seen.has(m.id))
+    .map((m) => ({ ...m, text: encryptSecret(m.text) }));
+  if (!fresh.length) return;
+  all[roomId] = (all[roomId] ?? []).concat(fresh).slice(-200); // cap
+  roomsStore.set('roomChats', all);
+}
+
+export function clearRoomChats(roomId: string): void {
+  const all = roomsStore.get('roomChats') ?? {};
+  delete all[roomId];
+  roomsStore.set('roomChats', all);
+}
+
+// === Room identity (Ed25519 signing keypair + per-room TOFU pubkey roster) ===
+
+/**
+ * This install's long-term Ed25519 signing keypair, lazily created. The private
+ * key is encrypted at rest (safeStorage). Returned with the private key in PEM
+ * so the room engine can sign chat messages; the public key proves authorship to
+ * peers. NOT exposed to the renderer.
+ */
+export function getRoomIdentity(): { pub: string; priv: string } {
+  let id = roomsStore.get('roomIdentity');
+  if (!id || !id.pub || !id.priv) {
+    const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
+    const pub = publicKey.export({ type: 'spki', format: 'pem' }).toString();
+    const priv = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+    id = { pub, priv: encryptSecret(priv) };
+    roomsStore.set('roomIdentity', id);
+  }
+  return { pub: id.pub, priv: decryptSecret(id.priv) };
+}
+
+/** Known (TOFU-bound) memberId → public key map for a room. */
+export function getRoomIdentities(roomId: string): Record<string, string> {
+  return (roomsStore.get('roomIdentities') ?? {})[roomId] ?? {};
+}
+
+/** Bind a memberId to a public key the first time we see it (trust on first use). */
+export function addRoomIdentity(roomId: string, memberId: string, pub: string): void {
+  if (!memberId || !pub) return;
+  const all = roomsStore.get('roomIdentities') ?? {};
+  const roomMap = all[roomId] ?? {};
+  if (roomMap[memberId] === pub) return;
+  roomMap[memberId] = pub;
+  all[roomId] = roomMap;
+  roomsStore.set('roomIdentities', all);
+}
+
+export function clearRoomIdentities(roomId: string): void {
+  const all = roomsStore.get('roomIdentities') ?? {};
+  delete all[roomId];
+  roomsStore.set('roomIdentities', all);
 }
 
 // === Room mutes (locally-hidden members — per install, never broadcast) ===

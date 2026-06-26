@@ -88,6 +88,15 @@ export class RoomManager {
     ipcMain.on('room-history-add', (_e, payload: { roomId: string; event: import('../../shared/types').RoomEvent }) => {
       try { if (payload?.roomId && payload?.event?.id) db.appendRoomEvents(payload.roomId, [payload.event]); } catch { /* ignore */ }
     });
+    // A chat message (sent or received) — persist it (capped, deduped by id).
+    ipcMain.on('room-chat-add', (_e, payload: { roomId: string; message: import('../../shared/types').RoomChatMessage }) => {
+      try { if (payload?.roomId && payload?.message?.id) db.appendRoomChats(payload.roomId, [payload.message]); } catch { /* ignore */ }
+    });
+    // The engine TOFU-bound a member's public key — persist so the binding (and
+    // thus anti-impersonation) survives restarts.
+    ipcMain.on('room-identity-add', (_e, payload: { roomId: string; memberId: string; pub: string }) => {
+      try { if (payload?.roomId && payload?.memberId && payload?.pub) db.addRoomIdentity(payload.roomId, payload.memberId, payload.pub); } catch { /* ignore */ }
+    });
     // A joiner learned who the room owner is from a peer — persist it.
     ipcMain.on('room-owner', (_e, payload: { roomId: string; ownerId: string }) => {
       try {
@@ -200,13 +209,14 @@ export class RoomManager {
 
   private async joinPayload(roomId: string, name: string, code: string, folder: string, ownerId?: string, e2e?: boolean, secret?: string) {
     const profile = db.getRoomProfile();
+    const identity = db.getRoomIdentity();
     let useTurn = true;
     try { useTurn = (await db.getSettings()).shareUseTurn !== false; } catch { /* default on */ }
     return {
       type: 'join',
       payload: {
         roomId, name, code, folder,
-        self: { memberId: profile.memberId, name: profile.name, avatarSeed: profile.avatarSeed },
+        self: { memberId: profile.memberId, name: profile.name, avatarSeed: profile.avatarSeed, pub: identity.pub, priv: identity.priv },
         useTurn,
         turnServers: TURN_SERVERS,
         tombstones: db.getRoomTombstones(roomId),
@@ -214,6 +224,8 @@ export class RoomManager {
         ownerId: ownerId ?? '',
         mutes: db.getRoomMutes(roomId),
         history: db.getRoomHistory(roomId),
+        chat: db.getRoomChats(roomId),
+        identities: db.getRoomIdentities(roomId),
         e2e: e2e ?? false,
         secret: secret ?? '',
         cacheDir: this.encCacheDir(roomId),
@@ -286,6 +298,8 @@ export class RoomManager {
     db.clearRoomManifest(roomId);
     db.clearRoomHistory(roomId);
     db.clearRoomMutes(roomId);
+    db.clearRoomChats(roomId);
+    db.clearRoomIdentities(roomId);
     try { fs.rmSync(this.encCacheDir(roomId), { recursive: true, force: true }); } catch { /* ignore */ }
     this.cache.delete(roomId);
     return { ok: true };
@@ -392,6 +406,19 @@ export class RoomManager {
     if (this.win && !this.win.isDestroyed() && this.ready) {
       this.win.webContents.send('room-cmd', { type: 'sync', reqId: ++this.reqSeq, roomId, payload });
     }
+  }
+
+  /** Send a chat message to a room (broadcast to peers + recorded locally). */
+  async sendChat(roomId: string, text: string): Promise<{ ok: boolean }> {
+    const body = String(text || '').trim();
+    if (!body) return { ok: false };
+    const persisted = db.getPersistedRooms().find((r) => r.roomId === roomId);
+    if (!persisted) throw new Error('Room not found');
+    if (!this.cache.has(roomId)) await this.reactivate(persisted);
+    if (this.win && !this.win.isDestroyed() && this.ready) {
+      this.win.webContents.send('room-cmd', { type: 'chat', reqId: ++this.reqSeq, roomId, payload: { text: body } });
+    }
+    return { ok: true };
   }
 
   /** Re-join all persisted rooms on startup so swarms reconnect automatically. */

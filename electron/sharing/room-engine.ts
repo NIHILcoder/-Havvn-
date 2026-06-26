@@ -27,18 +27,15 @@ import path from 'path';
 import WebTorrent from 'webtorrent';
 import { deriveKey, topicHash, randomPeerId, encrypt, decrypt, generateRoomCode } from './room-crypto';
 import { encryptFile, decryptFile } from './room-e2e';
-import { RoomFile, RoomMember, RoomState, RoomTransfer, PersistedRoomFile, RoomEvent } from '../../shared/types';
+import { RoomFile, RoomMember, RoomState, RoomTransfer, PersistedRoomFile, RoomEvent, RoomChatMessage } from '../../shared/types';
 import crypto from 'crypto';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const TrackerClient = require('bittorrent-tracker') as any;
 
-const ROOM_TRACKERS = [
-  'wss://tracker.openwebtorrent.com',
-  'wss://tracker.webtorrent.dev',
-  'wss://tracker.files.fm:7073/announce',
-];
-import { STUN_SERVERS } from './ice-servers';
+import { STUN_SERVERS, RENDEZVOUS_TRACKERS } from './ice-servers';
+
+const ROOM_TRACKERS = RENDEZVOUS_TRACKERS;
 
 const w = window as any;
 const nativeWrtc = {
@@ -73,7 +70,13 @@ type Msg =
   | { t: 'bye'; memberId: string }
   // Watch-together: relayed verbatim to peers; the renderers keep playback in sync
   // and show who's in the session ('join'/'leave'/'beat' presence).
-  | { t: 'sync'; fileId: string; action: 'play' | 'pause' | 'seek' | 'state' | 'join' | 'leave' | 'beat'; position: number; rate: number; at: number; memberId: string; name: string; avatarSeed: string; playing: boolean };
+  | { t: 'sync'; fileId: string; action: 'play' | 'pause' | 'seek' | 'state' | 'join' | 'leave' | 'beat'; position: number; rate: number; at: number; memberId: string; name: string; avatarSeed: string; playing: boolean }
+  // A chat message. Carries its own id (dedupes re-delivery across multiple wires)
+  // and the sender's identity so peers can render it without a member lookup.
+  // `pub` is the sender's Ed25519 public key (PEM) and `sig` an Ed25519 signature
+  // over the immutable fields — proves authorship, so no keyholder can post under
+  // another member's id (anti-spoofing on top of the room-key confidentiality).
+  | { t: 'chat'; id: string; memberId: string; name: string; avatarSeed: string; text: string; at: number; pub: string; sig: string };
 
 interface Wire { id: number; peer: any; memberId?: string; }
 
@@ -88,7 +91,7 @@ interface Room {
   iceServers: any[];
   tracker: any;
   started: boolean;
-  self: { memberId: string; name: string; avatarSeed: string };
+  self: { memberId: string; name: string; avatarSeed: string; pub: string; priv: string };
   ownerId: string;                       // memberId of the owner ('' until learned)
   e2e: boolean;                          // end-to-end encryption (ciphertext on the wire)
   secret: string;                        // E2E content key (32-byte hex; '' until learned)
@@ -100,6 +103,8 @@ interface Room {
   tombstones: Set<string>;               // deleted fileIds — never re-add them
   mutes: Set<string>;                    // locally-muted memberIds (per install)
   history: RoomEvent[];                  // activity log, newest last (capped)
+  chat: RoomChatMessage[];               // chat messages, newest last (capped)
+  identities: Map<string, string>;       // memberId → Ed25519 public key (PEM), TOFU-bound
   kicked: boolean;                       // the owner removed us (session-only)
   kickedBy: string;                      // who removed us (display name)
   snapshotTimer: any;
@@ -164,6 +169,7 @@ function buildState(room: Room): RoomState {
     files: Array.from(room.files.values()).sort((a, b) => a.addedAt - b.addedAt),
     transfers,
     history: room.history.slice(-100),
+    chat: room.chat.slice(-100),
     connected: room.started,
     peerCount: onlinePeers,
     kicked: room.kicked,
@@ -259,6 +265,54 @@ function logEvent(room: Room, ev: Omit<RoomEvent, 'id' | 'at'>): void {
   if (room.history.length > 200) room.history = room.history.slice(-200);
   try { ipcRenderer.send('room-history-add', { roomId: room.roomId, event: full }); } catch { /* ignore */ }
   pushState(room);
+}
+
+/**
+ * Record a chat message (in memory + persisted) and refresh the UI immediately.
+ * Idempotent on message id so re-delivery across multiple wires is harmless.
+ */
+function addChat(room: Room, msg: RoomChatMessage): void {
+  if (room.chat.some((m) => m.id === msg.id)) return;
+  room.chat.push(msg);
+  if (room.chat.length > 200) room.chat = room.chat.slice(-200);
+  try { ipcRenderer.send('room-chat-add', { roomId: room.roomId, message: msg }); } catch { /* ignore */ }
+  pushState(room, true);
+}
+
+// ── Chat authorship (Ed25519) ────────────────────────────────────────────────
+// The room key already gates WHO can read/write (you need the code). Signing adds
+// WHICH member wrote each message: the signature covers the immutable fields plus
+// the room topic (so a signed message can't be replayed into another room), and
+// each memberId is trust-on-first-use bound to one public key — so a keyholder
+// cannot post under someone else's identity.
+
+/** Stable bytes to sign/verify for a chat message. */
+function chatCanonical(topic: string, m: { id: string; at: number; memberId: string; text: string }): Buffer {
+  return Buffer.from(JSON.stringify([topic, m.id, m.at, m.memberId, m.text]), 'utf8');
+}
+
+function signChat(room: Room, m: { id: string; at: number; memberId: string; text: string }): string {
+  try {
+    return crypto.sign(null, chatCanonical(room.topic, m), crypto.createPrivateKey(room.self.priv)).toString('base64');
+  } catch (e) { log('chat sign failed: ' + String(e)); return ''; }
+}
+
+/**
+ * Verify a chat message's signature and enforce the memberId→pubkey binding.
+ * Returns true only if the signature is valid AND the sender's pubkey matches the
+ * one already bound to that memberId (binding it on first sight). Drops on any
+ * mismatch — that's an impersonation attempt.
+ */
+function verifyChat(room: Room, msg: { id: string; at: number; memberId: string; text: string; pub: string; sig: string }): boolean {
+  if (!msg.pub || !msg.sig) return false;
+  const bound = room.identities.get(msg.memberId);
+  if (bound && bound !== msg.pub) { log('chat identity mismatch for ' + msg.memberId + ' — dropped'); return false; }
+  let ok = false;
+  try { ok = crypto.verify(null, chatCanonical(room.topic, msg), crypto.createPublicKey(msg.pub), Buffer.from(msg.sig, 'base64')); }
+  catch (e) { log('chat verify error: ' + String(e)); return false; }
+  if (!ok) { log('chat bad signature from ' + msg.memberId + ' — dropped'); return false; }
+  if (!bound) { room.identities.set(msg.memberId, msg.pub); try { ipcRenderer.send('room-identity-add', { roomId: room.roomId, memberId: msg.memberId, pub: msg.pub }); } catch { /* ignore */ } }
+  return true;
 }
 
 /** Learn who the room owner is from a peer (joiners start not knowing). First
@@ -410,6 +464,18 @@ function onMessage(room: Room, wire: Wire, raw: any): void {
           memberId: msg.memberId, name: msg.name, avatarSeed: msg.avatarSeed, playing: msg.playing,
         });
       } catch { /* ignore */ }
+      break;
+    }
+    case 'chat': {
+      if (room.mutes.has(msg.memberId)) break; // a muted member's messages stay hidden
+      const text = String(msg.text || '').slice(0, 2000);
+      if (!text) break;
+      // Reject unsigned, badly-signed, or impersonating messages outright.
+      if (!verifyChat(room, { id: String(msg.id), at: Number(msg.at) || 0, memberId: msg.memberId, text, pub: msg.pub, sig: msg.sig })) break;
+      // Keep the sender fresh in the member list so a chatter never looks offline.
+      const m = room.members.get(msg.memberId);
+      if (m) m.lastSeen = Date.now();
+      addChat(room, { id: String(msg.id), at: Number(msg.at) || Date.now(), memberId: msg.memberId, name: msg.name || '?', avatarSeed: msg.avatarSeed || msg.memberId, text });
       break;
     }
   }
@@ -769,7 +835,7 @@ function kickMember(room: Room, memberId: string): void {
 
 // ── Room lifecycle ───────────────────────────────────────────────────────────
 function startRoom(p: { roomId: string; name: string; code: string; folder: string;
-  self: { memberId: string; name: string; avatarSeed: string }; useTurn: boolean; turnServers?: any[]; tombstones?: string[]; manifest?: PersistedRoomFile[]; ownerId?: string; mutes?: string[]; history?: RoomEvent[]; e2e?: boolean; secret?: string; cacheDir?: string }): RoomState {
+  self: { memberId: string; name: string; avatarSeed: string; pub: string; priv: string }; useTurn: boolean; turnServers?: any[]; tombstones?: string[]; manifest?: PersistedRoomFile[]; ownerId?: string; mutes?: string[]; history?: RoomEvent[]; chat?: RoomChatMessage[]; identities?: Record<string, string>; e2e?: boolean; secret?: string; cacheDir?: string }): RoomState {
   let room = rooms.get(p.roomId);
   if (room) return buildState(room);
 
@@ -802,6 +868,8 @@ function startRoom(p: { roomId: string; name: string; code: string; folder: stri
     tombstones: new Set(p.tombstones || []),
     mutes: new Set(p.mutes || []),
     history: (p.history || []).slice(-200),
+    chat: (p.chat || []).slice(-200),
+    identities: new Map(Object.entries(p.identities || {})),
     kicked: false,
     kickedBy: '',
     snapshotTimer: null,
@@ -917,6 +985,27 @@ function releaseFile(roomId: string, fileId: string): void {
   pushState(room, true);
 }
 
+/** Broadcast a chat message to the room and record it locally (so we see our own). */
+function sendChat(roomId: string, rawText: string): void {
+  const room = rooms.get(roomId);
+  if (!room) return;
+  const text = String(rawText || '').trim().slice(0, 2000);
+  if (!text) return;
+  const msg: RoomChatMessage = {
+    id: crypto.randomBytes(8).toString('hex'),
+    at: Date.now(),
+    memberId: room.self.memberId,
+    name: room.self.name || 'You',
+    avatarSeed: room.self.avatarSeed,
+    text,
+  };
+  const sig = signChat(room, msg);
+  // Bind our own identity locally too, so the roster is complete on our side.
+  if (!room.identities.has(room.self.memberId)) room.identities.set(room.self.memberId, room.self.pub);
+  broadcast(room, { t: 'chat', ...msg, pub: room.self.pub, sig });
+  addChat(room, msg);
+}
+
 /** Apply a profile change (name/avatar) to every active room and tell peers. */
 function updateProfile(p: { name?: string; avatarSeed?: string }): void {
   for (const room of rooms.values()) {
@@ -975,6 +1064,7 @@ ipcRenderer.on('room-cmd', async (_e, msg: any) => {
       });
       data = { ok: true };
     }
+    else if (type === 'chat') { sendChat(msg.roomId, String((msg.payload || {}).text || '')); data = { ok: true }; }
     else if (type === 'snapshot') { const r = rooms.get(msg.roomId); data = r ? buildState(r) : null; }
     else throw new Error('Unknown room command: ' + type);
     ipcRenderer.send('room-res', { reqId, ok: true, data });

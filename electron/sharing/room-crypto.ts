@@ -15,9 +15,12 @@
 import crypto from 'crypto';
 
 // Curated, easy-to-say wordlists. Kept short and unambiguous (no homophones,
-// no easily-confused words). Code = adj-adj-noun-noun-NNNN → ~45 bits, enough
-// for friend sharing where each brute-force guess is network-bound (tracker
-// announce + WebRTC handshake + failed GCM decrypt).
+// no easily-confused words). Code = adj-adj-noun-noun-NNNN: 32·32·32·32·9000 ≈
+// 2^33 of entropy. Modest in absolute terms, but a remote guess is network-bound
+// (tracker announce + WebRTC handshake + a failed GCM decrypt per attempt), so
+// online brute force is impractical for friend-scale sharing. Chat messages are
+// additionally Ed25519-signed and bound to a member identity, so even a code
+// holder cannot post as someone else.
 const ADJECTIVES = [
   'swift', 'brave', 'calm', 'clever', 'cosmic', 'bright', 'bold', 'lucky',
   'quiet', 'mighty', 'nimble', 'royal', 'silent', 'sunny', 'velvet', 'witty',

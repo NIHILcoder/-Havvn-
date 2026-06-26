@@ -120,6 +120,16 @@ export interface RoomMember {
   muted?: boolean;       // locally hidden/ignored on THIS install (not broadcast)
 }
 
+/** A chat message in a room (gossiped between members; capped + persisted locally). */
+export interface RoomChatMessage {
+  id: string;            // stable id (dedupes re-delivery across wires)
+  at: number;            // sender's clock (ms)
+  memberId: string;      // who sent it
+  name: string;          // sender display name at send time
+  avatarSeed: string;    // sender avatar at send time
+  text: string;          // message body (already trimmed + length-capped)
+}
+
 /** An entry in a room's activity log (locally observed; capped + persisted). */
 export interface RoomEvent {
   id: string;
@@ -159,6 +169,7 @@ export interface RoomState {
   files: RoomFile[];
   transfers: Record<string, RoomTransfer>;
   history: RoomEvent[];  // recent activity, newest last
+  chat: RoomChatMessage[];  // recent chat messages, newest last
   connected: boolean;    // tracker rendezvous connected
   peerCount: number;     // live gossip peers right now
   kicked?: boolean;      // the owner removed us from this room (session-only)
@@ -873,6 +884,7 @@ export interface IpcApi {
     removeFile: (roomId: string, fileId: string) => Promise<{ ok: boolean }>;
     setMuted: (roomId: string, memberId: string, muted: boolean) => Promise<{ ok: boolean }>;
     kick: (roomId: string, memberId: string) => Promise<{ ok: boolean }>;
+    sendChat: (roomId: string, text: string) => Promise<{ ok: boolean }>;
   };
   onRoomUpdate: (callback: (state: RoomState) => void) => () => void;
   onRoomSync: (callback: (msg: { roomId: string; fileId: string; action: string; position: number; rate: number; at: number; memberId: string; name: string; avatarSeed?: string; playing?: boolean }) => void) => () => void;

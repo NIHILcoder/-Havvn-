@@ -517,6 +517,9 @@ const RoomDetail: React.FC<DetailProps> = ({ room, onAddFiles, onOpenFolder, onI
         )}
       </div>
 
+      {/* Chat */}
+      <RoomChat room={room} />
+
       {/* Activity */}
       <div className="room-section">
         <div className="room-section-title">{t('rooms.history')}</div>
@@ -533,6 +536,72 @@ const RoomDetail: React.FC<DetailProps> = ({ room, onAddFiles, onOpenFolder, onI
             ))}
           </div>
         )}
+      </div>
+    </div>
+  );
+};
+
+// ── Room chat panel ───────────────────────────────────────────────────────
+const RoomChat: React.FC<{ room: RoomState }> = ({ room }) => {
+  const { t } = useTranslation();
+  const [text, setText] = useState('');
+  const [sending, setSending] = useState(false);
+  const selfId = room.members.find((m) => m.isSelf)?.memberId;
+  const messages = room.chat || [];
+  const listRef = useRef<HTMLDivElement>(null);
+
+  // Keep the view pinned to the newest message as the log grows.
+  useEffect(() => {
+    const el = listRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages.length]);
+
+  const send = async () => {
+    const body = text.trim();
+    if (!body || sending) return;
+    setSending(true);
+    setText('');
+    try { await window.api.rooms.sendChat(room.roomId, body); }
+    catch (e) { toast.error(String(e instanceof Error ? e.message : e)); setText(body); }
+    finally { setSending(false); }
+  };
+
+  return (
+    <div className="room-section">
+      <div className="room-section-title">{t('rooms.chat')}</div>
+      <div className="room-chat">
+        <div className="room-chat-log" ref={listRef}>
+          {messages.length === 0 ? (
+            <div className="room-files-empty">{t('rooms.chatEmpty')}</div>
+          ) : (
+            messages.slice(-100).map((m) => {
+              const mine = m.memberId === selfId;
+              return (
+                <div key={m.id} className={`room-chat-msg ${mine ? 'mine' : ''}`}>
+                  {!mine && <Identicon seed={m.avatarSeed} size={28} />}
+                  <div className="room-chat-bubble-wrap">
+                    {!mine && <span className="room-chat-author">{m.name || '?'}</span>}
+                    <span className="room-chat-bubble">{m.text}</span>
+                    <span className="room-chat-time">{shortTime(m.at)}</span>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+        <div className="room-chat-compose">
+          <input
+            className="rooms-input"
+            placeholder={t('rooms.chatPlaceholder')}
+            value={text}
+            maxLength={2000}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+          />
+          <Button variant="primary" size="sm" onClick={send} loading={sending} disabled={!text.trim()} icon={<Icon name="send" size={14} />}>
+            {t('rooms.chatSend')}
+          </Button>
+        </div>
       </div>
     </div>
   );

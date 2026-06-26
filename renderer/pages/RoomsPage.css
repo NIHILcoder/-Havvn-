@@ -293,6 +293,60 @@
 .room-history-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .room-history-time { font-size: 11px; color: var(--color-text-tertiary); flex-shrink: 0; font-variant-numeric: tabular-nums; }
 
+/* Chat */
+.room-chat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-secondary);
+  overflow: hidden;
+}
+.room-chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 320px;
+  min-height: 120px;
+  overflow-y: auto;
+  padding: var(--space-3);
+}
+.room-chat-log .room-files-empty { margin: auto 0; background: transparent; border: none; }
+.room-chat-msg { display: flex; align-items: flex-end; gap: var(--space-2); max-width: 82%; }
+.room-chat-msg.mine { align-self: flex-end; flex-direction: row-reverse; }
+.room-chat-bubble-wrap { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.room-chat-msg.mine .room-chat-bubble-wrap { align-items: flex-end; }
+.room-chat-author { font-size: 11px; font-weight: 600; color: var(--color-text-secondary); padding: 0 var(--space-1); }
+.room-chat-bubble {
+  padding: 7px 11px;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  border-bottom-left-radius: 4px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--color-text-primary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.room-chat-msg.mine .room-chat-bubble {
+  background: var(--color-accent);
+  color: var(--color-bg-primary);
+  border-color: transparent;
+  border-radius: 14px;
+  border-bottom-right-radius: 4px;
+}
+.room-chat-time { font-size: 10px; color: var(--color-text-tertiary); padding: 0 var(--space-1); font-variant-numeric: tabular-nums; }
+.room-chat-compose {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg-primary);
+}
+.room-chat-compose .rooms-input { flex: 1; }
+
 /* Files */
 .room-files { display: flex; flex-direction: column; gap: var(--space-2); }
 .room-files-empty {

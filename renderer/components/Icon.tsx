@@ -96,7 +96,9 @@ export type IconName =
   | 'help-circle'
   | 'cpu'
   | 'link'
-  | 'rss';
+  | 'rss'
+  | 'send'
+  | 'message-circle';
 
 interface IconProps {
   name: IconName;
@@ -195,6 +197,8 @@ const paths: Record<IconName, string> = {
   'cpu': 'M4 4h16v16H4z M9 9h6v6H9z M9 1v3 M15 1v3 M9 20v3 M15 20v3 M20 9h3 M20 14h3 M1 9h3 M1 14h3',
   'link': 'M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71 M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71',
   'rss': 'M4 11a9 9 0 0 1 9 9 M4 4a16 16 0 0 1 16 16 M5 19a1 1 0 1 0 0-2 1 1 0 0 0 0 2z',
+  'send': 'M22 2L11 13 M22 2l-7 20-4-9-9-4 20-7z',
+  'message-circle': 'M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z',
 };
 
 export const Icon: React.FC<IconProps> = ({
