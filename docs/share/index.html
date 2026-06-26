@@ -129,13 +129,13 @@
     // ICE servers — keep in sync with the desktop seeder (share-seeder.ts).
     var STUN_SERVERS = [
       { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
       { urls: 'stun:global.stun.twilio.com:3478' }
     ];
-    var TURN_SERVERS = [
-      { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-      { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-      { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
-    ];
+    // No bundled TURN — the free openrelay project is defunct (kept in sync with
+    // electron/sharing/ice-servers.ts). Connectivity relies on direct/STUN/IPv6.
+    var TURN_SERVERS = [];
     var ICE_SERVERS = noTurn ? STUN_SERVERS : STUN_SERVERS.concat(TURN_SERVERS);
     var client = new WebTorrent({ tracker: { rtcConfig: { iceServers: ICE_SERVERS } } });
     client.on('error', function (e) { fail('Error: ' + (e && e.message ? e.message : e)); });

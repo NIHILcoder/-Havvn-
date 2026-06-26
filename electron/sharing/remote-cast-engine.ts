@@ -23,12 +23,9 @@ import { spawn, ChildProcess } from 'child_process';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const TrackerClient = require('bittorrent-tracker') as any;
 
-const TRACKERS = [
-  'wss://tracker.openwebtorrent.com',
-  'wss://tracker.webtorrent.dev',
-  'wss://tracker.files.fm:7073/announce',
-];
-import { STUN_SERVERS } from './ice-servers';
+import { STUN_SERVERS, RENDEZVOUS_TRACKERS } from './ice-servers';
+
+const TRACKERS = RENDEZVOUS_TRACKERS;
 
 const w = window as any;
 const nativeWrtc = {

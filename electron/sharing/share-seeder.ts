@@ -18,16 +18,13 @@ import fs from 'fs';
 // seed from a path — while WebRTC comes from the window below.
 import WebTorrent from 'webtorrent';
 
-const SHARE_TRACKERS = [
-  'wss://tracker.openwebtorrent.com',
-  'wss://tracker.webtorrent.dev',
-  'wss://tracker.files.fm:7073/announce',
-];
 const RECEIVER_BASE = 'https://nihilcoder.github.io/TorrentHunt/share/';
 
-// ICE servers come from the shared module (see ice-servers.ts for the
-// privacy notes). This preload runs with sandbox:false, so require() works.
-import { STUN_SERVERS, TURN_SERVERS } from './ice-servers';
+// ICE servers + rendezvous trackers come from the shared module (see
+// ice-servers.ts). This preload runs with sandbox:false, so require() works.
+import { STUN_SERVERS, TURN_SERVERS, RENDEZVOUS_TRACKERS } from './ice-servers';
+
+const SHARE_TRACKERS = RENDEZVOUS_TRACKERS;
 
 const w = window as any;
 const nativeWrtc = {

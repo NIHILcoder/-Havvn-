@@ -45,12 +45,14 @@
     'wss://tracker.webtorrent.dev',
     'wss://tracker.files.fm:7073/announce'
   ];
-  const STUN = [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:global.stun.twilio.com:3478' }];
-  const TURN = [
-    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
+  const STUN = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:global.stun.twilio.com:3478' }
   ];
+  // No bundled TURN — openrelay is defunct (kept in sync with ice-servers.ts).
+  const TURN = [];
 
   // Parse the session id (and optional "|nt" = no TURN) from the URL hash.
   let raw = '';

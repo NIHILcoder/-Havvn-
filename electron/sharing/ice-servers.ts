@@ -1,16 +1,17 @@
 /**
- * Single source of truth for WebRTC ICE servers (share links, rooms,
- * remote cast). Previously each module carried its own copy.
+ * Single source of truth for WebRTC connectivity — ICE servers AND the rendezvous
+ * trackers — shared by every P2P surface (share links, rooms, remote cast).
+ * Previously each module carried its own copy and they drifted.
  *
  * STUN reveals each peer's public address (enough for most home NATs) and is
- * privacy-neutral. TURN relays the (encrypted) traffic through a third-party
- * server so peers behind symmetric NAT can still connect — that third party
- * then sees both IPs, so TURN is opt-out via the "Use TURN relays" setting.
+ * privacy-neutral. TURN would relay the (encrypted) traffic through a third party
+ * so peers behind symmetric NAT can still connect — but we bundle NONE (see below).
  *
- * NOTE: the openrelay.metered.ca free TURN project has been unreliable /
- * possibly discontinued for a while. Entries are kept (harmless if dead —
- * ICE just falls back to STUN), but for dependable cross-NAT connectivity a
- * self-hosted coturn or a metered.ca account key is the real fix.
+ * Connectivity ladder (zero-cost, see connectivity-strategy): direct/LAN/IPv6 →
+ * STUN hole-punching → peer-relay through a reachable room member → optional
+ * user-supplied TURN. The dev runs no servers; the only free external dependency
+ * is the public WebRTC rendezvous trackers, which broker the handshake and never
+ * see file bytes or plaintext.
  *
  * Keep in sync with the receiver pages (docs/share/index.html,
  * docs/watch/index.html) — those run in the browser and can't import this.
@@ -22,13 +23,29 @@ export interface IceServer {
   credential?: string;
 }
 
+// A few independent STUN endpoints for robust server-reflexive discovery. IPv6
+// host candidates are gathered automatically by the WebRTC stack (no NAT there),
+// so this list only matters for IPv4 NAT traversal.
 export const STUN_SERVERS: IceServer[] = [
   { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun2.l.google.com:19302' },
   { urls: 'stun:global.stun.twilio.com:3478' },
 ];
 
-export const TURN_SERVERS: IceServer[] = [
-  { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+// No public TURN is bundled. The free openrelay.metered.ca project that used to
+// live here is defunct — a dead TURN entry only produces failed STUN-binding log
+// spam without helping. The rare both-peers-symmetric-NAT case is covered by
+// peer-relay; a user who still needs a relay can add their OWN (self-hosted coturn
+// or a managed key) in settings, which gets merged in here at connect time.
+export const TURN_SERVERS: IceServer[] = [];
+
+// Rendezvous trackers (WebRTC signaling only). They broker the WebRTC handshake;
+// they never carry file bytes or any plaintext. We announce to all of them and
+// bittorrent-tracker tolerates any that are down, so multiple independent
+// operators give resilience without any of them being load-bearing.
+export const RENDEZVOUS_TRACKERS: string[] = [
+  'wss://tracker.openwebtorrent.com',
+  'wss://tracker.webtorrent.dev',
+  'wss://tracker.files.fm:7073/announce',
 ];
