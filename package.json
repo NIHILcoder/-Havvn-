@@ -1,7 +1,7 @@
 {
   "name": "torrenthunt",
   "version": "2.4.0",
-  "description": "A modern, agent-built BitTorrent client",
+  "description": "A modern, privacy-focused BitTorrent client",
   "main": "dist/electron/electron/main.js",
   "scripts": {
     "dev": "concurrently \"npm run dev:electron\" \"npm run dev:renderer\"",
