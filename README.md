@@ -9,8 +9,9 @@ A modern, privacy-focused desktop BitTorrent client built with Electron, React a
 WebTorrent. TorrentHunt keeps you in control — you bring your own indexers and feeds,
 and a **live privacy dashboard** shows exactly what the swarm can see about you. It also
 does the things classic clients can't: **stream a torrent to any device on your Wi-Fi
-or TV**, send files to a friend's **browser over WebRTC**, and sync an add-only shared
-folder in a private **room** — all peer-to-peer, no cloud.
+or TV**, send files to a friend's **browser over WebRTC**, and run a private **room**
+where friends' files auto-sync and you can **chat end-to-end encrypted** — all
+peer-to-peer, no servers.
 
 > **Legal use only.** TorrentHunt does not bundle indexers for copyrighted material.
 > The only pre-seeded source is a Creative Commons / open-source RSS feed (FOSS Torrents),
@@ -81,8 +82,18 @@ Compare the output against the SHA-256 published in the matching GitHub release.
   (peer-to-peer over WebRTC, no install on their side); short links + QR
 - **Rooms (friend swarms)** — create a private group, share a speakable invite code, and
   everyone's files auto-distribute peer-to-peer into a shared folder. No cloud: members
-  find each other over WebRTC, the file manifest and presence ride **AES-256-GCM**
-  channels keyed from the code, and each member gets an auto-generated identicon avatar
+  find each other over WebRTC and converge a file manifest, live presence, and
+  **end-to-end encrypted chat** over **AES-256-GCM** channels keyed from the code
+- **Tamper-proof chat** — every message is **signed (Ed25519)** and bound to a member
+  identity, so even someone who has the invite code can't post under another member's
+  name; the local chat history is **encrypted at rest**
+- **Pick your avatar** — choose from several deterministic avatar styles for your room
+  profile, generated on your device and never uploaded
+- **Connects across networks, zero infrastructure** — direct/IPv6/STUN cover the common
+  cases, and members who still can't reach each other are relayed **through another
+  member** automatically (relayed traffic stays end-to-end encrypted). For the rare
+  strict-NAT pair you can add **your own TURN relay** in settings — one side is enough.
+  Each member shows whether they're connected **directly or via a relay**
 
 ### Automation & networking
 - **Scheduler** for time-based bandwidth rules (supports windows that cross midnight)
@@ -125,7 +136,7 @@ Compare the output against the SHA-256 published in the matching GitHub release.
 |--------------|----------------------------------------------|
 | UI           | React 18, TypeScript, Framer Motion, Recharts |
 | State        | Zustand                                      |
-| Desktop      | Electron 28, Node.js                          |
+| Desktop      | Electron 42, Node.js                          |
 | Torrents     | WebTorrent                                    |
 | Persistence  | electron-store (local JSON)                   |
 | Build        | webpack (renderer), tsc (main), electron-builder |
@@ -229,6 +240,11 @@ multiple severity levels, and automatic cleanup of old files.
   through one, so use a VPN for network privacy.
 - **Watch anywhere (remote WebRTC streaming)** is experimental and depends on NAT
   traversal; it may not connect on every network.
+- **Room connectivity across strict NAT**: rooms connect for the large majority of
+  networks via direct/IPv6/STUN and **peer-relay through another member**. The one case
+  that can't connect with zero infrastructure is a room where *every* member is behind a
+  strict (symmetric) NAT and none is reachable — add **your own TURN relay** in settings
+  (one member is enough) for that.
 
 ---
 
