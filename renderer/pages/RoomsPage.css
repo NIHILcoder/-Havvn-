@@ -590,7 +590,28 @@
   background: transparent; color: var(--color-text-secondary, #9a9aa2);
 }
 .room-player-close:hover { background: var(--color-bg-tertiary, #1c1c24); color: var(--color-text-primary, #e7e7ea); }
+.room-player-stage { position: relative; }
 .room-player-video { width: 100%; max-height: 72vh; background: #000; outline: none; display: block; }
+
+/* Floating emoji reactions over the video */
+.room-player-reactions { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.room-reaction { position: absolute; bottom: 8%; font-size: 30px; line-height: 1; animation: room-react-rise 2.6s ease-out forwards; text-shadow: 0 2px 8px rgba(0,0,0,.5); }
+@keyframes room-react-rise {
+  0% { transform: translateY(0) scale(.5); opacity: 0; }
+  12% { transform: translateY(-10%) scale(1.15); opacity: 1; }
+  70% { opacity: 1; }
+  100% { transform: translateY(-220%) scale(1); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .room-reaction { animation-duration: .01s; opacity: 0; } }
+
+.room-player-reactbar { display: flex; gap: 4px; padding: 8px 12px; justify-content: center; border-bottom: 1px solid var(--color-border); flex-wrap: wrap; }
+.room-react-btn {
+  background: transparent; border: 1px solid transparent; border-radius: 8px;
+  font-size: 20px; line-height: 1; padding: 5px 8px; cursor: pointer;
+  transition: transform var(--transition-fast), background var(--transition-fast);
+}
+.room-react-btn:hover { background: var(--color-bg-tertiary); transform: scale(1.18); }
+.room-react-btn:active { transform: scale(.95); }
 .room-player-msg { padding: 12px; font-size: 13px; color: #9a9aa2; text-align: center; }
 .room-player-msg.err { color: #f87171; }
 .room-player-controller {

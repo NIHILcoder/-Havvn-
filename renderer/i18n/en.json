@@ -61,6 +61,7 @@
   "rooms.together.hint": "Sync play / pause / seek with everyone in the room.",
   "rooms.together.synced": "Following",
   "rooms.watching": "Watching now",
+  "rooms.react": "Send a reaction",
   "rooms.watchAlone": "You’re the only one here right now.",
   "rooms.delete": "Remove",
   "rooms.deleteHint": "Remove this file from the room for everyone. Downloaded copies are deleted; the original a member shared from is left alone.",

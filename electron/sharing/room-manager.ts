@@ -407,7 +407,7 @@ export class RoomManager {
   }
 
   /** Watch-together: broadcast a local playback action to the room's peers. */
-  broadcastSync(roomId: string, payload: { fileId: string; action: string; position: number; rate?: number; playing?: boolean }): void {
+  broadcastSync(roomId: string, payload: { fileId: string; action: string; position: number; rate?: number; playing?: boolean; emoji?: string }): void {
     if (this.win && !this.win.isDestroyed() && this.ready) {
       this.win.webContents.send('room-cmd', { type: 'sync', reqId: ++this.reqSeq, roomId, payload });
     }

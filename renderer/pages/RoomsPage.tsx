@@ -701,7 +701,24 @@ const RoomPlayer: React.FC<{ roomId: string; file: RoomFile; self: { memberId: s
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [watchers, setWatchers] = useState<Record<string, Watcher>>({});
+  const [reactions, setReactions] = useState<{ id: number; emoji: string; x: number }[]>([]);
+  const reactSeq = useRef(0);
   togetherRef.current = together;
+
+  // Float an emoji reaction up over the video, then drop it after the animation.
+  const spawnReaction = useCallback((emoji: string) => {
+    const id = ++reactSeq.current;
+    const x = 8 + Math.random() * 78; // % from the left
+    setReactions((r) => [...r.slice(-24), { id, emoji, x }]);
+    setTimeout(() => setReactions((r) => r.filter((it) => it.id !== id)), 2600);
+  }, []);
+
+  // Send a reaction to the room (and show it locally right away).
+  const react = useCallback((emoji: string) => {
+    spawnReaction(emoji);
+    const v = videoRef.current;
+    window.api.rooms.broadcastSync(roomId, { fileId: file.fileId, action: 'react', position: v ? v.currentTime : 0, emoji }).catch(() => {});
+  }, [spawnReaction, roomId, file.fileId]);
 
   // ── Cinema presence: announce we're watching, heartbeat, and leave ────────
   const presence = useCallback((action: 'join' | 'leave' | 'beat') => {
@@ -788,6 +805,8 @@ const RoomPlayer: React.FC<{ roomId: string; file: RoomFile; self: { memberId: s
       } else {
         setWatchers((w) => ({ ...w, [msg.memberId]: { memberId: msg.memberId, name: msg.name || '?', avatarSeed: msg.avatarSeed || msg.memberId, playing: !!msg.playing, lastSeen: Date.now() } }));
       }
+      // Reactions float for everyone, in or out of sync.
+      if (msg.action === 'react') { if (msg.emoji) spawnReaction(msg.emoji); return; }
       // Playback follow — only the actual control actions, only when in sync.
       if (!togetherRef.current) return;
       if (msg.action !== 'play' && msg.action !== 'pause' && msg.action !== 'seek') return;
@@ -805,7 +824,7 @@ const RoomPlayer: React.FC<{ roomId: string; file: RoomFile; self: { memberId: s
       }
     });
     return off;
-  }, [roomId, file.fileId]);
+  }, [roomId, file.fileId, spawnReaction]);
 
   const toggleTogether = () => {
     const next = !together;
@@ -826,7 +845,19 @@ const RoomPlayer: React.FC<{ roomId: string; file: RoomFile; self: { memberId: s
           </button>
           <button className="room-player-close" onClick={onClose}><Icon name="x" size={18} /></button>
         </div>
-        <video ref={videoRef} className="room-player-video" controls autoPlay playsInline />
+        <div className="room-player-stage">
+          <video ref={videoRef} className="room-player-video" controls autoPlay playsInline />
+          <div className="room-player-reactions" aria-hidden="true">
+            {reactions.map((r) => (
+              <span key={r.id} className="room-reaction" style={{ left: `${r.x}%` }}>{r.emoji}</span>
+            ))}
+          </div>
+        </div>
+        <div className="room-player-reactbar">
+          {['😂', '❤️', '🔥', '😮', '👏', '🎉', '😢', '💀'].map((e) => (
+            <button key={e} className="room-react-btn" onClick={() => react(e)} title={t('rooms.react')}>{e}</button>
+          ))}
+        </div>
         <div className="room-player-watchers">
           <span className="room-player-watchers-label"><Icon name="users" size={13} /> {t('rooms.watching')}</span>
           <div className="room-player-avatars">

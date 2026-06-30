@@ -888,14 +888,14 @@ export interface IpcApi {
     openFolder: (roomId: string) => Promise<void>;
     openFile: (roomId: string, fileId: string) => Promise<void>;
     watchFile: (roomId: string, fileId: string) => Promise<{ directUrl: string; hlsUrl: string; playerUrl: string; direct: boolean; kind: string; name: string }>;
-    broadcastSync: (roomId: string, payload: { fileId: string; action: string; position: number; rate?: number; playing?: boolean }) => Promise<{ ok: boolean }>;
+    broadcastSync: (roomId: string, payload: { fileId: string; action: string; position: number; rate?: number; playing?: boolean; emoji?: string }) => Promise<{ ok: boolean }>;
     removeFile: (roomId: string, fileId: string) => Promise<{ ok: boolean }>;
     setMuted: (roomId: string, memberId: string, muted: boolean) => Promise<{ ok: boolean }>;
     kick: (roomId: string, memberId: string) => Promise<{ ok: boolean }>;
     sendChat: (roomId: string, text: string) => Promise<{ ok: boolean }>;
   };
   onRoomUpdate: (callback: (state: RoomState) => void) => () => void;
-  onRoomSync: (callback: (msg: { roomId: string; fileId: string; action: string; position: number; rate: number; at: number; memberId: string; name: string; avatarSeed?: string; playing?: boolean }) => void) => () => void;
+  onRoomSync: (callback: (msg: { roomId: string; fileId: string; action: string; position: number; rate: number; at: number; memberId: string; name: string; avatarSeed?: string; playing?: boolean; emoji?: string }) => void) => () => void;
 
   // IP Blocklist
   blocklist: {

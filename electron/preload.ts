@@ -534,7 +534,7 @@ const api: IpcApi = {
     openFile: (roomId: string, fileId: string): Promise<void> => ipcRenderer.invoke('rooms:openFile', roomId, fileId),
     watchFile: (roomId: string, fileId: string): Promise<{ directUrl: string; hlsUrl: string; playerUrl: string; direct: boolean; kind: string; name: string }> =>
       ipcRenderer.invoke('rooms:watchFile', roomId, fileId),
-    broadcastSync: (roomId: string, payload: { fileId: string; action: string; position: number; rate?: number; playing?: boolean }): Promise<{ ok: boolean }> =>
+    broadcastSync: (roomId: string, payload: { fileId: string; action: string; position: number; rate?: number; playing?: boolean; emoji?: string }): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke('rooms:broadcastSync', roomId, payload),
     removeFile: (roomId: string, fileId: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke('rooms:removeFile', roomId, fileId),
@@ -552,7 +552,7 @@ const api: IpcApi = {
     return () => { ipcRenderer.removeListener('rooms:update', handler); };
   },
 
-  onRoomSync: (callback: (msg: { roomId: string; fileId: string; action: string; position: number; rate: number; at: number; memberId: string; name: string }) => void): (() => void) => {
+  onRoomSync: (callback: (msg: { roomId: string; fileId: string; action: string; position: number; rate: number; at: number; memberId: string; name: string; avatarSeed?: string; playing?: boolean; emoji?: string }) => void): (() => void) => {
     const handler = (_event: IpcRendererEvent, msg: any) => callback(msg);
     ipcRenderer.on('rooms:sync', handler);
     return () => { ipcRenderer.removeListener('rooms:sync', handler); };
