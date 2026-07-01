@@ -15,6 +15,7 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const SearchPage = lazy(() => import('./pages/SearchPage'));
 const RSSPage = lazy(() => import('./pages/RSSPage'));
 const RoomsPage = lazy(() => import('./pages/RoomsPage'));
+const SwarmPage = lazy(() => import('./pages/SwarmPage'));
 import { formatBytes } from './utils/format-helpers';
 import { I18nProvider } from './utils/i18nContext';
 import { dismissSplash } from './utils/splash';
@@ -214,6 +215,8 @@ const AppContent: React.FC = () => {
         return <RSSPage />;
       case 'rooms':
         return <RoomsPage />;
+      case 'swarm':
+        return <SwarmPage />;
       default:
         return <DownloadsPage filterMode={filterMode} onFilterChange={setFilterMode} openTorrentUri={openTorrentUri} onOpenHandled={() => setOpenTorrentUri(null)} />;
     }

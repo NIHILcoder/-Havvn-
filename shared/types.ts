@@ -446,6 +446,25 @@ export interface IpInfo {
   fetchedAt: number;
 }
 
+// One country's aggregated presence in the live swarm map. Peers are grouped by
+// country (resolved offline via a country-level IP DB) — never by exact address,
+// so no peer IP leaves the machine and none is shown in the UI.
+export interface SwarmGeoPoint {
+  country: string;   // ISO 3166-1 alpha-2, uppercase
+  count: number;     // connected peer-connections resolved to this country
+  downBps: number;   // aggregate download speed from these peers
+  upBps: number;     // aggregate upload speed to these peers
+  seeds: number;     // of `count`, how many are complete (seeders)
+}
+
+// Live snapshot for the swarm world map (polled by the renderer).
+export interface SwarmGeo {
+  points: SwarmGeoPoint[];
+  totalConns: number; // total peer-connections considered (incl. unresolved/IPv6)
+  resolved: number;   // connections resolved to a country
+  torrents: number;   // active torrents contributing peers
+}
+
 // Live network-health snapshot for the adaptive-throttle indicator.
 export interface NetworkHealth {
   adaptive: {
@@ -713,6 +732,8 @@ export interface IpcApi {
   setSeedTimeLimit: (id: string, minutes: number) => Promise<void>;
   // Peers
   getPeers: (id: string) => Promise<PeerInfo[]>;
+  // Live swarm world map: peers across all active torrents, grouped by country.
+  getSwarmGeo: () => Promise<SwarmGeo>;
   // Tracker management
   getTrackers: (id: string) => Promise<TrackerInfo[]>;
   addTracker: (id: string, url: string) => Promise<void>;

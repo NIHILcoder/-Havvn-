@@ -74,3 +74,18 @@ export function getTypeIcon(download: Download): IconName {
   if (download.category && TYPE_BY_CATEGORY[download.category]) return TYPE_BY_CATEGORY[download.category];
   return 'folder';
 }
+
+// Heuristic for showing a one-click "Watch/Listen" button on a row: the download
+// is likely playable when its name/category resolves to a video or audio type.
+// Non-obvious multi-file torrents still reach the player via the context menu
+// (which itself filters for streamable files), so this only gates the shortcut.
+export function looksLikeMedia(download: Download): boolean {
+  const icon = getTypeIcon(download);
+  if (icon === 'film' || icon === 'music') return true;
+  return download.category === 'movies' || download.category === 'music';
+}
+
+// True when the likely media is audio (so the button reads "Listen", not "Watch").
+export function isAudioMedia(download: Download): boolean {
+  return getTypeIcon(download) === 'music' || download.category === 'music';
+}

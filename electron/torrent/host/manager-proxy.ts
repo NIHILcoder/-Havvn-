@@ -159,6 +159,7 @@ class TorrentManagerProxy {
   getDownloads(...a: Parameters<TM['getDownloads']>): Fwd<TM['getDownloads']> { return this.rpc('getDownloads', a); }
   getFiles(...a: Parameters<TM['getFiles']>): Fwd<TM['getFiles']> { return this.rpc('getFiles', a); }
   getPeers(...a: Parameters<TM['getPeers']>): Fwd<TM['getPeers']> { return this.rpc('getPeers', a); }
+  getSwarmGeo(...a: Parameters<TM['getSwarmGeo']>): Fwd<TM['getSwarmGeo']> { return this.rpc('getSwarmGeo', a); }
   getTrackers(...a: Parameters<TM['getTrackers']>): Fwd<TM['getTrackers']> { return this.rpc('getTrackers', a); }
   getCastFileInfo(...a: Parameters<TM['getCastFileInfo']>): Fwd<TM['getCastFileInfo']> { return this.rpc('getCastFileInfo', a); }
   getStreamUrl(...a: Parameters<TM['getStreamUrl']>): Fwd<TM['getStreamUrl']> { return this.rpc('getStreamUrl', a); }

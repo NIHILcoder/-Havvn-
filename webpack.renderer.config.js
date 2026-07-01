@@ -31,6 +31,13 @@ module.exports = (env, argv) => ({
         test: /\.css$/,
         use: ['style-loader', 'css-loader'],
       },
+      {
+        // World-map geometry for the swarm map. Parsed as JSON but kept off the
+        // .json extension so TypeScript's resolveJsonModule doesn't try to infer
+        // a literal type for the whole ~800KB file (huge/slow).
+        test: /\.geojson$/,
+        type: 'json',
+      },
     ],
   },
   plugins: [

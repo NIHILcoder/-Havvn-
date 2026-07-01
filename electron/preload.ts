@@ -451,6 +451,10 @@ const api: IpcApi = {
   getPeers: (id: string) =>
     ipcRenderer.invoke('downloads:getPeers', id),
 
+  // Swarm world map (peers grouped by country, across all active torrents)
+  getSwarmGeo: () =>
+    ipcRenderer.invoke('swarm:getGeo'),
+
   // Tracker management
   getTrackers: (id: string) =>
     ipcRenderer.invoke('downloads:getTrackers', id),

@@ -1929,3 +1929,12 @@
     display: none;
   }
 }
+
+/* One-click Watch/Listen shortcut on media rows — the single action we want to
+   draw the eye toward (instant-play streaming). Uses the app's one accent. */
+.download-watch-btn {
+  color: var(--color-accent-primary);
+}
+.download-watch-btn:hover {
+  background: var(--color-accent-bg);
+}

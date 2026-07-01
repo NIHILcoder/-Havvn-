@@ -1180,6 +1180,13 @@ export function setupIpcHandlers(window: BrowserWindow): void {
     }
   ));
 
+  // Aggregated swarm geography for the live world map (all active torrents).
+  ipcMain.handle('swarm:getGeo', wrapHandler('swarm:getGeo',
+    async () => {
+      return torrentManager.getSwarmGeo();
+    }
+  ));
+
   // Tracker management
   ipcMain.handle('downloads:getTrackers', wrapHandler('downloads:getTrackers',
     async (_event, id: string) => {

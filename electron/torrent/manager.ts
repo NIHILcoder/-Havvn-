@@ -20,6 +20,8 @@ import {
   TrackerInfo,
   PeerInfo,
   NetworkHealth,
+  SwarmGeo,
+  SwarmGeoPoint,
 } from '../../shared/types';
 import {
   isValidTransition,
@@ -37,6 +39,10 @@ import { AdaptiveThrottle } from './adaptive-throttle';
 import { installDohLookup, configureDoh } from './host/doh-lookup';
 import { resolveActiveDohUrl, DohTemplate } from '../../shared/types';
 import { DEFAULT_TRACKERS } from './trackers';
+// Tiny (<300KB) offline IP→country lookup (IP2Location LITE, country-level only).
+// Deliberately NOT a city-level DB — keeps the installer lean; the swarm map
+// places peers at their country. IPv4-only; IPv6/unknown peers are unresolved.
+import ip3country = require('ip3country');
 
 // ffmpeg-static ships a platform binary; in a packaged app it lives in
 // app.asar.unpacked (it can't execute from inside the asar archive).
@@ -82,6 +88,36 @@ interface ManagedTorrent {
   // the specific torrent instance it was created for (torrents are recreated on
   // pause/resume), so we can tell when it has gone stale.
   streamServer?: { server: any; port: number; torrent: Torrent } | null;
+  // Active "instant-play" head prioritization for the file currently being
+  // streamed: a high-priority piece selection over the head of the file. Undone
+  // in closeStreamServer() so a normal (non-streaming) download reverts to its
+  // rarest-first, swarm-healthy picking.
+  streamHead?: { fileIndex: number; startPiece: number; endPiece: number } | null;
+  // True while streaming has forced a sequential strategy on this torrent, so
+  // closeStreamServer() knows to revert to the user's persisted setting.
+  streamStrategyOverridden?: boolean;
+}
+
+// Instant-play streaming ("zero-wait"): how much of the head of a file to fetch
+// at high priority so playback starts immediately, and the selection priority to
+// use. The priority must beat WebTorrent's own FileStream range priority (1) and
+// the default whole-torrent/whole-file selections (0) so the watched head wins.
+const STREAM_HEAD_BYTES = 16 * 1024 * 1024;
+const STREAM_HEAD_PRIORITY = 10;
+
+// True for IPv4 addresses that must never be geo-located: private (RFC1918),
+// loopback, link-local, CGNAT (100.64/10), and 0.0.0.0/8. Keeps LAN/relay peers
+// off the world map instead of mislocating them.
+function isPrivateOrReservedIPv4(addr: string): boolean {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(addr);
+  if (!m) return true; // not a dotted-quad → don't try to locate it
+  const a = +m[1], b = +m[2];
+  if (a === 10 || a === 127 || a === 0) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 169 && b === 254) return true;      // link-local
+  if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
+  return false;
 }
 
 type StatsCallback = (stats: DownloadStats[]) => void;
@@ -164,6 +200,9 @@ export class TorrentManager {
   // ships the merged, sorted ranges via applyIpBlocklist(); wires are hooked once.
   private blockedRanges: Array<[number, number]> = [];
   private blocklistHooked = false;
+  // Whether the offline country DB (ip3country) has been initialized. Lazy so a
+  // user who never opens the swarm map never pays its init cost.
+  private geoReady = false;
   // Alternative ("turbo"/turtle) speed limits and whether they're active.
   private altSpeedEnabled = false;
   private altDownKbps = 0;
@@ -2003,6 +2042,16 @@ export class TorrentManager {
    * or on shutdown, so we never leak HTTP servers or point at a dead torrent.
    */
   private closeStreamServer(managed: ManagedTorrent): void {
+    // Undo any instant-play prioritization first — this runs even for transcoded
+    // streams, which don't create a per-torrent streamServer but still forced the
+    // head selection / sequential strategy.
+    if (managed.streamHead || managed.streamStrategyOverridden) {
+      this.clearStreamHead(managed, managed.torrent);
+      if (managed.streamStrategyOverridden) {
+        managed.streamStrategyOverridden = false;
+        if (managed.torrent) this.applyStrategy(managed.torrent, managed.download.sequentialDownload === true);
+      }
+    }
     const s = managed.streamServer;
     if (!s) return;
     managed.streamServer = null;
@@ -2011,6 +2060,60 @@ export class TorrentManager {
       else s.server.close();
     } catch (e) {
       log.warn('Failed to close stream server', { id: managed.id, error: String(e) });
+    }
+  }
+
+  /**
+   * Instant-play ("zero-wait") prioritization for a file about to be streamed.
+   * WebTorrent only fetches the head of the file once the <video> issues its
+   * first Range request, and under the default rarest-first strategy even those
+   * head pieces arrive scattered — so playback stalls waiting for a contiguous
+   * run. Here we (1) select the head of the file at a high priority so it wins
+   * over other files/torrents, (2) mark the very first pieces critical so they're
+   * requested from every peer immediately, and (3) force a sequential strategy so
+   * the buffer fills in playback order. All three are reverted in
+   * closeStreamServer().
+   */
+  private prioritizeStreamHead(managed: ManagedTorrent, torrent: Torrent, fileIndex: number): void {
+    const file: any = torrent.files[fileIndex];
+    if (!file || file.length === 0) return;
+    const pieceLength: number = (torrent as any).pieceLength || 0;
+    if (!pieceLength) return;
+
+    // Clear any previous head selection so re-resolving (same or different file)
+    // never accumulates duplicate high-priority selections.
+    this.clearStreamHead(managed, torrent);
+
+    const startPiece: number = file._startPiece;
+    const endPiece: number = file._endPiece;
+    const headPieces = Math.max(2, Math.ceil(STREAM_HEAD_BYTES / pieceLength));
+    const headEnd = Math.min(startPiece + headPieces - 1, endPiece);
+
+    try {
+      (torrent as any).select(startPiece, headEnd, STREAM_HEAD_PRIORITY);
+      (torrent as any).critical(startPiece, Math.min(startPiece + 2, endPiece));
+    } catch (e) {
+      log.warn('Stream head prioritization failed (non-fatal)', { id: managed.id, error: String(e) });
+      return;
+    }
+    managed.streamHead = { fileIndex, startPiece, endPiece: headEnd };
+
+    // Force sequential piece picking while streaming so the buffer fills in order.
+    managed.streamStrategyOverridden = true;
+    this.applyStrategy(torrent, true);
+    log.debug('Stream head prioritized', { id: managed.id, fileIndex, startPiece, headEnd, headPieces });
+  }
+
+  /** Remove the active stream-head selection (best effort). */
+  private clearStreamHead(managed: ManagedTorrent, torrent: Torrent | null): void {
+    const head = managed.streamHead;
+    if (!head) return;
+    managed.streamHead = null;
+    if (!torrent) return;
+    try {
+      (torrent as any).deselect(head.startPiece, head.endPiece, STREAM_HEAD_PRIORITY);
+    } catch (e) {
+      log.warn('Failed to clear stream head selection', { id: managed.id, error: String(e) });
     }
   }
 
@@ -2041,6 +2144,9 @@ export class TorrentManager {
     const file = torrent.files[fileIndex];
     // Make sure the file is selected so its pieces actually download.
     try { (file as any).select(); } catch { /* ignore */ }
+    // Instant-play: prioritize the head of this file and fetch it in order so
+    // playback starts within a couple of pieces instead of waiting on the swarm.
+    this.prioritizeStreamHead(managed, torrent, fileIndex);
 
     const kind = classifyMediaKind(file.name);
 
@@ -2803,6 +2909,61 @@ export class TorrentManager {
     // Fastest peers first — most relevant to the user.
     out.sort((a, b) => (b.downSpeed + b.upSpeed) - (a.downSpeed + a.upSpeed));
     return out;
+  }
+
+  /**
+   * Aggregate every active torrent's connected peers by country for the live
+   * swarm world map. Resolution is done fully offline (a country-level IP DB),
+   * so no peer IP ever leaves the machine — the renderer only receives country
+   * codes and counts, never addresses. IPv6 and private/unroutable peers are
+   * counted in the total but left unresolved (the DB is IPv4 public-only).
+   */
+  getSwarmGeo(): SwarmGeo {
+    this.ensureGeoInit();
+    const byCountry = new Map<string, { count: number; downBps: number; upBps: number; seeds: number }>();
+    let totalConns = 0;
+    let resolved = 0;
+    let torrents = 0;
+
+    for (const managed of this.managedTorrents.values()) {
+      if (!managed.torrent) continue;
+      const peers = this.getPeers(managed.id);
+      if (peers.length > 0) torrents++;
+      for (const p of peers) {
+        totalConns++;
+        const cc = this.lookupCountry(p.address);
+        if (!cc) continue;
+        resolved++;
+        const e = byCountry.get(cc) || { count: 0, downBps: 0, upBps: 0, seeds: 0 };
+        e.count++;
+        e.downBps += p.downSpeed;
+        e.upBps += p.upSpeed;
+        if (p.progress >= 0.999) e.seeds++;
+        byCountry.set(cc, e);
+      }
+    }
+
+    const points: SwarmGeoPoint[] = [];
+    for (const [country, e] of byCountry) points.push({ country, ...e });
+    points.sort((a, b) => b.count - a.count);
+    return { points, totalConns, resolved, torrents };
+  }
+
+  /** Lazily initialize the offline country DB (CPU-ish, one-time). */
+  private ensureGeoInit(): void {
+    if (this.geoReady) return;
+    try { ip3country.init(); this.geoReady = true; }
+    catch (e) { log.warn('Country geo DB init failed (swarm map degraded)', { error: String(e) }); }
+  }
+
+  /** IPv4 public address → ISO country code, or null (IPv6/private/unknown). */
+  private lookupCountry(addr: string): string | null {
+    if (!this.geoReady || !addr || addr.indexOf(':') !== -1) return null; // IPv6 unsupported
+    if (isPrivateOrReservedIPv4(addr)) return null;
+    try {
+      const cc = ip3country.lookupStr(addr);
+      return cc && /^[A-Za-z]{2}$/.test(cc) ? cc.toUpperCase() : null;
+    } catch { return null; }
   }
 
   /**

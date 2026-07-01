@@ -7,7 +7,7 @@ import React, { useState } from 'react';
 import { Download, DownloadStats } from '../../shared/types';
 import { canPause } from '../../shared/state-machine';
 import { Button, Icon, ProgressBar, StatusBadge, HealthBadge } from '../components';
-import { ViewMode, formatBytes, formatSpeed, formatEta, getTypeIcon } from './download-helpers';
+import { ViewMode, formatBytes, formatSpeed, formatEta, getTypeIcon, looksLikeMedia, isAudioMedia } from './download-helpers';
 import { useTranslation } from '../utils/i18nContext';
 
 export interface DownloadItemProps {
@@ -26,6 +26,7 @@ export interface DownloadItemProps {
   onRetry: (id: string) => void;
   onOpenFolder: (path: string) => void;
   onShowFiles: (id: string) => void;
+  onStream?: (id: string) => void;
 }
 
 export const DownloadItem: React.FC<DownloadItemProps> = ({
@@ -44,6 +45,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
   onRetry,
   onOpenFolder,
   onShowFiles,
+  onStream,
 }) => {
   const { t } = useTranslation();
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
@@ -62,6 +64,13 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
 
   const status = currentStats.status;
   const progress = currentStats.progress;
+
+  // One-click "Watch/Listen" shortcut on media rows. Shown while there's
+  // something to play (downloading — instant-play streams while it downloads —,
+  // completed, or seeding); paused rows show Resume instead, so no icon clash.
+  const canWatch = !!onStream && looksLikeMedia(download) &&
+    (status === 'downloading' || status === 'completed' || status === 'seeding');
+  const watchLabel = isAudioMedia(download) ? t('downloads.listen') : t('downloads.watch');
 
   const getProgressVariant = (): 'default' | 'success' | 'warning' | 'error' => {
     if (status === 'completed' || status === 'seeding') return 'success';
@@ -191,6 +200,18 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
             />
           )}
 
+          {canWatch && (
+            <Button
+              variant="ghost"
+              size="sm"
+              iconOnly
+              className="download-watch-btn"
+              icon={<Icon name="play" size={14} />}
+              onClick={() => onStream!(download.id)}
+              title={watchLabel}
+            />
+          )}
+
           <Button
             variant="ghost"
             size="sm"
@@ -273,6 +294,18 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
           <StatusBadge status={status} />
         </div>
         <div className="download-item-actions">
+          {canWatch && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="download-watch-btn"
+              icon={<Icon name="play" size={16} />}
+              onClick={() => onStream!(download.id)}
+            >
+              {watchLabel}
+            </Button>
+          )}
+
           {canPause(status) && (
             <Button
               variant="ghost"

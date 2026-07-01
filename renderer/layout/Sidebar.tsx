@@ -8,7 +8,7 @@ import React, { useState, useEffect } from 'react';
 import { Icon, IconName } from '../components';
 import { useTranslation } from '../utils/i18nContext';
 
-export type PageId = 'downloads' | 'settings' | 'create-torrent' | 'search' | 'rss' | 'rooms';
+export type PageId = 'downloads' | 'settings' | 'create-torrent' | 'search' | 'rss' | 'rooms' | 'swarm';
 export type FilterMode = 'all' | 'downloading' | 'completed' | 'paused' | 'error';
 
 interface NavItem {
@@ -63,6 +63,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'search', label: 'Search', icon: 'search' },
     { id: 'rss', label: 'RSS Feeds', icon: 'rss' },
     { id: 'rooms', label: t('nav.rooms'), icon: 'users' },
+    { id: 'swarm', label: t('nav.swarm'), icon: 'globe' },
     { id: 'settings', label: t('nav.settings'), icon: 'settings' },
   ];
 

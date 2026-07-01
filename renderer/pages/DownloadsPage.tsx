@@ -1119,6 +1119,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
                       onRetry={handleRetry}
                       onOpenFolder={handleOpenFolder}
                       onShowFiles={(id) => setPreviewId(id)}
+                      onStream={(id) => setStreamModalId(id)}
                     />
                   </div>
                 );
