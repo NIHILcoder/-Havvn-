@@ -1406,6 +1406,17 @@ export class TorrentManager {
         log.info('Torrent completed', { id, name: managed.download.name });
         if (managed.download.status !== 'downloading') return;
 
+        // Backstop for the pause race: WebTorrent's _checkDone() fires 'done' when
+        // there are NO selections at all (which is exactly how haltTorrent pauses).
+        // A genuinely-finished torrent still has its satisfied selection at emit
+        // time (the emit precedes _gcSelections), so an empty _selections here means
+        // a paused partial download, not a real completion — ignore it.
+        const sel = (torrent as unknown as { _selections?: unknown[] })._selections;
+        if (Array.isArray(sel) && sel.length === 0) {
+          log.debug('Ignoring spurious done (no selections — torrent is paused/halted)', { id });
+          return;
+        }
+
         // Persist the completion snapshot NOW rather than waiting on the throttled
         // 5s stats tick — auto-move destroys the instance right after 'done', and an
         // app quit in that window would otherwise leave the DB at sub-1.0 progress.
@@ -1726,23 +1737,31 @@ export class TorrentManager {
       // to drop the whole swarm and force a full on-disk re-hash on resume.
       log.debug('Soft-pausing in-progress torrent (halt selections, keep wires)', { id, infoHash: managed.infoHash });
       this.closeStreamServer(managed);
+      // Mark 'paused' BEFORE halting. haltTorrent clears torrent._selections to
+      // stop wanting pieces, but WebTorrent's _checkDone() treats "no selections"
+      // as DONE and fires a spurious 'done' the moment an in-flight piece verifies
+      // just after. If the status were still 'downloading', the 'done' handler
+      // would falsely mark this PARTIAL download complete (100%) — the "stop →
+      // hangs → shows completed" deception. Transitioning first makes it a no-op.
+      await this.transitionStatus(id, 'paused');
       this.haltTorrent(managed.torrent);
-    } else if (managed.torrent) {
-      // Already complete (seeding): nothing to lose by destroying, and doing so
-      // is what releases the on-disk file handle — WebTorrent keeps it open
-      // while seeding, which can make the file look "in use"/locked until
-      // paused. Data on disk is preserved (destroyStore: false).
-      log.debug('Destroying completed torrent instance for pause', { id, infoHash: managed.infoHash });
-      this.closeStreamServer(managed);
-      try {
-        managed.torrent.destroy({ destroyStore: false } as any);
-      } catch (e) {
-        log.warn('Error destroying torrent during pause (non-fatal)', { error: String(e) });
+    } else {
+      if (managed.torrent) {
+        // Already complete (seeding): nothing to lose by destroying, and doing so
+        // is what releases the on-disk file handle — WebTorrent keeps it open
+        // while seeding, which can make the file look "in use"/locked until
+        // paused. Data on disk is preserved (destroyStore: false).
+        log.debug('Destroying completed torrent instance for pause', { id, infoHash: managed.infoHash });
+        this.closeStreamServer(managed);
+        try {
+          managed.torrent.destroy({ destroyStore: false } as any);
+        } catch (e) {
+          log.warn('Error destroying torrent during pause (non-fatal)', { error: String(e) });
+        }
+        managed.torrent = null;
       }
-      managed.torrent = null;
+      await this.transitionStatus(id, 'paused');
     }
-
-    await this.transitionStatus(id, 'paused');
 
     // Process queue to start next download
     await this.processQueue();
