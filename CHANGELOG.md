@@ -4,6 +4,17 @@ All notable changes to TorrentHunt are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [2.6.3] - 2026-07-05
+
+### Fixed
+- **Pausing an in-progress download no longer falsely marks it "completed".**
+  Pausing works by telling the engine to stop wanting pieces; if a piece finished
+  in the exact moment you hit pause, WebTorrent interpreted "nothing left wanted"
+  as "done" and the app flipped the half-finished torrent to seeding/100% (and
+  fired a "download complete" notification). Pause now settles the state before
+  halting, with a second guard so a paused partial download can never be reported
+  complete. Pinned by a new real-wire regression test.
+
 ## [2.6.2] - 2026-07-05
 
 A large stability release: a multi-agent audit of the whole download engine
