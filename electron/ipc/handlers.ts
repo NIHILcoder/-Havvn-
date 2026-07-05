@@ -3,7 +3,6 @@ import { getTorrentManager, TorrentError, getDefaultTrackers } from '../torrent'
 import * as db from '../db/store';
 import { AddDownloadRequest, DownloadStats, CreateTorrentRequest, FilePriority } from '../../shared/types';
 import { InvalidStateTransitionError } from '../../shared/state-machine';
-import catalog from '../data/catalog.json';
 import fs from 'fs/promises';
 import fsSync from 'fs';
 import path from 'path';
@@ -514,13 +513,6 @@ export function setupIpcHandlers(window: BrowserWindow): void {
   ipcMain.handle('scheduler:update', wrapHandler('scheduler:update',
     async (_event, config: Partial<import('../../shared/types').SchedulerConfig>) => {
       return db.updateScheduler(config);
-    }
-  ));
-
-  // Catalog
-  ipcMain.handle('catalog:get', wrapHandler('catalog:get',
-    async () => {
-      return catalog;
     }
   ));
 
@@ -1158,12 +1150,6 @@ export function setupIpcHandlers(window: BrowserWindow): void {
   ipcMain.handle('downloads:setFilePriority', wrapHandler('downloads:setFilePriority',
     async (_event, id: string, fileIndex: number, priority: FilePriority) => {
       await torrentManager.setFilePriority(id, fileIndex, priority);
-    }
-  ));
-
-  ipcMain.handle('downloads:setSpeedLimits', wrapHandler('downloads:setSpeedLimits',
-    async (_event, id: string, downKbps: number, upKbps: number) => {
-      await torrentManager.setTorrentSpeedLimits(id, downKbps, upKbps);
     }
   ));
 

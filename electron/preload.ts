@@ -9,7 +9,6 @@ import {
   Download,
   DownloadStats,
   AppSettings,
-  CatalogEntry,
   Category,
   SchedulerConfig,
   IpcApi,
@@ -127,11 +126,6 @@ const api: IpcApi = {
 
   updateScheduler: (config: Partial<SchedulerConfig>): Promise<SchedulerConfig> => {
     return ipcRenderer.invoke('scheduler:update', config);
-  },
-
-  // Catalog
-  getCatalog: (): Promise<CatalogEntry[]> => {
-    return ipcRenderer.invoke('catalog:get');
   },
 
   // File dialogs
@@ -441,9 +435,6 @@ const api: IpcApi = {
 
   setFilePriority: (id: string, fileIndex: number, priority: string) =>
     ipcRenderer.invoke('downloads:setFilePriority', id, fileIndex, priority),
-
-  setTorrentSpeedLimits: (id: string, downKbps: number, upKbps: number) =>
-    ipcRenderer.invoke('downloads:setSpeedLimits', id, downKbps, upKbps),
 
   setSeedRatioLimit: (id: string, ratio: number) =>
     ipcRenderer.invoke('downloads:setSeedRatio', id, ratio),

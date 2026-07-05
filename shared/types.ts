@@ -491,15 +491,6 @@ export interface SchedulerConfig {
   schedules: ScheduleEntry[];
 }
 
-export interface CatalogEntry {
-  id: string;
-  name: string;
-  description: string;
-  magnetUri: string;
-  size: string;
-  category: string;
-}
-
 // Create Torrent types
 export interface CreateTorrentOptions {
   name?: string;
@@ -728,7 +719,6 @@ export interface IpcApi {
   // Priority 1: new torrent controls
   setSequentialDownload: (id: string, enabled: boolean) => Promise<void>;
   setFilePriority: (id: string, fileIndex: number, priority: FilePriority) => Promise<void>;
-  setTorrentSpeedLimits: (id: string, downKbps: number, upKbps: number) => Promise<void>;
   setSeedRatioLimit: (id: string, ratio: number) => Promise<void>;
   setSeedTimeLimit: (id: string, minutes: number) => Promise<void>;
   // Peers
@@ -771,9 +761,6 @@ export interface IpcApi {
   // Scheduler
   getScheduler: () => Promise<SchedulerConfig>;
   updateScheduler: (config: Partial<SchedulerConfig>) => Promise<SchedulerConfig>;
-
-  // Catalog
-  getCatalog: () => Promise<CatalogEntry[]>;
 
   // File dialogs
   selectDirectory: () => Promise<string | null>;

@@ -66,8 +66,6 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
 
   // Download tab state
   const [sequential, setSequential] = useState(download.sequentialDownload ?? false);
-  const [downKbps, setDownKbps] = useState(download.maxDownloadSpeed ?? 0);
-  const [upKbps, setUpKbps] = useState(download.maxUploadSpeed ?? 0);
   const [savingDownload, setSavingDownload] = useState(false);
 
   // Seeding tab state
@@ -139,7 +137,6 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
     setSavingDownload(true);
     try {
       await window.api.setSequentialDownload(download.id, sequential);
-      await window.api.setTorrentSpeedLimits(download.id, downKbps, upKbps);
       onUpdate?.();
     } catch (err: any) {
       alert(`Failed: ${err?.message}`);
@@ -266,48 +263,9 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
 
               <div className="tcm-divider" />
 
-              {/* Speed limits */}
-              <div className="tcm-group-label">SPEED LIMITS (per-torrent)</div>
-
-              <div className="tcm-field">
-                <div className="tcm-field-info">
-                  <span className="tcm-field-label">
-                    <Icon name="arrow-down" size={13} />
-                    Download Speed
-                  </span>
-                  <span className="tcm-field-desc">0 = use global limit or unlimited</span>
-                </div>
-                <div className="tcm-speed-input">
-                  <input
-                    type="number"
-                    className="tcm-input"
-                    min="0"
-                    value={downKbps}
-                    onChange={e => setDownKbps(parseInt(e.target.value) || 0)}
-                  />
-                  <span className="tcm-unit">KB/s</span>
-                </div>
-              </div>
-
-              <div className="tcm-field">
-                <div className="tcm-field-info">
-                  <span className="tcm-field-label">
-                    <Icon name="arrow-up" size={13} />
-                    Upload Speed
-                  </span>
-                  <span className="tcm-field-desc">0 = use global limit or unlimited</span>
-                </div>
-                <div className="tcm-speed-input">
-                  <input
-                    type="number"
-                    className="tcm-input"
-                    min="0"
-                    value={upKbps}
-                    onChange={e => setUpKbps(parseInt(e.target.value) || 0)}
-                  />
-                  <span className="tcm-unit">KB/s</span>
-                </div>
-              </div>
+              {/* Per-torrent speed limits were removed: webtorrent 1.9.7 only
+                  throttles globally, so they never applied. Use the global /
+                  alternative-speed limits in Settings instead. */}
 
               <div className="tcm-actions">
                 <Button variant="primary" loading={savingDownload} onClick={handleSaveDownload}

@@ -200,7 +200,6 @@ class TorrentManagerProxy {
   setSeedRatioLimit(...a: Parameters<TM['setSeedRatioLimit']>): Fwd<TM['setSeedRatioLimit']> { return this.rpc('setSeedRatioLimit', a); }
   setSeedTimeLimit(...a: Parameters<TM['setSeedTimeLimit']>): Fwd<TM['setSeedTimeLimit']> { return this.rpc('setSeedTimeLimit', a); }
   setSequentialDownload(...a: Parameters<TM['setSequentialDownload']>): Fwd<TM['setSequentialDownload']> { return this.rpc('setSequentialDownload', a); }
-  setTorrentSpeedLimits(...a: Parameters<TM['setTorrentSpeedLimits']>): Fwd<TM['setTorrentSpeedLimits']> { return this.rpc('setTorrentSpeedLimits', a); }
   updateSettings(...a: Parameters<TM['updateSettings']>): Fwd<TM['updateSettings']> { return this.rpc('updateSettings', a); }
   getNetworkHealth(...a: Parameters<TM['getNetworkHealth']>): Fwd<TM['getNetworkHealth']> { return this.rpc('getNetworkHealth', a); }
   applyIpBlocklist(...a: Parameters<TM['applyIpBlocklist']>): Promise<void> { return this.rpc('applyIpBlocklist', a); }
