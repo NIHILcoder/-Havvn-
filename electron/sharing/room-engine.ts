@@ -28,6 +28,7 @@ import WebTorrent from 'webtorrent';
 import { deriveKey, topicHash, randomPeerId, encrypt, decrypt, generateRoomCode } from './room-crypto';
 import { encryptFile, decryptFile } from './room-e2e';
 import { RoomFile, RoomMember, RoomState, RoomTransfer, PersistedRoomFile, RoomEvent, RoomChatMessage } from '../../shared/types';
+import { safeBaseName } from '../../shared/path-safety';
 import crypto from 'crypto';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -426,15 +427,19 @@ function clampStr(v: any, n: number): string {
   return typeof v === 'string' ? v.slice(0, n) : '';
 }
 
-/** Coerce a peer-supplied file entry to a sane shape, or null if unusable. */
+/** Coerce a peer-supplied file entry to a sane shape, or null if unusable.
+ *  file.name is reduced to a traversal-free basename (safeBaseName) because every
+ *  write site does path.join(room.folder, file.name) — see shared/path-safety. */
 function clampFile(f: any): RoomFile | null {
   if (!f || typeof f !== 'object') return null;
   const fileId = clampStr(f.fileId, MAX_STR);
   const magnetURI = clampStr(f.magnetURI, MAX_MAGNET);
-  if (!fileId || !magnetURI) return null;
+  const name = safeBaseName(clampStr(f.name, MAX_STR));
+  // A file with no usable (traversal-free) name can't be safely stored — drop it.
+  if (!fileId || !magnetURI || !name) return null;
   return {
     fileId,
-    name: clampStr(f.name, MAX_STR),
+    name,
     size: Number.isFinite(f.size) ? f.size : 0,
     magnetURI,
     addedBy: clampStr(f.addedBy, MAX_STR),
@@ -745,7 +750,7 @@ function ensureLocal(room: Room, file: RoomFile): void {
       c.add(file.magnetURI, { path: room.cacheDir, announce: ROOM_TRACKERS } as any, (torrent: any) => {
         wireTorrentStats(room, torrent);
         torrent.on('done', () => {
-          const landedCipher = path.join(room.cacheDir, torrent.name || cipherName);
+          const landedCipher = path.join(room.cacheDir, safeBaseName(torrent.name) || cipherName);
           setTransfer(room, file.fileId, { progress: 1, downSpeed: 0, cipherPath: landedCipher });
           if (room.secret) void decryptOne(room, file, landedCipher);
           else { persistManifest(room, file, undefined, landedCipher); log('e2e: ciphertext ready, awaiting room key for ' + file.name); pushState(room, true); }
