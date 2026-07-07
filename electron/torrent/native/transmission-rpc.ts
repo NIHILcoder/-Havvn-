@@ -49,13 +49,23 @@ export interface TrPeer {
   rateToPeer: number;   // B/s we upload to this peer
   progress: number;     // 0..1
   flagStr: string;
+  // Choke/interest state, transmission-side naming: client* = us, peer* = them.
+  clientIsChoked: boolean;     // the peer is choking US
+  clientIsInterested: boolean; // WE want the peer's data
+  peerIsChoked: boolean;       // WE are choking the peer
+  peerIsInterested: boolean;   // the peer wants OUR data
+  bytesToClient: number;       // session bytes received from this peer
+  bytesToPeer: number;         // session bytes sent to this peer
 }
 export interface TrTrackerStat {
   id: number;
   host: string;
   announce: string;
+  announceState: number; // 0 inactive, 1 waiting, 2 queued, 3 active
   lastAnnounceResult: string;
   lastAnnounceSucceeded: boolean;
+  lastAnnounceTime: number; // epoch seconds, 0 = never
+  lastAnnouncePeerCount: number;
   seederCount: number;
   leecherCount: number;
 }
@@ -159,12 +169,13 @@ export class TransmissionRpc {
 
   // ── Torrents ───────────────────────────────────────────────────────────────
   /** Add by magnet/URL (`filename`) or raw .torrent contents (`metainfo`). */
-  async torrentAdd(source: { filename?: string; metainfo?: Buffer; paused?: boolean; downloadDir?: string }): Promise<TrAddResult> {
+  async torrentAdd(source: { filename?: string; metainfo?: Buffer; paused?: boolean; downloadDir?: string; filesUnwanted?: number[] }): Promise<TrAddResult> {
     const args: Record<string, unknown> = {};
     if (source.filename !== undefined) args['filename'] = source.filename;
     if (source.metainfo !== undefined) args['metainfo'] = source.metainfo.toString('base64');
     if (source.paused !== undefined) args['paused'] = source.paused;
     if (source.downloadDir !== undefined) args['download-dir'] = source.downloadDir;
+    if (source.filesUnwanted !== undefined && source.filesUnwanted.length > 0) args['files-unwanted'] = source.filesUnwanted;
     const res = await this.call<{ 'torrent-added'?: TrAddResult; 'torrent-duplicate'?: TrAddResult }>('torrent-add', args);
     const added = res['torrent-added'];
     const dup = res['torrent-duplicate'];

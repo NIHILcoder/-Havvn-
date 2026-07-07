@@ -11,10 +11,38 @@
 import { setHostEnv } from './env';
 import { wireDbBridge, resolveDbResponse, failAllDbRequests } from './db-bridge';
 import { ToHost, FromHost } from './protocol';
-import { TorrentManager } from '../manager';
 import { setCastManager, getCastServer } from '../cast-server';
 import { createTorrentFile } from '../creator';
-import type { CreateTorrentProgress } from '../../../shared/types';
+import type { CreateTorrentProgress, DownloadStats } from '../../../shared/types';
+
+/**
+ * The slice of the engine surface the host itself drives; everything else is
+ * dispatched dynamically by method name. Both engines satisfy it: the legacy
+ * webtorrent TorrentManager and the transmission NativeTorrentManager. They are
+ * require()d LAZILY per the engine flag so the native path never loads
+ * webtorrent's module graph (and vice versa).
+ */
+interface EngineManager {
+  initialize(): Promise<void>;
+  ffmpegBinary: string | null;
+  getListeningPort(): number;
+  isAltSpeedEnabled(): boolean;
+  getCastFileInfo(id: string, fileIndex: number): unknown;
+  onStats(cb: (stats: DownloadStats[]) => void): () => void;
+  onComplete(cb: (info: { id: string; name: string }) => void): () => void;
+  onListening(cb: () => void): () => void;
+}
+
+function createEngine(engine: 'native' | 'webtorrent'): EngineManager {
+  if (engine === 'native') {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { NativeTorrentManager } = require('../native/native-manager') as typeof import('../native/native-manager');
+    return new NativeTorrentManager();
+  }
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { TorrentManager } = require('../manager') as typeof import('../manager');
+  return new TorrentManager();
+}
 
 // parentPort is the MessagePortMain to the main process (utilityProcess).
 const port = (process as unknown as { parentPort: { on(ev: string, cb: (e: { data: ToHost }) => void): void; postMessage(m: FromHost): void } }).parentPort;
@@ -61,7 +89,7 @@ process.on('unhandledRejection', (reason) => {
   console.error('[host] unhandledRejection:', reason instanceof Error ? reason.stack : String(reason));
 });
 
-let manager: TorrentManager | null = null;
+let manager: EngineManager | null = null;
 
 // cast* method names are served by the cast server, not the manager.
 const CAST_METHODS: Record<string, 'publish' | 'unpublish' | 'tvMedia' | 'publishDiskFile'> = {
@@ -95,8 +123,9 @@ port.on('message', async (e) => {
       try {
         setHostEnv(msg.env);
         wireDbBridge((req) => post(req));
-        manager = new TorrentManager();
-        setCastManager(manager);
+        console.log(`[host] engine: ${msg.env.engine}`);
+        manager = createEngine(msg.env.engine);
+        setCastManager(manager as Parameters<typeof setCastManager>[0]);
         manager.onStats((stats) => post({ kind: 'event', event: 'stats', payload: stats }));
         manager.onComplete((info) => post({ kind: 'event', event: 'complete', payload: info }));
         // Re-push state when the TCP pool actually binds — the port isn't known

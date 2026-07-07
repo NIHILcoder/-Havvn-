@@ -17,6 +17,9 @@ export interface Download {
   sourceType: SourceType;
   sourceUri: string;
   torrentFilePath: string | null;
+  // Lowercase hex infoHash, persisted on first add. The native engine keys
+  // everything on it (transmission's integer ids don't survive restarts).
+  infoHash?: string;
   savePath: string;
   status: DownloadStatus;
   progress: number;
@@ -301,6 +304,11 @@ export interface NetworkInfo {
 
 export interface AppSettings {
   id: number;
+  // Which download engine the torrent host runs. 'native' = the bundled
+  // transmission-daemon sidecar (default); 'webtorrent' = the legacy in-process
+  // engine, kept as a fallback until feature parity. Restart-only.
+  // Dev override: HAVVN_ENGINE=native|webtorrent.
+  engine?: 'native' | 'webtorrent';
   defaultDownloadDir: string;
   maxDownKbps: number;
   maxUpKbps: number;

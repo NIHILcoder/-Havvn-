@@ -136,6 +136,10 @@
       {
         "from": "build/icon.ico",
         "to": "icon.ico"
+      },
+      {
+        "from": "vendor/transmission/win32-x64",
+        "to": "engine"
       }
     ],
     "nsis": {

@@ -115,6 +115,10 @@ const configStore = new Store<ConfigSchema>({
   defaults: {
     settings: {
       id: 1,
+      // The transmission-daemon sidecar is the default download engine ("2.0");
+      // 'webtorrent' keeps the legacy in-process engine as a fallback until
+      // feature parity (docs/engine-swap-plan.md). Restart-only.
+      engine: 'native' as const,
       // Fresh installs download to <Downloads>/Havvn; migrated profiles keep
       // whatever defaultDownloadDir they had persisted (often .../TorrentHunt).
       defaultDownloadDir: path.join(app.getPath('downloads'), 'Havvn'),
@@ -734,6 +738,17 @@ export async function getSettings(): Promise<AppSettings> {
   const s = configStore.get('settings');
   // Decrypt secrets transparently so callers always see plaintext
   return { ...s, proxyPassword: decryptSecret(s.proxyPassword), customTurnCredential: decryptSecret(s.customTurnCredential) };
+}
+
+/**
+ * Which download engine the torrent host should run. SYNCHRONOUS — read on the
+ * main-process spawn path (host env), before any async settings round-trip is
+ * possible. HAVVN_ENGINE overrides for dev/testing.
+ */
+export function getEngineChoice(): 'native' | 'webtorrent' {
+  const override = process.env.HAVVN_ENGINE;
+  if (override === 'native' || override === 'webtorrent') return override;
+  return configStore.get('settings').engine === 'webtorrent' ? 'webtorrent' : 'native';
 }
 
 export async function updateSettings(
