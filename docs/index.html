@@ -3,9 +3,9 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>TorrentHunt — a private, serverless P2P hub</title>
-<meta name="description" content="TorrentHunt is a private, serverless P2P hub that happens to speak BitTorrent. Stream torrents to any device, share files into a friend's browser, and run encrypted friend-rooms — all peer-to-peer, no cloud, no servers." />
-<meta property="og:title" content="TorrentHunt — a private, serverless P2P hub" />
+<title>Havvn — a private, serverless P2P hub</title>
+<meta name="description" content="Havvn is a private, serverless P2P hub that happens to speak BitTorrent. Stream torrents to any device, share files into a friend's browser, and run encrypted friend-rooms — all peer-to-peer, no cloud, no servers." />
+<meta property="og:title" content="Havvn — a private, serverless P2P hub" />
 <meta property="og:description" content="Stream torrents anywhere, beam files into a friend's browser, and run end-to-end-encrypted friend-rooms. Peer-to-peer, no servers, free." />
 <meta property="og:type" content="website" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -138,7 +138,7 @@
   <nav class="wrap">
     <div class="logo">
       <svg class="icn" viewBox="0 0 24 24" style="width:20px;height:20px"><path d="M4.9 19.1A10 10 0 0 1 19.1 4.9"/><path d="M7.8 16.2a6 6 0 0 1 8.4-8.4"/><circle cx="12" cy="12" r="2"/></svg>
-      TorrentHunt
+      Havvn
     </div>
     <div class="navlinks">
       <a href="#features">Features</a>
@@ -162,7 +162,7 @@
     <div>
       <div class="eyebrow">Peer-to-peer · no servers</div>
       <h1>A private, serverless P2P hub that happens to speak BitTorrent.</h1>
-      <p class="lead">It's a full torrent client — but the real point is what classic clients can't do: stream to any device, beam a file into a friend's browser, and run encrypted friend-rooms. No cloud, nothing to pay for.</p>
+      <p class="lead">Havvn (formerly TorrentHunt) is a full torrent client — but the real point is what classic clients can't do: stream to any device, beam a file into a friend's browser, and run encrypted friend-rooms. No cloud, nothing to pay for.</p>
       <div class="hero-cta">
         <a class="btn btn-w" href="https://github.com/NIHILcoder/TorrentHunt/releases/latest">
           <svg class="icn" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M5 21h14"/></svg>
@@ -208,7 +208,7 @@
     <div class="sec-head reveal">
       <div class="eyebrow">Not just a downloader</div>
       <h2>The things classic clients can't do.</h2>
-      <p>TorrentHunt is built on the BitTorrent ↔ WebRTC bridge — so a torrent isn't just something you download, it's something you can watch, share and sync, peer-to-peer.</p>
+      <p>Havvn is built on the BitTorrent ↔ WebRTC bridge — so a torrent isn't just something you download, it's something you can watch, share and sync, peer-to-peer.</p>
     </div>
     <div class="grid3">
       <div class="card reveal">
@@ -297,7 +297,7 @@
 
   <section class="download" id="download">
     <div class="dl-card reveal">
-      <div class="eyebrow" style="margin-bottom:14px">Get TorrentHunt</div>
+      <div class="eyebrow" style="margin-bottom:14px">Get Havvn</div>
       <h2>Download for Windows</h2>
       <p class="sub">Free and open source. macOS and Linux are planned.</p>
       <a class="btn btn-w" style="font-size:15px;padding:13px 24px" href="https://github.com/NIHILcoder/TorrentHunt/releases/latest">
@@ -306,7 +306,7 @@
       </a>
       <div class="verify">
         <div class="vt"><svg class="icn" viewBox="0 0 24 24" style="width:15px;height:15px"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg> Verify your download — every release ships a SHA-256 checksum and a VirusTotal scan.</div>
-        <pre>Get-FileHash .\TorrentHunt-Setup-&lt;version&gt;.exe -Algorithm SHA256</pre>
+        <pre>Get-FileHash .\Havvn-Setup-&lt;version&gt;.exe -Algorithm SHA256</pre>
       </div>
       <p class="note">As an unsigned open-source app, the installer may trigger a Windows SmartScreen "unknown publisher" prompt — verifying the checksum confirms the file is genuine.</p>
     </div>
@@ -321,9 +321,9 @@
     <details class="reveal"><summary>Do you run any servers? <span class="chev"><svg class="icn" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M6 9l6 6 6-6"/></svg></span></summary><div class="ans">No. Everything runs on your machine and directly between you and your peers. The only shared infrastructure is the public WebRTC rendezvous trackers used to help peers find each other — they never see your files or any plaintext.</div></details>
     <details class="reveal"><summary>Do my files go through the cloud? <span class="chev"><svg class="icn" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M6 9l6 6 6-6"/></svg></span></summary><div class="ans">No. Streaming, sharing and rooms are all peer-to-peer. In rooms, traffic is end-to-end encrypted, so even a member relaying for others only ever forwards ciphertext.</div></details>
     <details class="reveal"><summary>How do rooms stay private? <span class="chev"><svg class="icn" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M6 9l6 6 6-6"/></svg></span></summary><div class="ans">The invite code derives an AES-256-GCM key, so only people with the code can read anything. Chat messages are additionally signed with a per-device key, so even a code holder can't post under another member's identity, and the history is encrypted on disk.</div></details>
-    <details class="reveal"><summary>Is this legal? <span class="chev"><svg class="icn" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M6 9l6 6 6-6"/></svg></span></summary><div class="ans">BitTorrent is a protocol, and TorrentHunt bundles no indexers for copyrighted material — you bring your own sources and are responsible for what you download and share. Use it for legal content.</div></details>
+    <details class="reveal"><summary>Is this legal? <span class="chev"><svg class="icn" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M6 9l6 6 6-6"/></svg></span></summary><div class="ans">BitTorrent is a protocol, and Havvn bundles no indexers for copyrighted material — you bring your own sources and are responsible for what you download and share. Use it for legal content.</div></details>
     <details class="reveal"><summary>macOS and Linux? <span class="chev"><svg class="icn" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M6 9l6 6 6-6"/></svg></span></summary><div class="ans">The app is built cross-platform (Electron), and macOS / Linux builds are planned. Today the published installer is Windows only.</div></details>
-    <div class="legal reveal" style="margin-top:28px"><strong>Legal use only.</strong> TorrentHunt does not bundle indexers for copyrighted material. Any search providers or feeds are added by you, and you are responsible for what you download and share.</div>
+    <div class="legal reveal" style="margin-top:28px"><strong>Legal use only.</strong> Havvn does not bundle indexers for copyrighted material. Any search providers or feeds are added by you, and you are responsible for what you download and share.</div>
   </section>
 </main>
 
@@ -333,7 +333,7 @@
       <div class="fcol" style="max-width:300px">
         <div class="logo" style="margin-bottom:12px">
           <svg class="icn" viewBox="0 0 24 24" style="width:20px;height:20px"><path d="M4.9 19.1A10 10 0 0 1 19.1 4.9"/><path d="M7.8 16.2a6 6 0 0 1 8.4-8.4"/><circle cx="12" cy="12" r="2"/></svg>
-          TorrentHunt
+          Havvn
         </div>
         <p style="color:var(--muted);font-size:13.5px">A private, serverless P2P hub. Built with Electron, React and WebTorrent.</p>
       </div>
@@ -341,7 +341,7 @@
       <div class="fcol"><h4>Project</h4><a href="https://github.com/NIHILcoder/TorrentHunt">GitHub</a><a href="https://github.com/NIHILcoder/TorrentHunt/releases">Releases</a><a href="https://github.com/NIHILcoder/TorrentHunt/blob/main/CHANGELOG.md">Changelog</a><a href="https://github.com/NIHILcoder/TorrentHunt/blob/main/LICENSE">License (MIT)</a></div>
     </div>
     <div class="foot-bottom">
-      <span>© 2026 TorrentHunt — MIT licensed.</span>
+      <span>© 2026 Havvn — MIT licensed.</span>
       <span class="mono">No servers · No telemetry · No cloud</span>
     </div>
   </div>

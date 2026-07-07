@@ -254,7 +254,7 @@ export class CastServer {
     // upgrades to HLS, covering MP4s with an unsupported codec (e.g. HEVC).
     const html = `<!DOCTYPE html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>${escapeHtml(info.name)} — TorrentHunt</title>
+<title>${escapeHtml(info.name)} — Havvn</title>
 <style>
   html,body{margin:0;height:100%;background:#000;color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
   .wrap{height:100%;display:flex;flex-direction:column}

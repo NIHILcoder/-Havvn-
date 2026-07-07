@@ -1,5 +1,5 @@
 {
-  "name": "torrenthunt",
+  "name": "havvn",
   "version": "2.7.0",
   "description": "A modern, privacy-focused BitTorrent client",
   "main": "dist/electron/electron/main.js",
@@ -17,7 +17,8 @@
     "test:watch": "vitest",
     "lint": "eslint \"electron/**/*.ts\" \"renderer/**/*.{ts,tsx}\" \"shared/**/*.ts\"",
     "start": "npm run build && electron .",
-    "dist": "npm run build && electron-builder --win"
+    "dist": "npm run build && electron-builder --win",
+    "spike:engine": "npm run build:electron && node dist/electron/electron/torrent/native/spike-harness.js"
   },
   "dependencies": {
     "@fontsource/inter": "^5.2.8",
@@ -74,8 +75,8 @@
   },
   "build": {
     "appId": "com.torrenthunt.app",
-    "productName": "TorrentHunt",
-    "copyright": "Copyright © 2025 TorrentHunt",
+    "productName": "Havvn",
+    "copyright": "Copyright © 2026 Havvn",
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -93,13 +94,14 @@
       "package.json"
     ],
     "asarUnpack": [
-      "**/node_modules/ffmpeg-static/**"
+      "**/node_modules/ffmpeg-static/**",
+      "**/node_modules/utp-native/**"
     ],
     "fileAssociations": [
       {
         "ext": "torrent",
         "name": "BitTorrent Document",
-        "description": "Open with TorrentHunt",
+        "description": "Open with Havvn",
         "role": "Editor",
         "icon": "build/icon2.ico"
       }
@@ -143,7 +145,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "TorrentHunt",
+      "shortcutName": "Havvn",
       "include": "build/installer.nsh",
       "runAfterFinish": true,
       "installerIcon": "build/icon.ico",

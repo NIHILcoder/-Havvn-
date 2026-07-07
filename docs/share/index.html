@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>TorrentHunt — Receive a file</title>
+<title>Havvn — Receive a file</title>
 <style>
   :root {
     --bg: #0a0a0b; --panel: #141416; --border: #26262a;
@@ -51,9 +51,9 @@
 <body>
   <div class="card">
     <div class="head">
-      <div class="logo">T</div>
+      <div class="logo">H</div>
       <div>
-        <h1>TorrentHunt — Receive a file</h1>
+        <h1>Havvn — Receive a file</h1>
         <p>Peer-to-peer in your browser. No install, no cloud.</p>
       </div>
     </div>
@@ -68,7 +68,7 @@
       <div class="files" id="files"></div>
       <div id="media"></div>
       <div class="hint" id="hint">
-        The sender must keep TorrentHunt open while you download. If nothing happens,
+        The sender must keep Havvn open while you download. If nothing happens,
         ask them to re-open the share, or try again in a moment.
       </div>
     </div>
@@ -216,7 +216,7 @@
     setTimeout(function () {
       var t = client.torrents[0];
       if (t && t.numPeers === 0 && t.progress === 0) {
-        setStatus('Waiting for the sender — is their TorrentHunt open?', true);
+        setStatus('Waiting for the sender — is their Havvn open?', true);
       }
     }, 12000);
   })();

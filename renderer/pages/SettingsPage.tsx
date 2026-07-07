@@ -326,7 +326,7 @@ const SettingsPage: React.FC = () => {
 
       // Advanced settings
       setEnableDHT(s.enableDHT ?? true);
-      setEnableUtp(s.enableUtp ?? false);
+      setEnableUtp(s.enableUtp ?? true);
       setMaxConnections(s.maxConnections ?? 55);
       setMaxConnectionsGlobal(s.maxConnectionsGlobal ?? 200);
       setPortMin(s.portMin ?? 6881);

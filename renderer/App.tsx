@@ -1,5 +1,5 @@
 /**
- * TorrentHunt Main App Component
+ * Havvn Main App Component
  */
 
 import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';

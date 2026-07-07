@@ -3,7 +3,7 @@
 Rooms are peer-to-peer (WebRTC rendezvous + WebTorrent transfers), so verifying
 them normally needs two different computers. To make local testing possible, set
 the `TH_INSTANCE` environment variable: it launches an **isolated second copy**
-of TorrentHunt with its own profile (separate DB / config / room identity) that
+of Havvn with its own profile (separate DB / config / room identity) that
 skips the single-instance lock, so two copies run side by side and behave like
 two different people.
 
@@ -25,7 +25,7 @@ $env:TH_INSTANCE = 'peer2'; npm run dev:electron
 
 (For cmd.exe use `set TH_INSTANCE=peer2 && npm run dev:electron`.)
 
-The second window's title bar reads **“TorrentHunt — peer2”** so you can tell them
+The second window's title bar reads **“Havvn — peer2”** so you can tell them
 apart. Each instance has its own room identity (name + avatar), so they show up as
 distinct members in a room. You can launch more with different names
 (`peer3`, `peer4`, …).
@@ -61,5 +61,5 @@ distinct members in a room. You can launch more with different names
 - TURN relays are on by default (Settings → Network → Sharing), so cross-NAT —
   and same-machine — connections work. Turn it off to test the STUN-only path.
 - Isolated profiles live next to the real one, e.g.
-  `%APPDATA%\torrenthunt-peer2`. Delete that folder to reset a test peer.
+  `%APPDATA%\havvn-peer2`. Delete that folder to reset a test peer.
 - `TH_INSTANCE` is a **testing aid only** — production builds are single-instance.

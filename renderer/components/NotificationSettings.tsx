@@ -29,7 +29,7 @@ export const NotificationSettings: React.FC<NotificationSettingsProps> = ({
     try {
       // Mock notification for now - implement actual API call later
       if (window.Notification && Notification.permission === 'granted') {
-        new Notification('TorrentHunt', {
+        new Notification('Havvn', {
           body: 'This is a test notification. Everything works! 🎉',
         });
       }

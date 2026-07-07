@@ -1,19 +1,19 @@
-# TorrentHunt search plugins
+# Havvn search plugins
 
-A **script provider** lets TorrentHunt search any source by running a small local
-program you point it at. TorrentHunt ships no scrapers itself — you bring the
+A **script provider** lets Havvn search any source by running a small local
+program you point it at. Havvn ships no scrapers itself — you bring the
 script. This keeps the app neutral and lets you (or the community) add indexers
 without hosting a Jackett/Prowlarr server.
 
 ## How it works
 
-When you run a search, TorrentHunt invokes your script like this:
+When you run a search, Havvn invokes your script like this:
 
 ```
 <python> <your_script.py> "<query>" "<category>"
 ```
 
-- `<python>` is the Python 3 interpreter TorrentHunt auto-detects on your system.
+- `<python>` is the Python 3 interpreter Havvn auto-detects on your system.
 - `"<query>"` is what you typed in the search box.
 - `"<category>"` is a [Newznab category id](https://newznab.readthedocs.io/en/latest/misc/api/#predefined-categories)
   (`2000` movies, `5000` TV, `3000` music, `4000` software, `6000` XXX) or an
@@ -47,7 +47,7 @@ Field rules:
 | `title`       | **yes**  | Display name.                                                |
 | `magnetUri`   | one of these three | Magnet link.                                      |
 | `torrentUrl`  | one of these three | Direct `.torrent` URL.                            |
-| `infoHash`    | one of these three | 40-char hex (TorrentHunt rebuilds the magnet).    |
+| `infoHash`    | one of these three | 40-char hex (Havvn rebuilds the magnet).          |
 | `size`        | no       | Bytes (integer). Defaults to 0.                             |
 | `seeds`       | no       | Integer. Defaults to 0. Results are sorted by this.        |
 | `leechers`    | no       | Integer. Defaults to 0.                                      |
@@ -63,9 +63,9 @@ serve both this provider and the "Custom JSON" HTTP provider.
 ## Credentials (for indexers that need a login)
 
 Some indexers (e.g. RuTracker) require an account. Put the login in the provider's
-**Login** / **Password** fields in TorrentHunt instead of hard-coding it in the
+**Login** / **Password** fields in Havvn instead of hard-coding it in the
 script — the password is stored **encrypted** by the OS keychain (DPAPI / Keychain
-/ libsecret), never in plaintext. TorrentHunt passes them to the script as
+/ libsecret), never in plaintext. Havvn passes them to the script as
 environment variables:
 
 | Env var           | From the provider field |

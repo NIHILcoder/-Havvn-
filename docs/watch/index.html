@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>TorrentHunt — Watch</title>
+<title>Havvn — Watch</title>
 <style>
   :root { --bg:#0a0a0b; --panel:#141416; --border:#26262a; --text:#f4f4f5; --muted:#9a9aa2; --green:#22c55e; --red:#f87171; }
   * { box-sizing:border-box; }
@@ -25,12 +25,12 @@
 <body>
 <div class="wrap">
   <div class="top">
-    <div class="logo">T</div>
-    <h1>TorrentHunt — Watch</h1>
+    <div class="logo">H</div>
+    <h1>Havvn — Watch</h1>
     <div class="status"><span class="dot" id="dot"></span><span id="st">Connecting…</span></div>
   </div>
   <video id="v" controls autoplay playsinline></video>
-  <div class="msg" id="m">The sender must keep TorrentHunt open and the stream running.</div>
+  <div class="msg" id="m">The sender must keep Havvn open and the stream running.</div>
 </div>
 
 <script type="module">
@@ -145,7 +145,7 @@
   client.on('error', () => {});
   client.start();
 
-  setTimeout(() => { if (!wired) setStatus('Waiting for the sender — is their TorrentHunt open?', true); }, 15000);
+  setTimeout(() => { if (!wired) setStatus('Waiting for the sender — is their Havvn open?', true); }, 15000);
 </script>
 </body>
 </html>

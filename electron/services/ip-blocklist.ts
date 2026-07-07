@@ -198,7 +198,7 @@ export class IPBlocklistService {
       const lib = parsed.protocol === 'https:' ? https : http;
 
       const req = lib.get(url, {
-        headers: { 'User-Agent': 'TorrentHunt Blocklist', 'Accept-Encoding': 'gzip, deflate' },
+        headers: { 'User-Agent': 'Havvn Blocklist', 'Accept-Encoding': 'gzip, deflate' },
         timeout: 30000,
       }, (res) => {
         if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {

@@ -81,7 +81,7 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
   const [trackers, setTrackers] = useState<string>('');
   const [webSeeds, setWebSeeds] = useState('');
   const [startSeeding, setStartSeeding] = useState(true);
-  const [createdBy, setCreatedBy] = useState('TorrentHunt');
+  const [createdBy, setCreatedBy] = useState('Havvn');
   
   // Create-session state lives in a store so it survives navigation away from
   // this page (creating in the background, returning to see the result).
@@ -327,7 +327,7 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
     const options: CreateTorrentOptions = {
       name: name || undefined,
       comment: comment || undefined,
-      createdBy: createdBy || 'TorrentHunt',
+      createdBy: createdBy || 'Havvn',
       announceList,
       urlList: urlList.length > 0 ? urlList : undefined,
       private: isPrivate,
@@ -869,7 +869,7 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
                         className="field-input"
                         value={createdBy}
                         onChange={(e) => setCreatedBy(e.target.value)}
-                        placeholder="TorrentHunt"
+                        placeholder="Havvn"
                       />
                     </div>
 

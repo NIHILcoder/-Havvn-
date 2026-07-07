@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-Run your existing **qBittorrent search plugins** as a TorrentHunt provider.
+Run your existing **qBittorrent search plugins** as a Havvn provider.
 
 WHY
     qBittorrent has a large ecosystem of community search plugins (the "nova3"
-    engine). This adapter lets TorrentHunt reuse them unchanged: it provides the
+    engine). This adapter lets Havvn reuse them unchanged: it provides the
     `novaprinter` and `helpers` modules those plugins expect, runs each plugin's
-    `search()`, and translates the results into TorrentHunt's JSON contract.
+    `search()`, and translates the results into Havvn's JSON contract.
 
 SETUP
     1. Put your qBittorrent plugin .py files in a folder named `qbt-plugins/`
        next to this adapter (or set the env var TH_QBT_PLUGINS_DIR to any folder).
-    2. In TorrentHunt: Search → Providers → add a provider of type
+    2. In Havvn: Search → Providers → add a provider of type
        "Python Script" pointing at THIS file (qbittorrent_adapter.py).
     3. Make sure Python 3 is installed.
 
@@ -52,7 +52,7 @@ def _retrieve_url(url, *args, **kwargs):
     req = urllib.request.Request(
         url,
         headers={
-            "User-Agent": "Mozilla/5.0 (TorrentHunt qbt-adapter)",
+            "User-Agent": "Mozilla/5.0 (Havvn qbt-adapter)",
             "Accept-Encoding": "gzip, deflate",
         },
     )
@@ -70,7 +70,7 @@ def _download_file(url, referer=None):
     import tempfile
     fd, path = tempfile.mkstemp(suffix=".torrent")
     os.close(fd)
-    req = urllib.request.Request(url, headers={"User-Agent": "TorrentHunt"})
+    req = urllib.request.Request(url, headers={"User-Agent": "Havvn"})
     if referer:
         req.add_header("Referer", referer)
     with urllib.request.urlopen(req, timeout=20) as resp, open(path, "wb") as fh:

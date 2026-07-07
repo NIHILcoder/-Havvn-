@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-TorrentHunt search-plugin template.
+Havvn search-plugin template.
 
-Called by TorrentHunt as:
+Called by Havvn as:
     python example_indexer.py "<query>" "<category>"
 
 It must print a JSON array of result objects to stdout. See README.md for the
 full contract. This template returns a single demo row so the provider's "Test"
 button works out of the box, and shows (commented) how you'd hit a real source.
 
-TorrentHunt ships NO scrapers — replace the body of `search()` with your own
+Havvn ships NO scrapers — replace the body of `search()` with your own
 source. Only run code you trust.
 """
 
@@ -35,7 +35,7 @@ def search(query: str, category: str):
     # --- REAL SOURCE (sketch) --------------------------------------------
     # q = urllib.parse.quote(query)
     # url = f"https://your-indexer.example/api?q={q}&cat={category}"
-    # req = urllib.request.Request(url, headers={"User-Agent": "TorrentHunt"})
+    # req = urllib.request.Request(url, headers={"User-Agent": "Havvn"})
     # with urllib.request.urlopen(req, timeout=20) as resp:
     #     data = json.loads(resp.read().decode("utf-8", "replace"))
     # for item in data["items"]:

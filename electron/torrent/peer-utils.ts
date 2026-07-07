@@ -10,7 +10,7 @@ import { PeerInfo } from '../../shared/types';
 const CLIENT_CODES: Record<string, string> = {
   QB: 'qBittorrent', UT: 'µTorrent', UM: 'µTorrent Mac', UE: 'µTorrent Embedded',
   TR: 'Transmission', DE: 'Deluge', LT: 'libtorrent', lt: 'libTorrent',
-  TH: 'TorrentHunt', AZ: 'Azureus / Vuze', BT: 'BitTorrent', BC: 'BitComet',
+  HV: 'Havvn', TH: 'TorrentHunt', AZ: 'Azureus / Vuze', BT: 'BitTorrent', BC: 'BitComet',
   KT: 'KTorrent', FD: 'Free Download Manager', WW: 'WebTorrent', WD: 'WebTorrent',
   WT: 'BitTornado', TX: 'Tixati', RT: 'rTorrent', qB: 'qBittorrent',
 };

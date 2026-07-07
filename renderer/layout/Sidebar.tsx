@@ -103,7 +103,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </g>
           </svg>
         </div>
-        <span className="sidebar-title">TorrentHunt</span>
+        <span className="sidebar-title">Havvn</span>
       </div>
 
       {/* Navigation */}
@@ -175,7 +175,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
         
         <div className="sidebar-version">
-          TorrentHunt{appVersion ? ` v${appVersion}` : ''}
+          Havvn{appVersion ? ` v${appVersion}` : ''}
         </div>
       </div>
     </aside>

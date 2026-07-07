@@ -132,7 +132,7 @@ export class RSSService {
 
       const req = lib.get(url, {
         headers: {
-          'User-Agent': `TorrentHunt/${app.getVersion()} RSS Reader`,
+          'User-Agent': `Havvn/${app.getVersion()} RSS Reader`,
           'Accept': 'application/rss+xml, application/xml, text/xml, */*',
         },
         timeout: 15000,

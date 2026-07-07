@@ -43,7 +43,7 @@ export interface PortForwardStatus {
 const LEASE_TTL_SECONDS = 3600;          // ask the router for a 1-hour lease
 const RENEW_INTERVAL_MS = 30 * 60 * 1000; // renew every 30 min (well before expiry)
 const REQUEST_TIMEOUT_MS = 4000;          // SSDP/SOAP timeout — keep startup snappy
-const DESCRIPTION = 'TorrentHunt';
+const DESCRIPTION = 'Havvn'; // shown in the router's port-forward table
 
 class PortForwardingService {
   private client: Client | null = null;

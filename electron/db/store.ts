@@ -39,6 +39,7 @@ interface ConfigSchema {
   collaborativeSeedingEnabled: boolean;  // Collaborative Seeding Network opt-in (persisted)
   trayHintShown?: boolean;               // One-time "running in tray" hint (set from main.ts)
   splitStoresMigrated?: boolean;         // One-time migration marker (see migrateToSplitStores)
+  utpDefaultOnMigrated?: boolean;        // One-time flip of µTP on for existing installs (see migrateUtpDefaultOn)
   networkProfiles?: NetworkProfile[];    // Smart per-network settings overlays
 }
 
@@ -114,7 +115,9 @@ const configStore = new Store<ConfigSchema>({
   defaults: {
     settings: {
       id: 1,
-      defaultDownloadDir: path.join(app.getPath('downloads'), 'TorrentHunt'),
+      // Fresh installs download to <Downloads>/Havvn; migrated profiles keep
+      // whatever defaultDownloadDir they had persisted (often .../TorrentHunt).
+      defaultDownloadDir: path.join(app.getPath('downloads'), 'Havvn'),
       maxDownKbps: 0,
       maxUpKbps: 0,
       altSpeedEnabled: false,
@@ -129,8 +132,13 @@ const configStore = new Store<ConfigSchema>({
       enableDHT: true,
       enablePEX: true,
       enableLSD: true,
-      // µTP experimental: default on except Windows (historic utp-native crash).
-      enableUtp: process.platform !== 'win32',
+      // µTP on by default on ALL platforms now: utp-native ships an ABI-stable
+      // N-API prebuild that loads under Electron, the WSAENOBUFS socket flood is
+      // bounded by connection slow-start, and a µTP failure falls back to TCP
+      // per-peer (WebTorrent) / is swallowed transiently by the host. Being
+      // TCP-only on Windows was a major cause of peer scarcity. Toggle in
+      // Settings → Advanced (enableUtp) to force TCP-only.
+      enableUtp: true,
       maxConnections: 100,
       maxConnectionsGlobal: 300,
       portMin: 6881,
@@ -264,6 +272,23 @@ function migrateToSplitStores(): void {
 }
 
 migrateToSplitStores();
+
+/**
+ * One-time flip of µTP on for existing installs. Older Windows builds persisted
+ * enableUtp:false (TCP-only was a major cause of peer scarcity); µTP is now safe
+ * on by default. Flip it on once for anyone currently at false, then never touch
+ * it again — a user who deliberately toggles it back off keeps that choice.
+ */
+function migrateUtpDefaultOn(): void {
+  if (configStore.get('utpDefaultOnMigrated')) return;
+  const s = configStore.get('settings') as (AppSettings | undefined);
+  if (s && s.enableUtp === false) {
+    configStore.set('settings', { ...s, enableUtp: true });
+  }
+  configStore.set('utpDefaultOnMigrated', true);
+}
+
+migrateUtpDefaultOn();
 
 // === Room tombstones (deleted shared files — keep them from reappearing) ===
 

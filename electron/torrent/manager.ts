@@ -265,13 +265,14 @@ export class TorrentManager {
   }
 
   /**
-   * Generate a BitTorrent peer ID in Azureus-style format: -TH1810-<random>.
+   * Generate a BitTorrent peer ID in Azureus-style format: -HV1810-<random>
+   * (HV = Havvn; -TH was the pre-rebrand TorrentHunt prefix).
    * Version digits are derived from package.json so they never go stale.
    * 20 bytes total, no machine-identifying data; rotates every launch.
    */
   private generateEphemeralPeerId(): Buffer {
     const digits = getHostEnv().version.replace(/\D/g, '').padEnd(4, '0').slice(0, 4);
-    const prefix = `-TH${digits}-`;
+    const prefix = `-HV${digits}-`;
     const random = crypto.randomBytes(20 - prefix.length).toString('hex').slice(0, 20 - prefix.length);
     return Buffer.from(prefix + random);
   }
@@ -313,20 +314,25 @@ export class TorrentManager {
     });
 
     // Use an ephemeral, non-identifying BitTorrent peer ID. It carries the
-    // TorrentHunt client prefix (-TH<version>-) followed by random bytes that
+    // Havvn client prefix (-HV<version>-) followed by random bytes that
     // rotate every launch, so peers can't correlate sessions long-term.
     //
-    // µTP transport reaches µTP-only peers that TCP misses, but the native
-    // utp-native module historically threw uncaught WSAENOBUFS on Windows under
-    // load. It's now an EXPERIMENTAL opt-in (Settings → Advanced), default OFF on
-    // Windows and ON elsewhere, and the engine runs in an auto-restarting utility
-    // process so a transient native crash is recovered, not fatal to the app.
+    // µTP reaches the many µTP-only peers that TCP misses — being TCP-only was a
+    // major cause of "few peers / stalls" on Windows. It was defaulted OFF on
+    // Windows because utp-native historically threw uncaught WSAENOBUFS under a
+    // socket-creation flood. That flood is now bounded (connection slow-start +
+    // global budget in applyConnectionLimit), and three layers make a µTP hiccup
+    // non-fatal: WebTorrent replaces a failed µTP connection with TCP per-peer and
+    // flips client.utp=false on a utpServer error (conn-pool _onUTPError), and the
+    // host swallows transient ENOBUFS at the process level. utp-native ships an
+    // N-API prebuild (ABI-stable, loads under this Electron with no rebuild), so
+    // µTP is now ON by default everywhere; set settings.enableUtp=false to force
+    // TCP-only. The require.resolve guard still downgrades gracefully if the
+    // native module is somehow absent.
     //
     // dht / maxConns / torrentPort / download+uploadLimit come from Settings →
     // Advanced. (PEX can't be toggled in WebTorrent; LSD isn't implemented.)
-    // µTP only engages if the optional native module is actually installed —
-    // otherwise stay TCP-only instead of risking a load error.
-    let enableUtp = settings.enableUtp ?? (process.platform !== 'win32');
+    let enableUtp = settings.enableUtp ?? true;
     if (enableUtp) {
       try { require.resolve('utp-native'); }
       catch { enableUtp = false; log.warn('µTP requested but utp-native is not installed — staying TCP-only'); }
@@ -448,7 +454,18 @@ export class TorrentManager {
         if (fs.existsSync(download.torrentFilePath)) {
           source = download.torrentFilePath;
         } else {
-          throw new TorrentError('Torrent file not found', 'FILE_NOT_FOUND', download.id);
+          // The stored path may point into a previous profile location — e.g. a
+          // pre-rebrand %APPDATA%\torrenthunt\torrents\… path after the Havvn
+          // profile migration, or any manual profile move. The .torrent was
+          // copied into THIS profile's torrents dir (same basename), so retry
+          // there before giving up.
+          const healed = path.join(getHostEnv().userDataDir, 'torrents', path.basename(download.torrentFilePath));
+          if (fs.existsSync(healed)) {
+            source = healed;
+            await db.updateDownloadField(download.id, 'torrentFilePath', healed);
+          } else {
+            throw new TorrentError('Torrent file not found', 'FILE_NOT_FOUND', download.id);
+          }
         }
       } else {
         source = download.sourceUri;
@@ -703,7 +720,7 @@ export class TorrentManager {
         const parsed = new URL(current);
         const lib = parsed.protocol === 'https:' ? https : http;
         const req = lib.get(current, {
-          headers: { 'User-Agent': `TorrentHunt/${getHostEnv().version}`, 'Accept': 'application/x-bittorrent, */*' },
+          headers: { 'User-Agent': `Havvn/${getHostEnv().version}`, 'Accept': 'application/x-bittorrent, */*' },
           timeout: 30000,
         }, (res) => {
           if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
@@ -1359,19 +1376,24 @@ export class TorrentManager {
       });
       
       torrent.on('done', async () => {
-        log.info('Torrent completed', { id, name: managed.download.name });
         if (managed.download.status !== 'downloading') return;
 
         // Backstop for the pause race: WebTorrent's _checkDone() fires 'done' when
         // there are NO selections at all (which is exactly how haltTorrent pauses).
         // A genuinely-finished torrent still has its satisfied selection at emit
         // time (the emit precedes _gcSelections), so an empty _selections here means
-        // a paused partial download, not a real completion — ignore it.
+        // a paused partial download, not a real completion — ignore it. (WebTorrent
+        // can even re-emit 'done' several times while selections are empty, hence
+        // the duplicate logs one used to see on pause.)
         const sel = (torrent as unknown as { _selections?: unknown[] })._selections;
         if (Array.isArray(sel) && sel.length === 0) {
           log.debug('Ignoring spurious done (no selections — torrent is paused/halted)', { id });
           return;
         }
+
+        // Only log a REAL completion (this line used to fire before the guards, so
+        // it appeared — misleadingly — on every pause-induced spurious 'done').
+        log.info('Torrent completed', { id, name: managed.download.name });
 
         // Persist the completion snapshot NOW rather than waiting on the throttled
         // 5s stats tick — auto-move destroys the instance right after 'done', and an

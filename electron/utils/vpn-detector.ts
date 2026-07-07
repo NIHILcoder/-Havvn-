@@ -349,7 +349,7 @@ export function fetchIpGeo(ip: string): Promise<{ country?: string; region?: str
     const done = (v: { country?: string; region?: string; city?: string; org?: string }) => resolve(v);
     try {
       const req = https.get(`https://ipinfo.io/${encodeURIComponent(ip)}/json`, {
-        headers: { 'User-Agent': 'TorrentHunt', 'Accept': 'application/json' },
+        headers: { 'User-Agent': 'Havvn', 'Accept': 'application/json' },
         timeout: 5000,
       }, (res) => {
         if (!res.statusCode || res.statusCode >= 400) { res.resume(); return done({}); }

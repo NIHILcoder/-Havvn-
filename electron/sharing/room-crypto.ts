@@ -53,6 +53,9 @@ export function normalizeCode(code: string): string {
   return code.trim().toLowerCase().replace(/\s+/g, '-').replace(/-+/g, '-');
 }
 
+// COMPATIBILITY-CRITICAL: the KDF salt keeps the pre-rebrand value on purpose.
+// Changing it would make Havvn builds derive different keys from the same room
+// code — old and new versions could never join each other's rooms.
 const SALT = Buffer.from('torrenthunt-room-v1');
 
 /** 256-bit AES-GCM key derived from the code. */

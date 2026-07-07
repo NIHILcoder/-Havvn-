@@ -1,5 +1,5 @@
 /**
- * TorrentHunt State Machine
+ * Havvn State Machine
  * 
  * Defines all valid states and transitions for a torrent download.
  * Prevents illegal state changes and provides validation helpers.

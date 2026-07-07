@@ -18,6 +18,9 @@ import fs from 'fs';
 // seed from a path — while WebRTC comes from the window below.
 import WebTorrent from 'webtorrent';
 
+// Still the pre-rebrand GitHub Pages URL ON PURPOSE: renaming the repo would
+// kill every previously shared link (Pages URLs don't redirect). Revisit only
+// with a deliberate repo migration that keeps the old path serving.
 const RECEIVER_BASE = 'https://nihilcoder.github.io/TorrentHunt/share/';
 
 // ICE servers + rendezvous trackers come from the shared module (see

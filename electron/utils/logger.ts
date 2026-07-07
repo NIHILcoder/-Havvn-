@@ -1,5 +1,5 @@
 /**
- * TorrentHunt Logger
+ * Havvn Logger
  * 
  * Provides structured logging to both console and file.
  * Logs are rotated daily and stored in the app's userData directory.
@@ -222,7 +222,7 @@ class Logger {
 
     // Create new log file
     this.currentLogDate = today;
-    this.currentLogFile = path.join(this.logDir, `torrenthunt-${today}.log`);
+    this.currentLogFile = path.join(this.logDir, `havvn-${today}.log`);
     this.writeStream = fs.createWriteStream(this.currentLogFile, { flags: 'a' });
 
     // Clean up old logs (keep last 7 days)
@@ -239,7 +239,9 @@ class Logger {
       const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 days in ms
 
       for (const file of files) {
-        if (!file.startsWith('torrenthunt-') || !file.endsWith('.log')) continue;
+        // 'torrenthunt-' covers pre-rebrand logs (possibly present in a migrated
+        // profile) so they age out instead of sitting there forever.
+        if (!(file.startsWith('havvn-') || file.startsWith('torrenthunt-')) || !file.endsWith('.log')) continue;
 
         const filePath = path.join(this.logDir, file);
         const stat = fs.statSync(filePath);
@@ -279,8 +281,9 @@ class Logger {
 
   /**
    * Delete all log files immediately (privacy "clear logs now" action).
-   * Closes the active stream, removes every torrenthunt-*.log, then reopens a
-   * fresh stream so logging continues. Returns the number of files removed.
+   * Closes the active stream, removes every havvn-*.log (and pre-rebrand
+   * torrenthunt-*.log), then reopens a fresh stream so logging continues.
+   * Returns the number of files removed.
    */
   clearLogs(): number {
     let removed = 0;
@@ -294,7 +297,7 @@ class Logger {
 
       if (this.logDir && fs.existsSync(this.logDir)) {
         for (const file of fs.readdirSync(this.logDir)) {
-          if (!file.startsWith('torrenthunt-') || !file.endsWith('.log')) continue;
+          if (!(file.startsWith('havvn-') || file.startsWith('torrenthunt-')) || !file.endsWith('.log')) continue;
           try { fs.unlinkSync(path.join(this.logDir, file)); removed++; } catch { /* locked — skip */ }
         }
       }

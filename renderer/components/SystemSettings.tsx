@@ -38,7 +38,7 @@ export const SystemSettings: React.FC<SystemSettingsProps> = ({
             Auto Launch with Windows
           </label>
           <p className="setting-description">
-            Automatically start TorrentHunt when you log in
+            Automatically start Havvn when you log in
           </p>
         </div>
         <div className="setting-control">
@@ -120,7 +120,7 @@ export const SystemSettings: React.FC<SystemSettingsProps> = ({
             Default Torrent Client
           </label>
           <p className="setting-description">
-            Open .torrent files and magnet links with TorrentHunt
+            Open .torrent files and magnet links with Havvn
           </p>
         </div>
         <div className="setting-control">

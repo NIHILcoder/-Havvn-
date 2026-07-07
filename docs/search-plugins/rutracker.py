@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-RuTracker search plugin for TorrentHunt.
+RuTracker search plugin for Havvn.
 
 RuTracker is login-gated and has no public API, so this plugin logs in with YOUR
 account, searches, and returns magnet links. It uses only the Python standard
 library (no `pip install` needed).
 
-CREDENTIALS — set in TorrentHunt, NOT in this file:
+CREDENTIALS — set in Havvn, NOT in this file:
     Add a provider of type "Python Script" pointing at this file, then fill in the
-    Login and Password fields. TorrentHunt passes them to this script as the
+    Login and Password fields. Havvn passes them to this script as the
     environment variables TH_USERNAME / TH_PASSWORD (your real password is stored
     encrypted by the OS keychain, never in plaintext on disk).
 
@@ -19,11 +19,11 @@ CREDENTIALS — set in TorrentHunt, NOT in this file:
 
 NOTES:
     - RuTracker pages are windows-1251 encoded and often gzipped — handled here.
-    - It's blocked by some ISPs; TorrentHunt's DNS-over-HTTPS option helps reach
+    - It's blocked by some ISPs; Havvn's DNS-over-HTTPS option helps reach
       it, and the plugin tries the .org / .net / .nl mirrors in turn.
     - The search results page has no infohash, so the plugin fetches the top
       results' topic pages (concurrently) to extract their magnet links. Result
-      count is capped to stay within TorrentHunt's 25 s / 8 MB script limits.
+      count is capped to stay within Havvn's 25 s / 8 MB script limits.
     - Only run plugins you trust; this one talks only to rutracker mirrors.
 """
 

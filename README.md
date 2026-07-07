@@ -1,4 +1,4 @@
-# TorrentHunt
+# Havvn
 
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)
 ![Version](https://img.shields.io/badge/Version-2.7.0--beta-orange)
@@ -7,7 +7,7 @@
 
 **A private, serverless P2P hub that happens to speak BitTorrent.**
 
-TorrentHunt is a fully-featured torrent client — but that's the foundation, not the
+Havvn (formerly TorrentHunt) is a fully-featured torrent client — but that's the foundation, not the
 point. Its real job is the things classic clients *can't* do, all peer-to-peer with
 **no servers, no accounts, and nothing in the cloud**:
 
@@ -22,11 +22,11 @@ point. Its real job is the things classic clients *can't* do, all peer-to-peer w
 - 🛡️ **See what the swarm sees.** A live privacy dashboard shows your exposed IP, ISP
   and VPN status, with IP-leak detection and a kill-switch.
 
-You bring your own indexers and feeds — TorrentHunt bundles none. Everything runs on
+You bring your own indexers and feeds — Havvn bundles none. Everything runs on
 your machine and directly between you and your peers: **the developer runs no servers,
 and the app costs nothing to operate.** Built with Electron, React and WebTorrent.
 
-> **Legal use only.** TorrentHunt does not bundle indexers for copyrighted material.
+> **Legal use only.** Havvn does not bundle indexers for copyrighted material.
 > The only pre-seeded source is a Creative Commons / open-source RSS feed (FOSS Torrents),
 > shipped **disabled**. Any search providers or additional RSS feeds are added by you, and
 > you are responsible for what you download and share.
@@ -46,7 +46,7 @@ app, the installer may trigger a SmartScreen "unknown publisher" prompt; verifyi
 checksum confirms the file is genuine.
 
 ```powershell
-Get-FileHash .\TorrentHunt-Setup-<version>.exe -Algorithm SHA256
+Get-FileHash .\Havvn-Setup-<version>.exe -Algorithm SHA256
 ```
 
 Compare the output against the SHA-256 published in the matching GitHub release.
@@ -273,5 +273,5 @@ opening a PR.
 
 MIT License — see the `LICENSE` file.
 
-Copyright © 2026 TorrentHunt. Free to use, modify and distribute under the terms of the
+Copyright © 2026 Havvn. Free to use, modify and distribute under the terms of the
 MIT License.

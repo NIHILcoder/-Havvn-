@@ -229,7 +229,7 @@ export class WebRemoteServer {
 // X-TH-Token header on every API call; opens /watch/<id>/<idx>?k= for playback.
 const MOBILE_APP_HTML = `<!DOCTYPE html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>TorrentHunt Remote</title>
+<title>Havvn Remote</title>
 <style>
 :root{color-scheme:dark}
 *{box-sizing:border-box}
@@ -255,7 +255,7 @@ header h1{font-size:16px;margin:0;font-weight:700;flex:1}
 .empty{color:#9a9aa2;text-align:center;padding:48px 16px;font-size:14px}
 .s-downloading{color:#60a5fa}.s-seeding,.s-completed{color:#22c55e}.s-error{color:#f87171}.s-paused{color:#f59e0b}
 </style></head><body>
-<header><h1>TorrentHunt Remote</h1></header>
+<header><h1>Havvn Remote</h1></header>
 <div class="add"><input id="mag" placeholder="magnet:?xt=…" inputmode="url"><button onclick="addMag()">Add</button></div>
 <div class="list" id="list"><div class="empty">Loading…</div></div>
 <script>

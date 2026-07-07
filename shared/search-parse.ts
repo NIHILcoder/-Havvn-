@@ -2,7 +2,7 @@
  * Search-script output sanitizer.
  *
  * This is the trust boundary between a user-provided search script (whose stdout
- * is fully untrusted) and the TorrentHunt UI. It lives in `shared/` with no
+ * is fully untrusted) and the Havvn UI. It lives in `shared/` with no
  * Electron / Node imports so it can be unit-tested in isolation.
  */
 

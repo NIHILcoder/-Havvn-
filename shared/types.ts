@@ -1,4 +1,4 @@
-// Shared types for TorrentHunt application
+// Shared types for Havvn application
 
 export type DownloadStatus =
   | 'queued'

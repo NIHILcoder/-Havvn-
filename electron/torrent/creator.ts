@@ -120,7 +120,7 @@ function stageSelection(
   sourcePaths: string[],
   excludeSet: Set<string>,
 ): { input: string | string[]; name?: string; stageDir: string } {
-  const stageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'torrenthunt-stage-'));
+  const stageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'havvn-stage-'));
   const wipe = () => { try { fs.rmSync(stageDir, { recursive: true, force: true }); } catch { /* ignore */ } };
   try {
     const tops: string[] = [];
@@ -293,7 +293,7 @@ export async function createTorrentFile(
     const seedOpts = {
       name: options.name || stagedName || (usingFolderRoot ? path.basename(primaryPath) : undefined),
       comment: options.comment,
-      createdBy: options.createdBy || 'TorrentHunt',
+      createdBy: options.createdBy || 'Havvn',
       announce,
       urlList: options.urlList,
       private: options.private || false,

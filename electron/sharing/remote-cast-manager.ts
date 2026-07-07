@@ -15,6 +15,7 @@ import { getTorrentManager } from '../torrent';
 
 const log = logger.child('RemoteCast');
 
+// Pre-rebrand GitHub Pages URL kept on purpose — see share-seeder.ts RECEIVER_BASE.
 const RECEIVER_BASE = 'https://nihilcoder.github.io/TorrentHunt/watch/';
 import { customTurnToIce } from './ice-servers';
 

@@ -53,7 +53,7 @@ export const AboutSection: React.FC<AboutSectionProps> = ({
             <div className="about-logo-tile"><Icon name="download" size={30} /></div>
           </div>
           <div className="about-hero-text">
-            <h2 className="about-app-name">TorrentHunt</h2>
+            <h2 className="about-app-name">Havvn</h2>
             <div className="about-badges">
               <span className="about-pill about-pill--ver">v{appVersion || '—'}</span>
               {/(alpha|beta|rc)/i.test(appVersion) && (

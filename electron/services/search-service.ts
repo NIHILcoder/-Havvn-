@@ -352,7 +352,7 @@ export class SearchService {
 
       const req = lib.get(url, {
         headers: {
-          'User-Agent': `TorrentHunt/${app.getVersion()} Search`,
+          'User-Agent': `Havvn/${app.getVersion()} Search`,
           ...extraHeaders,
         },
         timeout: 20000,

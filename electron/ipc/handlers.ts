@@ -949,13 +949,13 @@ export function setupIpcHandlers(window: BrowserWindow): void {
   // Auto-launch
   ipcMain.handle('app:setAutoLaunch', wrapHandler('app:setAutoLaunch',
     async (_event, enabled: boolean) => {
-      // Register under a friendly name ("TorrentHunt") instead of the raw
-      // executable, so Task Manager / Startup lists it as TorrentHunt rather
+      // Register under a friendly name ("Havvn") instead of the raw
+      // executable, so Task Manager / Startup lists it as Havvn rather
       // than electron.exe. openAsHidden: start minimised to tray at login.
       app.setLoginItemSettings({
         openAtLogin: enabled,
         openAsHidden: enabled,
-        name: 'TorrentHunt',
+        name: 'Havvn',
         path: process.execPath,
       });
 
@@ -969,7 +969,7 @@ export function setupIpcHandlers(window: BrowserWindow): void {
     async () => {
       // The persisted preference is the source of truth. Reading the OS login
       // item back is unreliable on Windows when it was registered under a custom
-      // name ("TorrentHunt"): getLoginItemSettings() without that name reports
+      // name ("Havvn"): getLoginItemSettings() without that name reports
       // openAtLogin=false even though the registry entry exists, which made the
       // toggle reset itself on every revisit. The actual OS login item is applied
       // from this setting on startup (see main.ts) and updated on every toggle.
@@ -1006,11 +1006,11 @@ export function setupIpcHandlers(window: BrowserWindow): void {
 
           // Register the file type class
           const regCmds: [string, string[]][] = [
-            ['reg', ['add', 'HKCU\\Software\\Classes\\.torrent', '/ve', '/d', 'TorrentHunt.file', '/f']],
+            ['reg', ['add', 'HKCU\\Software\\Classes\\.torrent', '/ve', '/d', 'Havvn.file', '/f']],
             ['reg', ['add', 'HKCU\\Software\\Classes\\.torrent', '/v', 'Content Type', '/d', 'application/x-bittorrent', '/f']],
-            ['reg', ['add', 'HKCU\\Software\\Classes\\TorrentHunt.file', '/ve', '/d', 'BitTorrent Document', '/f']],
-            ['reg', ['add', 'HKCU\\Software\\Classes\\TorrentHunt.file\\DefaultIcon', '/ve', '/d', `${iconPath},0`, '/f']],
-            ['reg', ['add', 'HKCU\\Software\\Classes\\TorrentHunt.file\\shell\\open\\command', '/ve', '/d', `"${exePath}" "%1"`, '/f']],
+            ['reg', ['add', 'HKCU\\Software\\Classes\\Havvn.file', '/ve', '/d', 'BitTorrent Document', '/f']],
+            ['reg', ['add', 'HKCU\\Software\\Classes\\Havvn.file\\DefaultIcon', '/ve', '/d', `${iconPath},0`, '/f']],
+            ['reg', ['add', 'HKCU\\Software\\Classes\\Havvn.file\\shell\\open\\command', '/ve', '/d', `"${exePath}" "%1"`, '/f']],
           ];
 
           for (const [cmd, args] of regCmds) {
@@ -1059,7 +1059,7 @@ export function setupIpcHandlers(window: BrowserWindow): void {
     async () => {
       const result = await dialog.showSaveDialog(mainWindow, {
         title: 'Export Settings',
-        defaultPath: 'torrenthunt-settings.json',
+        defaultPath: 'havvn-settings.json',
         filters: [{ name: 'JSON Files', extensions: ['json'] }],
       });
 

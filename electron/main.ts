@@ -89,7 +89,7 @@ function showTrayHintOnce(): void {
     if ((store as any).get('trayHintShown')) return;
     (store as any).set('trayHintShown', true);
 
-    const title = 'TorrentHunt продолжает работать в фоне';
+    const title = 'Havvn продолжает работать в фоне';
     const body = 'Загрузки активны. Откройте окно или выйдите через значок в системном трее.';
 
     if (Notification.isSupported()) {
@@ -131,11 +131,11 @@ function createTray(): void {
 
   // On Windows a 16x16 tray icon renders crispest; .ico is multi-resolution so resize picks the right frame
   tray = new Tray(trayIcon.isEmpty() ? trayIcon : trayIcon.resize({ width: 16, height: 16 }));
-  tray.setToolTip('TorrentHunt — Running in background');
+  tray.setToolTip('Havvn — Running in background');
 
   const buildContextMenu = () => Menu.buildFromTemplate([
     {
-      label: 'Open TorrentHunt',
+      label: 'Open Havvn',
       type: 'normal',
       click: () => {
         if (mainWindow) {
@@ -177,7 +177,7 @@ function createTray(): void {
     },
     { type: 'separator' },
     {
-      label: 'Quit TorrentHunt',
+      label: 'Quit Havvn',
       type: 'normal',
       click: () => {
         isQuitting = true;
@@ -279,7 +279,7 @@ async function createWindow(): Promise<void> {
     },
     // Test copies (TH_INSTANCE) get a labelled title so two windows on one
     // machine are tellable apart while verifying rooms/share links.
-    title: isSecondaryInstance ? `TorrentHunt — ${process.env.TH_INSTANCE}` : 'TorrentHunt',
+    title: isSecondaryInstance ? `Havvn — ${process.env.TH_INSTANCE}` : 'Havvn',
     backgroundColor: '#000000', // matches the app + splash; no flash before paint
   });
 
@@ -299,7 +299,7 @@ async function createWindow(): Promise<void> {
   // Keep the instance label in the title bar: the renderer's <title> would
   // otherwise overwrite it the moment the page loads.
   if (isSecondaryInstance) {
-    const label = `TorrentHunt — ${process.env.TH_INSTANCE}`;
+    const label = `Havvn — ${process.env.TH_INSTANCE}`;
     mainWindow.on('page-title-updated', (e) => { e.preventDefault(); mainWindow?.setTitle(label); });
     mainWindow.setTitle(label);
   }
@@ -379,14 +379,14 @@ async function createWindow(): Promise<void> {
         event.preventDefault();
         mainWindow?.hide();
         // Update tray tooltip to indicate background mode
-        tray?.setToolTip('TorrentHunt — Running in background');
+        tray?.setToolTip('Havvn — Running in background');
         showTrayHintOnce();
       }
     }
   });
 
   mainWindow.on('show', () => {
-    tray?.setToolTip('TorrentHunt');
+    tray?.setToolTip('Havvn');
   });
 
   mainWindow.on('closed', () => {
@@ -443,6 +443,9 @@ async function initializeApp(): Promise<void> {
 
   // Identify the app to Windows so notifications/toasts are attributed correctly
   // (otherwise they appear to come from "electron.exe", and may be suppressed).
+  // Kept at the pre-rebrand id ON PURPOSE: it must match build.appId, and
+  // changing appId would give NSIS a new identity — existing TorrentHunt
+  // installs would no longer be upgraded in place (side-by-side installs).
   app.setAppUserModelId('com.torrenthunt.app');
 
   // Initialize logger first, honoring privacy settings (disable/sanitize logs)
@@ -453,7 +456,7 @@ async function initializeApp(): Promise<void> {
     sanitize: privacyCfg.sanitizeLogs === true,
   });
 
-  logger.info('App', 'TorrentHunt starting...');
+  logger.info('App', 'Havvn starting...');
 
   // Safety net: log async errors from native deps (e.g. utp-native socket
   // errors, networking hiccups) instead of letting Electron pop an endless
@@ -576,13 +579,16 @@ async function initializeApp(): Promise<void> {
     logger.error('App', 'Failed to start web remote', { error: e });
   }
 
-  // Apply auto-launch setting (registered as "TorrentHunt", not electron.exe)
+  // Apply auto-launch setting (registered as "Havvn", not electron.exe). This
+  // re-assert also carries autostart across the rebrand: the old installer's
+  // uninstaller removes the legacy "TorrentHunt" Run entry during upgrade, and
+  // this recreates it under the new name from the migrated settings.
   const settings = store.get('settings') as any;
   if (settings?.autoLaunch !== undefined) {
     app.setLoginItemSettings({
       openAtLogin: settings.autoLaunch,
       openAsHidden: settings.autoLaunch,
-      name: 'TorrentHunt',
+      name: 'Havvn',
       path: process.execPath,
     });
   }

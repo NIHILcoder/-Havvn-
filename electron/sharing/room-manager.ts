@@ -198,7 +198,7 @@ export class RoomManager {
   private async roomsBase(): Promise<string> {
     let base: string;
     try { base = (await db.getSettings()).defaultDownloadDir; }
-    catch { base = path.join(app.getPath('downloads'), 'TorrentHunt'); }
+    catch { base = path.join(app.getPath('downloads'), 'Havvn'); }
     return path.join(base, 'Rooms');
   }
 
