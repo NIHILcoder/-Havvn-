@@ -4,7 +4,7 @@
  */
 
 import path from 'node:path';
-import type { Download, DownloadStats, DownloadStatus, TorrentFile, PeerInfo, TrackerInfo, FilePriority, SwarmGeo, SwarmGeoPoint } from '../../../shared/types';
+import type { Download, DownloadStats, DownloadStatus, TorrentFile, TorrentInfo, PeerInfo, TrackerInfo, FilePriority, SwarmGeo, SwarmGeoPoint } from '../../../shared/types';
 import { TrStatus, TrTorrent, TrPeer } from './transmission-rpc';
 import { numToIp } from '../../../shared/ip-range';
 import { TorrentError } from '../errors';
@@ -95,6 +95,28 @@ export function mapFiles(t: TrTorrent): TorrentFile[] {
       priority: st ? (st.wanted ? TR_PRIORITY[st.priority] ?? 'normal' : 'skip') : 'normal',
     };
   });
+}
+
+/** Daemon torrent → the add-dialog preview shape (name / files / total size). */
+export function mapTorrentInfo(t: TrTorrent): TorrentInfo {
+  const files = (t.files ?? []).map((f, index) => ({ path: f.name, size: f.length, index }));
+  return {
+    name: t.name,
+    files,
+    totalSize: t.totalSize || files.reduce((sum, f) => sum + f.size, 0),
+  };
+}
+
+/**
+ * Complement of `selected` over `total` file indices — transmission wants the
+ * UNWANTED list. undefined = keep everything (no selection, out-of-range
+ * selection, or a selection that would unwant every file and brick the add).
+ */
+export function complementIndices(total: number, selected?: number[]): number[] | undefined {
+  if (!selected || selected.length === 0 || total <= 0) return undefined;
+  const keep = new Set(selected);
+  const unwanted = Array.from({ length: total }, (_, i) => i).filter((i) => !keep.has(i));
+  return unwanted.length > 0 && unwanted.length < total ? unwanted : undefined;
 }
 
 export function mapPeers(t: TrTorrent): PeerInfo[] {

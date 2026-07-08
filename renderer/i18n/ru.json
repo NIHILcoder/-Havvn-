@@ -3,6 +3,7 @@
   "filePicker.title": "Выберите файлы для загрузки",
   "filePicker.loading": "Загрузка информации о торренте…",
   "filePicker.loadFailed": "Не удалось загрузить торрент",
+  "filePicker.addAnyway": "Добавить всё равно (все файлы)",
   "filePicker.searchPlaceholder": "Поиск файлов…",
   "filePicker.selectAll": "Выбрать все",
   "filePicker.deselectAll": "Снять выделение",

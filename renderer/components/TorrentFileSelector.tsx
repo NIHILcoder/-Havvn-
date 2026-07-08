@@ -201,7 +201,12 @@ export const TorrentFileSelector: React.FC<TorrentFileSelectorProps> = ({
             <Icon name="alert-circle" size={48} />
             <h3>{t('filePicker.loadFailed')}</h3>
             <p>{error || 'Unknown error occurred'}</p>
-            <Button onClick={onCancel}>{t('player.close')}</Button>
+            <div className="file-selector-error-actions">
+              {/* Preview is optional — a metadata timeout must not block the add.
+                  Empty selection = download everything. */}
+              <Button variant="primary" onClick={() => onConfirm([])}>{t('filePicker.addAnyway')}</Button>
+              <Button onClick={onCancel}>{t('player.close')}</Button>
+            </div>
           </div>
         </div>
       </div>

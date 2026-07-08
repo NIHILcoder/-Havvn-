@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   mapStatus, mapStats, mapFiles, mapPeers, mapTrackers, aggregateSwarmGeo,
   editTrackerList, normalizeTrackerUrl, stripTrackerSlash, buildBlocklistP2P, fileBeginPiece,
+  mapTorrentInfo, complementIndices,
 } from './map';
 import { TrStatus, TrTorrent, TrPeer, TrTrackerStat } from './transmission-rpc';
 import { TorrentError } from '../errors';
@@ -76,6 +77,48 @@ describe('mapFiles', () => {
     const files = mapFiles(t);
     expect(files[0]).toMatchObject({ index: 0, name: 'ep1.mkv', path: 'Show/ep1.mkv', progress: 0.5, priority: 'high' });
     expect(files[1].priority).toBe('skip');
+  });
+});
+
+describe('mapTorrentInfo', () => {
+  it('maps daemon files to the add-dialog preview shape', () => {
+    const info = mapTorrentInfo(tr({
+      name: 'Pack',
+      totalSize: 30,
+      files: [
+        { name: 'Pack/a.mkv', length: 20, bytesCompleted: 0 },
+        { name: 'Pack/sub/b.srt', length: 10, bytesCompleted: 0 },
+      ],
+    }));
+    expect(info.name).toBe('Pack');
+    expect(info.totalSize).toBe(30);
+    expect(info.files).toEqual([
+      { path: 'Pack/a.mkv', size: 20, index: 0 },
+      { path: 'Pack/sub/b.srt', size: 10, index: 1 },
+    ]);
+  });
+
+  it('falls back to summing files when totalSize is 0, and tolerates no files', () => {
+    const info = mapTorrentInfo(tr({ totalSize: 0, files: [{ name: 'x', length: 7, bytesCompleted: 0 }] }));
+    expect(info.totalSize).toBe(7);
+    expect(mapTorrentInfo(tr({ files: undefined })).files).toEqual([]);
+  });
+});
+
+describe('complementIndices', () => {
+  it('returns the unwanted complement of a selection', () => {
+    expect(complementIndices(4, [0, 2])).toEqual([1, 3]);
+  });
+
+  it('returns undefined when there is nothing to unwant', () => {
+    expect(complementIndices(3, undefined)).toBeUndefined();
+    expect(complementIndices(3, [])).toBeUndefined();
+    expect(complementIndices(3, [0, 1, 2])).toBeUndefined();
+    expect(complementIndices(0, [1])).toBeUndefined();
+  });
+
+  it('never unwants every file (out-of-range selection would brick the add)', () => {
+    expect(complementIndices(2, [5])).toBeUndefined();
   });
 });
 

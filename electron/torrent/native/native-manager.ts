@@ -5,12 +5,11 @@
  * persists through the db-bridge (main owns electron-store), and drives the
  * bundled daemon over localhost RPC via TransmissionSidecar.
  *
- * MVP scope (engine-swap plan step 4, first increment): add / stats / pause /
- * resume / remove / recheck / files / peers / trackers / per-file priority /
- * sequential mode / cast-by-disk-path / alt-speed / settings. Advanced features
- * (in-app streaming, swarm map, tracker CRUD, seeding-from-folder) still throw
- * NOT_IMPLEMENTED and arrive in later increments — the webtorrent engine stays
- * selectable via settings.engine as the fallback.
+ * Feature-complete vs the webtorrent engine: add / stats / controls / files /
+ * peers / trackers / priorities / sequential / streaming / cast / subtitles /
+ * swarm map / seed-from-folder / blocklist / magnet metadata preview. The one
+ * deliberate no-op is DoH (the daemon has no resolver knob) — the webtorrent
+ * engine stays selectable via settings.engine for that.
  *
  * Identity note: transmission's integer ids are NOT stable across daemon
  * restarts — everything is keyed on the torrent's infoHash (persisted onto the
@@ -31,6 +30,7 @@ import { TransmissionRpc, TrTorrent, TrStatus, TrFile } from './transmission-rpc
 import {
   ENGINE_STAT_FIELDS, mapStats, mapStatus, mapFiles, mapPeers, mapTrackers, aggregateSwarmGeo,
   editTrackerList, normalizeTrackerUrl, stripTrackerSlash, buildBlocklistP2P, fileBeginPiece,
+  mapTorrentInfo, complementIndices,
 } from './map';
 import { NativeMediaServer } from './media-server';
 import { extractInfoHashFromMagnet } from '../../../shared/magnet';
@@ -48,6 +48,10 @@ const log = logger.child('NativeEngine');
 
 const STATS_INTERVAL_MS = 750;
 const PERSIST_EVERY_TICKS = 7; // ≈5.25s, mirrors the webtorrent manager's 5s batch persist
+
+// Magnet metadata preview: same 30s budget as the webtorrent manager.
+const METADATA_TIMEOUT_MS = 30_000;
+const META_PROBE_FIELDS = ['id', 'hashString', 'name', 'totalSize', 'metadataPercentComplete', 'files'];
 
 // parse-torrent is CJS with no types; we only need the file list + name.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -367,12 +371,18 @@ export class NativeTorrentManager {
     }
   }
 
-  async getTorrentInfo(params: { sourceType: SourceType; sourceUri: string }): Promise<TorrentInfo> {
+  // Same param shape as the webtorrent manager — the renderer's add dialog
+  // calls this with { torrentPath } or { magnetUri }.
+  async getTorrentInfo(params: { torrentPath?: string; magnetUri?: string }): Promise<TorrentInfo> {
     await this.whenReady();
-    if (params.sourceType !== 'torrent_file') {
-      throw new TorrentError('Magnet metadata preview is not available with the native engine yet', 'NOT_IMPLEMENTED');
-    }
-    let file = params.sourceUri;
+    if (params.torrentPath) return this.torrentInfoFromFile(params.torrentPath);
+    if (params.magnetUri) return this.torrentInfoFromMagnet(params.magnetUri);
+    throw new TorrentError('No torrent path or magnet URI provided', 'INVALID_INPUT');
+  }
+
+  /** .torrent on disk (or via http) — parsed locally, the daemon isn't touched. */
+  private async torrentInfoFromFile(source: string): Promise<TorrentInfo> {
+    let file = source;
     let temp: string | null = null;
     if (/^https?:\/\//i.test(file)) { file = await this.fetchTorrentToTemp(file); temp = file; }
     try {
@@ -381,6 +391,55 @@ export class NativeTorrentManager {
       return { name: meta.name ?? path.basename(file, '.torrent'), files, totalSize: meta.length ?? files.reduce((a, f) => a + f.size, 0) };
     } finally {
       if (temp) { try { fs.unlinkSync(temp); } catch { /* ignore */ } }
+    }
+  }
+
+  /** In-flight magnet probes, deduped by infoHash so a double-open of the add
+   *  dialog doesn't race two temp-adds of the same magnet. */
+  private readonly metaProbes = new Map<string, Promise<TorrentInfo>>();
+
+  private torrentInfoFromMagnet(magnetUri: string): Promise<TorrentInfo> {
+    const key = extractInfoHashFromMagnet(magnetUri) ?? magnetUri;
+    const inFlight = this.metaProbes.get(key);
+    if (inFlight) return inFlight;
+    const probe = this.probeMagnetMetadata(magnetUri).finally(() => this.metaProbes.delete(key));
+    this.metaProbes.set(key, probe);
+    return probe;
+  }
+
+  /**
+   * Resolve a magnet's metadata through the daemon. If the magnet is already a
+   * real download its info is served from that torrent (and it is left alone);
+   * otherwise the magnet is temp-added and removed — with any stray piece data
+   * — BEFORE resolving, so a follow-up addDownload of the same magnet can't
+   * collide with the probe as a duplicate.
+   */
+  private async probeMagnetMetadata(magnetUri: string): Promise<TorrentInfo> {
+    const hash = extractInfoHashFromMagnet(magnetUri);
+    if (hash) {
+      const known = await this.rpc!.torrentGet(META_PROBE_FIELDS, hash);
+      if (known.length > 0) return this.awaitDaemonMetadata(known[0].hashString);
+    }
+    const probeDir = path.join(getHostEnv().tempDir, 'meta-probe');
+    fs.mkdirSync(probeDir, { recursive: true });
+    const res = await this.rpc!.torrentAdd({ filename: magnetUri, downloadDir: probeDir, paused: false });
+    // Raced a real add — that torrent is a download now, not ours to remove.
+    if (res.duplicate) return this.awaitDaemonMetadata(res.hashString);
+    try {
+      return await this.awaitDaemonMetadata(res.hashString);
+    } finally {
+      try { await this.rpc!.torrentRemove(res.hashString, true); } catch { /* best-effort cleanup */ }
+    }
+  }
+
+  private async awaitDaemonMetadata(hash: string): Promise<TorrentInfo> {
+    const deadline = Date.now() + METADATA_TIMEOUT_MS;
+    for (;;) {
+      const [t] = await this.rpc!.torrentGet(META_PROBE_FIELDS, hash);
+      if (!t) throw new TorrentError('Torrent disappeared while fetching metadata', 'LOAD_ERROR');
+      if (t.metadataPercentComplete >= 1 && (t.files?.length ?? 0) > 0) return mapTorrentInfo(t);
+      if (Date.now() >= deadline) throw new TorrentError('Timeout loading torrent information', 'TIMEOUT');
+      await new Promise((r) => setTimeout(r, 500));
     }
   }
 
@@ -928,12 +987,15 @@ export class NativeTorrentManager {
 
   /** Detect and persist lifecycle transitions surfaced by the daemon. */
   private async applyTransitions(d: Download, t: TrTorrent): Promise<void> {
-    // Metadata arrival (magnets): freeze name/size, warm the cast cache.
+    // Metadata arrival (magnets): freeze name/size, warm the cast cache, and
+    // apply the add-dialog's file selection (magnet adds can't pass
+    // files-unwanted up front — the file list doesn't exist yet).
     if (!d.totalSize && t.metadataPercentComplete >= 1 && t.sizeWhenDone > 0) {
       d.totalSize = t.sizeWhenDone;
       d.name = t.name;
       await db.updateDownloadFields(d.id, { totalSize: t.sizeWhenDone, name: t.name });
       void this.warmMetaCache(d.id);
+      void this.applyMagnetFileSelection(d);
     }
 
     d.progress = t.percentDone;
@@ -974,6 +1036,24 @@ export class NativeTorrentManager {
       const [t] = await this.rpc.torrentGet(['files'], hash);
       if (t?.files?.length) this.metaCache.set(id, t.files);
     } catch { /* cast cache is best-effort */ }
+  }
+
+  /** Once a magnet's metadata lands, mark the files the user deselected in the
+   *  add dialog as unwanted (mirrors filesUnwanted on .torrent adds). */
+  private async applyMagnetFileSelection(d: Download): Promise<void> {
+    if (d.sourceType !== 'magnet' || !d.selectedFiles?.length) return;
+    const hash = this.idToHash.get(d.id);
+    if (!hash || !this.rpc) return;
+    try {
+      const [t] = await this.rpc.torrentGet(['files'], hash);
+      const unwanted = complementIndices(t?.files?.length ?? 0, d.selectedFiles);
+      if (unwanted) {
+        await this.rpc.torrentSet(hash, { 'files-unwanted': unwanted });
+        log.info('Applied magnet file selection', { id: d.id, unwanted: unwanted.length });
+      }
+    } catch (e) {
+      log.warn('Failed to apply magnet file selection', { id: d.id, error: String(e) });
+    }
   }
 }
 

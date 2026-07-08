@@ -3,6 +3,7 @@
   "filePicker.title": "Select Files to Download",
   "filePicker.loading": "Loading torrent information…",
   "filePicker.loadFailed": "Failed to Load Torrent",
+  "filePicker.addAnyway": "Add anyway (all files)",
   "filePicker.searchPlaceholder": "Search files…",
   "filePicker.selectAll": "Select All",
   "filePicker.deselectAll": "Deselect All",
