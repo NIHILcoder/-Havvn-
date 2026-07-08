@@ -219,17 +219,6 @@
   position: relative;
 }
 
-.progress-bar-fill::after {
-  content: '';
-  position: absolute;
-  right: 0;
-  top: 0;
-  bottom: 0;
-  width: 40px;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2));
-  border-radius: var(--radius-full);
-}
-
 .progress-bar-fill.success {
   background: var(--gradient-success);
 }

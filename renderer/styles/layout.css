@@ -150,6 +150,12 @@
   background: var(--color-bg-hover);
 }
 
+/* The room currently open on the rooms page (concept .ri.on: ember left edge) */
+.room-nav-item.active {
+  background: var(--color-bg-tertiary);
+  box-shadow: inset 2px 0 0 var(--color-accent-primary);
+}
+
 .room-nav-ic {
   width: 30px;
   height: 30px;

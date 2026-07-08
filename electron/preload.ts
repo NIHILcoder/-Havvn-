@@ -340,6 +340,16 @@ const api: IpcApi = {
     return ipcRenderer.invoke('app:getVersion');
   },
 
+  // Relaunch the app (engine switch "restart now")
+  relaunchApp: (): Promise<{ ok: boolean }> => {
+    return ipcRenderer.invoke('app:relaunch');
+  },
+
+  // The engine this session booted with (vs. the configured one)
+  getRunningEngine: (): Promise<'native' | 'webtorrent'> => {
+    return ipcRenderer.invoke('app:getRunningEngine');
+  },
+
   // Default client
   isDefaultClient: (): Promise<boolean> => {
     return ipcRenderer.invoke('app:isDefaultClient');

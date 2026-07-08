@@ -11,10 +11,6 @@ import { canPause, canResume } from '../../shared/state-machine';
 import {
   Button,
   Icon,
-  IconName,
-  ProgressBar,
-  StatusBadge,
-  HealthBadge,
   ToastContainer,
   EmptyState,
   FilePreview,
@@ -28,7 +24,7 @@ import './DownloadsPage.css';
 
 import {
   ViewMode, FilterMode, SortMode,
-  formatBytes, formatSpeed, formatEta, formatDate, getTypeIcon,
+  formatBytes, formatDate,
 } from './download-helpers';
 import { DownloadItem } from './DownloadItem';
 import { cleanError } from '../utils/format-helpers';
@@ -718,18 +714,17 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
     }
   }), [filteredDownloads, sortMode, sortDirection, statsForSort]);
 
-  // Calculate global stats
-  const globalStats = {
-    total: downloads.length,
-    active: downloads.filter(d => ['downloading', 'seeding'].includes(d.status)).length,
-    completed: downloads.filter(d => ['completed', 'seeding'].includes(d.status)).length,
-    totalDownSpeed: Array.from(stats.values())
-      .filter(s => s.status === 'downloading')
-      .reduce((sum, s) => sum + s.downSpeedBps, 0),
-    totalUpSpeed: Array.from(stats.values())
-      .filter(s => ['downloading', 'seeding'].includes(s.status))
-      .reduce((sum, s) => sum + s.upSpeedBps, 0),
+  // Header sub-line: "↓ n · ↑ n · ratio×" (language-neutral, mirrors the concept's
+  // "3 downloading · 12 seeding · giving back 2.4×")
+  const headerCounts = {
+    downloading: downloads.filter(d => ['downloading', 'queued'].includes(d.status)).length,
+    seeding: downloads.filter(d => d.status === 'seeding').length,
   };
+  // Byte totals prefer the live per-tick stats (the download records only
+  // refresh on explicit reloads, so the ratio would otherwise freeze).
+  const totalDownloadedBytes = downloads.reduce((sum, d) => sum + (stats.get(d.id)?.downloadedBytes ?? d.downloadedBytes), 0);
+  const totalUploadedBytes = downloads.reduce((sum, d) => sum + (stats.get(d.id)?.uploadedBytes ?? d.uploadedBytes), 0);
+  const aggregateRatio = totalDownloadedBytes > 0 ? totalUploadedBytes / totalDownloadedBytes : null;
 
   // Virtualize the downloads list so only the rows in view are mounted. The list
   // is its own scroll container (scrollMargin stays 0); rows are absolutely
@@ -767,7 +762,15 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
       onDrop={handleDrop}
     >
       <div className="page-header">
-        <h1 className="page-title">{t('downloads.title')}</h1>
+        <div className="page-title-block">
+          <h1 className="page-title">{t('downloads.title')}</h1>
+          {downloads.length > 0 && (
+            <div className="page-subtitle">
+              ↓ {headerCounts.downloading} · ↑ {headerCounts.seeding}
+              {aggregateRatio !== null && ` · ${aggregateRatio.toFixed(1)}×`}
+            </div>
+          )}
+        </div>
         <div className="page-actions">
           <div className="view-mode-toggle">
             <Button
@@ -862,40 +865,6 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
       </div>
 
       <div className="page-content">
-        {/* Global stats bar */}
-        {downloads.length > 0 && (
-          <div className="global-stats">
-            <div className="global-stats-group">
-              <div className="global-stat-item">
-                <Icon name="download" size={14} />
-                <span className="global-stat-value">{globalStats.total}</span>
-                <span className="global-stat-label">{t('downloads.total')}</span>
-              </div>
-              <div className="global-stat-item">
-                <Icon name="activity" size={14} />
-                <span className="global-stat-value">{globalStats.active}</span>
-                <span className="global-stat-label">{t('downloads.active')}</span>
-              </div>
-              <div className="global-stat-item">
-                <Icon name="check-circle" size={14} />
-                <span className="global-stat-value">{globalStats.completed}</span>
-                <span className="global-stat-label">{t('downloads.done')}</span>
-              </div>
-            </div>
-
-            <div className="global-stats-group">
-              <div className="global-stat-item">
-                <Icon name="arrow-down" size={14} />
-                <span className="global-stat-value">{formatSpeed(globalStats.totalDownSpeed)}</span>
-              </div>
-              <div className="global-stat-item">
-                <Icon name="arrow-up" size={14} />
-                <span className="global-stat-value">{formatSpeed(globalStats.totalUpSpeed)}</span>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Modern Search, Filter & Sort Controls */}
         {downloads.length > 0 && (
           <div className="modern-controls">
@@ -1147,6 +1116,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
                       onOpenFolder={handleOpenFolder}
                       onShowFiles={(id) => setPreviewId(id)}
                       onStream={(id) => setStreamModalId(id)}
+                      onShare={(id) => setShareModalId(id)}
                     />
                   </div>
                 );
@@ -1232,6 +1202,14 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
               }
             },
             {
+              label: t('downloads.files'),
+              icon: 'list',
+              onClick: () => {
+                setPreviewId(contextMenu.downloadId);
+                setContextMenu(null);
+              }
+            },
+            {
               label: 'Open Folder',
               icon: 'folder',
               onClick: () => {
@@ -1256,12 +1234,23 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
               divider: true,
             },
             {
-              label: 'Remove',
+              label: t('downloads.remove'),
               icon: 'trash',
               danger: true,
               onClick: () => {
-                if (confirm('Remove download?')) {
+                if (confirm(t('downloads.confirmRemove'))) {
                   handleRemove(contextMenu.downloadId, false);
+                }
+                setContextMenu(null);
+              }
+            },
+            {
+              label: t('downloads.deleteWithFiles'),
+              icon: 'trash',
+              danger: true,
+              onClick: () => {
+                if (confirm(t('downloads.confirmRemoveWithFiles'))) {
+                  handleRemove(contextMenu.downloadId, true);
                 }
                 setContextMenu(null);
               }

@@ -45,7 +45,15 @@ function shortTime(at: number): string {
   catch { return ''; }
 }
 
-const RoomsPage: React.FC = () => {
+interface RoomsPageProps {
+  /** Room requested from outside (sidebar rail / status-bar Join). */
+  focusRoomId?: string | null;
+  onFocusHandled?: () => void;
+  /** Reports the currently-open room so the rail can highlight it. */
+  onRoomSelected?: (roomId: string | null) => void;
+}
+
+const RoomsPage: React.FC<RoomsPageProps> = ({ focusRoomId, onFocusHandled, onRoomSelected }) => {
   const { t } = useTranslation();
   const [profile, setProfile] = useState<RoomProfile | null>(null);
   const [rooms, setRooms] = useState<RoomSummary[]>([]);
@@ -73,7 +81,10 @@ const RoomsPage: React.FC = () => {
     try { setRooms(await window.api.rooms.list()); } catch (e) { console.error(e); }
   }, []);
 
-  // Initial load
+  // Initial load. Selection is NOT set here — the auto-select effect below
+  // picks the first room only when nothing is selected, so a focus request
+  // (rail click / status-bar Join) applied on mount can't be clobbered by the
+  // slower list fetch.
   useEffect(() => {
     (async () => {
       try {
@@ -81,11 +92,16 @@ const RoomsPage: React.FC = () => {
         setProfile(p);
         setProfileName(p.name);
         setRooms(list);
-        if (list.length) setSelectedId(list[0].roomId);
       } catch (e) { console.error(e); }
       finally { setLoading(false); }
     })();
   }, []);
+
+  // Keep something selected whenever rooms exist — covers first load, leaving
+  // the selected room (handleLeave nulls the selection), and dead focus ids.
+  useEffect(() => {
+    if (!selectedId && rooms.length > 0) setSelectedId(rooms[0].roomId);
+  }, [selectedId, rooms]);
 
   // Live updates pushed from the engine
   useEffect(() => {
@@ -98,12 +114,31 @@ const RoomsPage: React.FC = () => {
     return off;
   }, []);
 
-  // Load detail when selection changes
+  // Load detail when selection changes. A dead id (room left elsewhere, stale
+  // "online now" entry) clears the selection so the auto-select effect can
+  // recover instead of stranding the page on a permanent loading state.
   useEffect(() => {
     if (!selectedId) { setRoom(null); return; }
     let alive = true;
-    window.api.rooms.get(selectedId).then((s) => { if (alive) setRoom(s); }).catch(() => {});
+    window.api.rooms.get(selectedId)
+      .then((s) => { if (alive) setRoom(s); })
+      .catch(() => { if (alive) setSelectedId((prev) => (prev === selectedId ? null : prev)); });
     return () => { alive = false; };
+  }, [selectedId]);
+
+  // A room requested from outside (sidebar rail / status-bar Join) wins over
+  // the default selection. Consumed once, then cleared by the parent.
+  useEffect(() => {
+    if (!focusRoomId) return;
+    setSelectedId(focusRoomId);
+    onFocusHandled?.();
+  }, [focusRoomId]);
+
+  // Let the rail highlight the open room.
+  useEffect(() => {
+    onRoomSelected?.(selectedId);
+    return () => onRoomSelected?.(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
   const handleCreate = async () => {
@@ -215,29 +250,7 @@ const RoomsPage: React.FC = () => {
         />
       ) : (
         <div className="rooms-body">
-          {/* Room list */}
-          <aside className="rooms-list">
-            {rooms.map((r) => (
-              <button
-                key={r.roomId}
-                className={`room-list-item ${selectedId === r.roomId ? 'active' : ''}`}
-                onClick={() => setSelectedId(r.roomId)}
-              >
-                <span className="room-list-icon"><Icon name="users" size={16} /></span>
-                <span className="room-list-text">
-                  <span className="room-list-name">{r.name}</span>
-                  <span className="room-list-meta">
-                    <Icon name="user" size={11} /> {r.memberCount}
-                    <span className="room-list-dot">·</span>
-                    <Icon name="folder" size={11} /> {r.fileCount}
-                  </span>
-                </span>
-                <span className={`room-list-presence ${r.onlineCount > 1 ? 'live' : ''}`}>{r.onlineCount}</span>
-              </button>
-            ))}
-          </aside>
-
-          {/* Room detail */}
+          {/* Room detail — the room list lives in the sidebar rail */}
           <section className="room-detail">
             {!room ? (
               <div className="page-loading">{t('common.loading')}</div>
@@ -449,95 +462,108 @@ const RoomDetail: React.FC<DetailProps> = ({ room, onAddFiles, onOpenFolder, onI
         </div>
       )}
 
-      {/* Members */}
-      <div className="room-section">
-        <div className="room-section-title">{t('rooms.members')} · {totalMembers}</div>
-        <div className="room-members">
-          {room.members.map((m) => (
-            <div key={m.memberId} className={`room-member ${m.online ? '' : 'offline'} ${m.muted ? 'muted' : ''}`} title={m.isSelf ? t('rooms.you') : m.relayed ? t('rooms.relayed') : m.online ? t('rooms.direct') : t('rooms.offline')}>
-              <Identicon seed={m.avatarSeed} size={46} online={m.online} ring={m.isSelf} />
-              <span className="room-member-name">
-                {m.role === 'owner' && <Icon name="star" size={11} className="room-member-owner" />}
-                {m.isSelf ? (m.name && m.name !== 'You' ? m.name : t('rooms.you')) : m.name}
-                {m.relayed && <Icon name="network" size={11} className="room-member-relay" />}
-              </span>
-              <span className="room-member-have">
-                {m.muted ? t('rooms.muted') : `${m.have.length}/${room.files.length}`}
-              </span>
-              {!m.isSelf && (
-                <button
-                  className="room-member-mute"
-                  title={m.muted ? t('rooms.unmute') : t('rooms.mute')}
-                  onClick={() => {
-                    if (m.muted) {
-                      window.api.rooms.setMuted(room.roomId, m.memberId, false).catch((e) => toast.error(String(e instanceof Error ? e.message : e)));
-                    } else if (window.confirm(t('rooms.muteConfirm'))) {
-                      window.api.rooms.setMuted(room.roomId, m.memberId, true).catch((e) => toast.error(String(e instanceof Error ? e.message : e)));
-                    }
-                  }}
-                >
-                  <Icon name={m.muted ? 'eye' : 'eye-off'} size={13} />
-                </button>
-              )}
-              {room.canManage && !m.isSelf && m.role !== 'owner' && (
-                <button
-                  className="room-member-kick"
-                  title={t('rooms.kick')}
-                  onClick={() => {
-                    if (window.confirm(t('rooms.kickConfirm'))) {
-                      window.api.rooms.kick(room.roomId, m.memberId)
-                        .then(() => toast.success(t('rooms.kicked')))
-                        .catch((e) => toast.error(String(e instanceof Error ? e.message : e)));
-                    }
-                  }}
-                >
-                  <Icon name="x-circle" size={13} />
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
+      {/* Two-column concept layout: files + activity | who's here + chat */}
+      <div className="room-detail-grid">
+        <div className="room-col-main">
+          {/* Files */}
+          <div className="room-section">
+            <div className="room-section-title">{t('rooms.sharedFiles')} · {room.files.length}</div>
 
-      {/* Files */}
-      <div className="room-section">
-        <div className="room-section-title-row">
-          <div className="room-section-title">{t('rooms.sharedFiles')} · {room.files.length}</div>
-          <Button variant="primary" size="sm" onClick={onAddFiles} loading={busy} icon={<Icon name="file-plus" size={14} />}>
-            {t('rooms.addFiles')}
-          </Button>
-        </div>
-
-        {room.files.length === 0 ? (
-          <div className="room-files-empty">{t('rooms.noFiles')}</div>
-        ) : (
-          <div className="room-files">
-            {room.files.map((f) => (
-              <RoomFileRow key={f.fileId} file={f} room={room} onWatch={onWatch} />
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Chat */}
-      <RoomChat room={room} />
-
-      {/* Activity */}
-      <div className="room-section">
-        <div className="room-section-title">{t('rooms.history')}</div>
-        {room.history.length === 0 ? (
-          <div className="room-files-empty">{t('rooms.historyEmpty')}</div>
-        ) : (
-          <div className="room-history">
-            {room.history.slice().reverse().slice(0, 30).map((ev) => (
-              <div key={ev.id} className="room-history-item">
-                <span className="room-history-actor">{ev.actorName}</span>
-                <span className="room-history-text">{eventText(t, ev)}</span>
-                <span className="room-history-time">{shortTime(ev.at)}</span>
+            {room.files.length === 0 ? (
+              <div className="room-files-empty">{t('rooms.noFiles')}</div>
+            ) : (
+              <div className="room-files">
+                {room.files.map((f) => (
+                  <RoomFileRow key={f.fileId} file={f} room={room} onWatch={onWatch} />
+                ))}
               </div>
-            ))}
+            )}
+
+            <Button
+              variant="ghost"
+              size="sm"
+              className="room-add-files"
+              onClick={onAddFiles}
+              loading={busy}
+              icon={<Icon name="file-plus" size={14} />}
+            >
+              {t('rooms.addFiles')}
+            </Button>
           </div>
-        )}
+
+          {/* Activity */}
+          <div className="room-section">
+            <div className="room-section-title">{t('rooms.history')}</div>
+            {room.history.length === 0 ? (
+              <div className="room-files-empty">{t('rooms.historyEmpty')}</div>
+            ) : (
+              <div className="room-history">
+                {room.history.slice().reverse().slice(0, 30).map((ev) => (
+                  <div key={ev.id} className="room-history-item">
+                    <span className="room-history-actor">{ev.actorName}</span>
+                    <span className="room-history-text">{eventText(t, ev)}</span>
+                    <span className="room-history-time">{shortTime(ev.at)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="room-col-side">
+          {/* Members */}
+          <div className="room-section">
+            <div className="room-section-title">{t('rooms.members')} · {totalMembers}</div>
+            <div className="room-members">
+              {room.members.map((m) => (
+                <div key={m.memberId} className={`room-member ${m.online ? '' : 'offline'} ${m.muted ? 'muted' : ''}`} title={m.isSelf ? t('rooms.you') : m.relayed ? t('rooms.relayed') : m.online ? t('rooms.direct') : t('rooms.offline')}>
+                  <Identicon seed={m.avatarSeed} size={30} online={m.online} ring={m.isSelf} />
+                  <span className="room-member-name">
+                    {m.role === 'owner' && <Icon name="star" size={11} className="room-member-owner" />}
+                    {m.isSelf ? (m.name && m.name !== 'You' ? m.name : t('rooms.you')) : m.name}
+                    {m.relayed && <Icon name="network" size={11} className="room-member-relay" />}
+                  </span>
+                  <span className="room-member-have">
+                    {m.muted ? t('rooms.muted') : `${m.have.length}/${room.files.length}`}
+                  </span>
+                  {!m.isSelf && (
+                    <button
+                      className="room-member-mute"
+                      title={m.muted ? t('rooms.unmute') : t('rooms.mute')}
+                      onClick={() => {
+                        if (m.muted) {
+                          window.api.rooms.setMuted(room.roomId, m.memberId, false).catch((e) => toast.error(String(e instanceof Error ? e.message : e)));
+                        } else if (window.confirm(t('rooms.muteConfirm'))) {
+                          window.api.rooms.setMuted(room.roomId, m.memberId, true).catch((e) => toast.error(String(e instanceof Error ? e.message : e)));
+                        }
+                      }}
+                    >
+                      <Icon name={m.muted ? 'eye' : 'eye-off'} size={13} />
+                    </button>
+                  )}
+                  {room.canManage && !m.isSelf && m.role !== 'owner' && (
+                    <button
+                      className="room-member-kick"
+                      title={t('rooms.kick')}
+                      onClick={() => {
+                        if (window.confirm(t('rooms.kickConfirm'))) {
+                          window.api.rooms.kick(room.roomId, m.memberId)
+                            .then(() => toast.success(t('rooms.kicked')))
+                            .catch((e) => toast.error(String(e instanceof Error ? e.message : e)));
+                        }
+                      }}
+                    >
+                      <Icon name="x-circle" size={13} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Chat */}
+          <RoomChat room={room} />
+        </div>
       </div>
     </div>
   );

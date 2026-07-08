@@ -22,6 +22,7 @@ export interface OnlinePerson {
   name: string;
   avatarSeed: string;
   roomName: string;
+  roomId?: string;
 }
 
 interface FilterItem {
@@ -54,6 +55,10 @@ interface SidebarProps {
   activeDownloads?: number;
   rooms?: RoomSummary[];
   onlinePeople?: OnlinePerson[];
+  /** Navigate to the rooms page focused on a specific room. */
+  onOpenRoom?: (roomId: string) => void;
+  /** The room currently open on the rooms page (highlighted in the rail). */
+  activeRoomId?: string | null;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -65,6 +70,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   activeDownloads = 0,
   rooms = [],
   onlinePeople = [],
+  onOpenRoom,
+  activeRoomId = null,
 }) => {
   const { t } = useTranslation();
   const [appVersion, setAppVersion] = useState('');
@@ -159,7 +166,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
             ) : (
               rooms.map((room) => (
-                <button key={room.roomId} className="room-nav-item" onClick={() => onNavigate('rooms')}>
+                <button
+                  key={room.roomId}
+                  className={`room-nav-item ${activeRoomId === room.roomId ? 'active' : ''}`}
+                  onClick={() => (onOpenRoom ? onOpenRoom(room.roomId) : onNavigate('rooms'))}
+                >
                   <span className="room-nav-ic" aria-hidden="true">
                     {room.name.trim().slice(0, 2).toUpperCase() || '?'}
                   </span>
@@ -180,7 +191,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <>
                 <div className="nav-section-title online-now-title">Online now</div>
                 {onlinePeople.map((p) => (
-                  <button key={p.memberId} className="room-nav-item person" onClick={() => onNavigate('rooms')}>
+                  <button
+                    key={p.memberId}
+                    className="room-nav-item person"
+                    onClick={() => (p.roomId && onOpenRoom ? onOpenRoom(p.roomId) : onNavigate('rooms'))}
+                  >
                     <Identicon seed={p.avatarSeed} size={26} online />
                     <span className="room-nav-text">
                       <span className="room-nav-name">{p.name}</span>

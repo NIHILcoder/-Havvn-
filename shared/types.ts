@@ -757,6 +757,8 @@ export interface IpcApi {
   quitAndInstallUpdate: () => Promise<{ ok: boolean }>;
   onUpdateStatus: (callback: (status: { kind: string; [k: string]: unknown }) => void) => () => void;
   getAppVersion: () => Promise<string>;
+  relaunchApp: () => Promise<{ ok: boolean }>;
+  getRunningEngine: () => Promise<'native' | 'webtorrent'>;
   isDefaultClient: () => Promise<boolean>;
   setDefaultClient: () => Promise<{ success: boolean }>;
 

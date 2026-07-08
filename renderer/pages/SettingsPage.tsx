@@ -49,6 +49,12 @@ const SettingsPage: React.FC = () => {
   const [defaultDownloadDir, setDefaultDownloadDir] = useState('');
   const [theme, setTheme] = useState<Theme>('system');
 
+  // Download engine (restart-only). The main process reports which engine this
+  // session actually BOOTED with — comparing against the configured value keeps
+  // the "restart to apply" banner honest across page remounts.
+  const [engine, setEngineState] = useState<'native' | 'webtorrent'>('native');
+  const [runningEngine, setRunningEngine] = useState<'native' | 'webtorrent' | null>(null);
+
   // Notification settings
   const [enableNotifications, setEnableNotifications] = useState(true);
   const [enableSounds, setEnableSounds] = useState(true);
@@ -180,6 +186,7 @@ const SettingsPage: React.FC = () => {
     window.api.isDefaultClient().then(setIsDefaultClient).catch(console.error);
     window.api.getAppVersion().then(setAppVersion).catch(console.error);
     window.api.webRemote.getInfo().then(setWebRemote).catch(console.error);
+    window.api.getRunningEngine().then(setRunningEngine).catch(console.error);
   }, []);
 
   useEffect(() => {
@@ -304,6 +311,7 @@ const SettingsPage: React.FC = () => {
     try {
       const s = await window.api.getSettings();
       setSettings(s);
+      setEngineState(s.engine === 'webtorrent' ? 'webtorrent' : 'native');
       setDefaultDownloadDir(s.defaultDownloadDir);
       setMaxDownKbps(s.maxDownKbps);
       setMaxUpKbps(s.maxUpKbps);
@@ -450,6 +458,21 @@ const SettingsPage: React.FC = () => {
       await loadSettings();
     }
   };
+
+  // Download engine — persists instantly (like a toggle); applies on restart.
+  const selectEngine = async (next: 'native' | 'webtorrent') => {
+    if (next === engine) return;
+    setEngineState(next);
+    setSettings(prev => (prev ? { ...prev, engine: next } : prev));
+    try {
+      await window.api.updateSettings({ engine: next });
+    } catch (err) {
+      console.error('Failed to set engine:', err);
+      setMessage({ type: 'error', text: t('settings.msg.autosaveFailed') });
+      await loadSettings();
+    }
+  };
+  const engineRestartPending = runningEngine !== null && engine !== runningEngine;
 
   // Custom TURN relay — persisted on demand (used at the next connection, not live).
   const saveTurn = async () => {
@@ -833,6 +856,53 @@ const SettingsPage: React.FC = () => {
           <p className="settings-category-subtitle">{t('settings.sub.general')}</p>
         </div>
 
+        {/* Download engine (concept .engine/.eopt cards) */}
+        <div className="settings-group">
+          <h3 className="settings-group-title">{t('settings.engine.title')}</h3>
+          {/* Toggle buttons (not ARIA radios — those would owe arrow-key nav);
+              both options stay in the regular tab order. */}
+          <div className="engine-select" role="group" aria-label={t('settings.engine.title')}>
+            <button
+              type="button"
+              className={`engine-opt ${engine === 'native' ? 'on' : ''}`}
+              aria-pressed={engine === 'native'}
+              onClick={() => selectEngine('native')}
+            >
+              <span className="engine-opt-radio" aria-hidden="true" />
+              <span className="engine-opt-title">
+                Havvn native <span className="engine-badge">{t('settings.engine.nativeBadge')}</span>
+              </span>
+              <span className="engine-opt-desc">{t('settings.engine.nativeDesc')}</span>
+            </button>
+            <button
+              type="button"
+              className={`engine-opt ${engine === 'webtorrent' ? 'on' : ''}`}
+              aria-pressed={engine === 'webtorrent'}
+              onClick={() => selectEngine('webtorrent')}
+            >
+              <span className="engine-opt-radio" aria-hidden="true" />
+              <span className="engine-opt-title">{t('settings.engine.classic')}</span>
+              <span className="engine-opt-desc">{t('settings.engine.classicDesc')}</span>
+            </button>
+          </div>
+          {engineRestartPending ? (
+            <div className="engine-restart">
+              <Icon name="alert-triangle" size={14} />
+              <span>{t('settings.engine.pending')}</span>
+              <Button variant="primary" size="sm" onClick={() => window.api.relaunchApp()}>
+                {t('settings.engine.restartNow')}
+              </Button>
+            </div>
+          ) : (
+            <div className="settings-notice-compact">
+              <Icon name="info" size={14} />
+              <span>{t('settings.engine.restartNote')}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="settings-divider" />
+
         <div className="settings-group">
           <h3 className="settings-group-title">{t('settings.grp.application')}</h3>
           {renderSettingItem(
@@ -1069,10 +1139,15 @@ const SettingsPage: React.FC = () => {
           )}
         </div>
 
-        <div className="settings-notice-compact">
-          <Icon name="info" size={14} />
-          <span>{t('settings.speedNote')}</span>
-        </div>
+        {/* Honesty note: only the Classic (WebTorrent) engine approximates
+            limits — the native daemon enforces them for real. Gated on the
+            engine actually RUNNING right now. */}
+        {(runningEngine ?? engine) === 'webtorrent' && (
+          <div className="settings-notice-compact">
+            <Icon name="info" size={14} />
+            <span>{t('settings.speedNote')}</span>
+          </div>
+        )}
 
         <div className="settings-divider" />
 
@@ -1419,6 +1494,12 @@ const SettingsPage: React.FC = () => {
     return (
       <div className="settings-group">
         <h3 className="settings-group-title">{t('settings.grp.doh')}</h3>
+        {(runningEngine ?? engine) === 'native' && (
+          <div className="settings-notice-compact warn">
+            <Icon name="alert-triangle" size={14} />
+            <span>{t('settings.doh.engineWarn')}</span>
+          </div>
+        )}
         {renderSettingItem(
           t('settings.doh'),
           t('settings.doh.desc'),

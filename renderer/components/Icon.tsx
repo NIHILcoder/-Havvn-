@@ -97,7 +97,8 @@ export type IconName =
   | 'cpu'
   | 'link'
   | 'rss'
-  | 'send';
+  | 'send'
+  | 'more-horizontal';
 
 interface IconProps {
   name: IconName;
@@ -197,6 +198,7 @@ const paths: Record<IconName, string> = {
   'link': 'M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71 M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71',
   'rss': 'M4 11a9 9 0 0 1 9 9 M4 4a16 16 0 0 1 16 16 M5 19a1 1 0 1 0 0-2 1 1 0 0 0 0 2z',
   'send': 'M22 2L11 13 M22 2l-7 20-4-9-9-4 20-7z',
+  'more-horizontal': 'M5 12h.01 M12 12h.01 M19 12h.01',
 };
 
 export const Icon: React.FC<IconProps> = ({

@@ -119,6 +119,10 @@ export const SwarmPage: React.FC = () => {
   const totalUp = geo ? geo.points.reduce((s, p) => s + p.upBps, 0) : 0;
   const hasPeers = !!geo && nodes.length > 0;
 
+  // Barlist: countries by connection count, bars proportional to the leader.
+  const ranked = useMemo(() => [...nodes].sort((a, b) => b.count - a.count), [nodes]);
+  const leaderCount = ranked.length ? ranked[0].count : 1;
+
   // Quadratic-bezier arc, bowed toward home for a premium "incoming traffic" look.
   const arc = (x1: number, y1: number, x2: number, y2: number): string => {
     const dx = x2 - x1, dy = y2 - y1;
@@ -135,92 +139,110 @@ export const SwarmPage: React.FC = () => {
           <span className="swarm-live-dot" />
           <h1>{t('swarm.title')}</h1>
         </div>
-        <div className="swarm-stats">
-          <div className="swarm-stat">
-            <span className="swarm-stat-k">{t('swarm.peers')}</span>
-            <span className="swarm-stat-v">{geo ? geo.resolved : '—'}</span>
-          </div>
-          <div className="swarm-stat">
-            <span className="swarm-stat-k">{t('swarm.countries')}</span>
-            <span className="swarm-stat-v">{nodes.length}</span>
-          </div>
-          <div className="swarm-stat">
-            <span className="swarm-stat-k">↓</span>
-            <span className="swarm-stat-v">{formatSpeed(totalDown)}</span>
-          </div>
-          <div className="swarm-stat">
-            <span className="swarm-stat-k">↑</span>
-            <span className="swarm-stat-v">{formatSpeed(totalUp)}</span>
-          </div>
-        </div>
       </div>
 
-      <div className="swarm-stage">
-        <svg className="swarm-map" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label={t('swarm.title')}>
-          <path className="swarm-sphere" d={map.sphere} />
-          <path className="swarm-graticule" d={map.graticule} />
-          <g className="swarm-countries">
-            {map.countries.map((c) => (
-              <path key={c.key} d={c.d} className="swarm-country" />
-            ))}
-          </g>
+      {/* Concept layout: map stage | stat panel (KPI tiles + country barlist) */}
+      <div className="swarm-wrap">
+        <div className="swarm-stage">
+          <div className="swarm-legend">
+            <b><span className="d d-home" />{t('swarm.legendYou')}</b>
+            <b><span className="d d-peer" />{t('swarm.legendPeer')}</b>
+            <b><span className="d d-seed" />{t('swarm.legendSeed')}</b>
+          </div>
 
-          {home && (
-            <g className="swarm-arcs">
-              {nodes.map((n) => (
-                <path key={`a-${n.country}`} className="swarm-arc" d={arc(n.x, n.y, home.x, home.y)} />
+          <svg className="swarm-map" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label={t('swarm.title')}>
+            <path className="swarm-sphere" d={map.sphere} />
+            <path className="swarm-graticule" d={map.graticule} />
+            <g className="swarm-countries">
+              {map.countries.map((c) => (
+                <path key={c.key} d={c.d} className="swarm-country" />
               ))}
             </g>
-          )}
 
-          <g className="swarm-nodes">
-            {nodes.map((n, i) => (
-              <g key={n.country} transform={`translate(${n.x.toFixed(1)},${n.y.toFixed(1)})`} className={n.active ? 'swarm-node active' : 'swarm-node'}>
-                <circle className="swarm-node-ring" r={n.r} style={{ animationDelay: `${(i % 8) * 0.25}s` }} />
-                <circle className="swarm-node-core" r={Math.max(1.6, n.r * 0.34)} />
+            {home && (
+              <g className="swarm-arcs">
+                {nodes.map((n) => (
+                  <path key={`a-${n.country}`} className="swarm-arc" d={arc(n.x, n.y, home.x, home.y)} />
+                ))}
               </g>
-            ))}
-          </g>
+            )}
 
-          {home && (
-            <g transform={`translate(${home.x.toFixed(1)},${home.y.toFixed(1)})`} className="swarm-home">
-              <circle className="swarm-home-halo" r={16} />
-              <circle className="swarm-home-core" r={5} />
-              <circle className="swarm-home-dot" r={2} />
+            <g className="swarm-nodes">
+              {nodes.map((n, i) => (
+                <g
+                  key={n.country}
+                  transform={`translate(${n.x.toFixed(1)},${n.y.toFixed(1)})`}
+                  className={`swarm-node ${n.active ? 'active' : ''} ${n.seeds > n.count / 2 ? 'seedy' : ''}`}
+                >
+                  <circle className="swarm-node-ring" r={n.r} style={{ animationDelay: `${(i % 8) * 0.25}s` }} />
+                  <circle className="swarm-node-core" r={Math.max(1.6, n.r * 0.34)} />
+                </g>
+              ))}
             </g>
+
+            {home && (
+              <g transform={`translate(${home.x.toFixed(1)},${home.y.toFixed(1)})`} className="swarm-home">
+                <circle className="swarm-home-halo" r={16} />
+                <circle className="swarm-home-core" r={5} />
+                <circle className="swarm-home-dot" r={2} />
+              </g>
+            )}
+          </svg>
+
+          {geo && !hasPeers && (
+            <div className="swarm-empty">
+              <Icon name="globe" size={30} />
+              <p>{geo.totalConns > 0 ? t('swarm.emptyResolving') : t('swarm.empty')}</p>
+            </div>
           )}
-        </svg>
+        </div>
 
-        {geo && !hasPeers && (
-          <div className="swarm-empty">
-            <Icon name="globe" size={30} />
-            <p>{geo.totalConns > 0 ? t('swarm.emptyResolving') : t('swarm.empty')}</p>
+        <div className="swarm-panel">
+          <div className="swarm-kpis">
+            <div className="swarm-kpi">
+              <span className="swarm-kpi-v">{geo ? geo.resolved : '—'}</span>
+              <span className="swarm-kpi-l">{t('swarm.peers')}</span>
+            </div>
+            <div className="swarm-kpi">
+              <span className="swarm-kpi-v">{nodes.length}</span>
+              <span className="swarm-kpi-l">{t('swarm.countries')}</span>
+            </div>
+            <div className="swarm-kpi">
+              <span className="swarm-kpi-v acc">{formatSpeed(totalDown)}</span>
+              <span className="swarm-kpi-l">↓</span>
+            </div>
+            <div className="swarm-kpi">
+              <span className="swarm-kpi-v up">{formatSpeed(totalUp)}</span>
+              <span className="swarm-kpi-l">↑</span>
+            </div>
           </div>
-        )}
 
-        {hasPeers && (
-          <div className="swarm-list">
-            <div className="swarm-list-head">{t('swarm.topCountries')}</div>
-            <div className="swarm-list-body">
-              {nodes.slice(0, 12).map((n) => (
-                <div key={n.country} className={n.active ? 'swarm-row active' : 'swarm-row'}>
-                  <span className="swarm-row-flag">{codeToFlag(n.country)}</span>
-                  <span className="swarm-row-name" title={n.name}>{n.name}</span>
-                  <span className="swarm-row-count">{n.count}</span>
-                  <span className="swarm-row-speed">{n.downBps > 0 ? `↓ ${formatSpeed(n.downBps)}` : '—'}</span>
+          {hasPeers && (
+            <div className="swarm-barlist">
+              <div className="swarm-list-head">{t('swarm.topCountries')}</div>
+              {ranked.slice(0, 10).map((n) => (
+                <div key={n.country} className={`swarm-b ${n.active ? 'active' : ''}`} title={n.name}>
+                  <span className="swarm-b-cc">{codeToFlag(n.country)} {n.country}</span>
+                  <div className="swarm-b-track">
+                    <i
+                      className={n.seeds > n.count / 2 ? 'seed' : ''}
+                      style={{ width: `${Math.max(4, Math.round((n.count / leaderCount) * 100))}%` }}
+                    />
+                  </div>
+                  <span className="swarm-b-num">{n.count}</span>
                 </div>
               ))}
             </div>
-          </div>
-        )}
-      </div>
+          )}
 
-      <div className="swarm-note">
-        <Icon name="lock" size={12} />
-        <span>
-          {t('swarm.privacy')}
-          {geo && geo.resolved < geo.totalConns ? ` ${t('swarm.unresolved').replace('{n}', String(geo.totalConns - geo.resolved))}` : ''}
-        </span>
+          <div className="swarm-note">
+            <Icon name="lock" size={12} />
+            <span>
+              {t('swarm.privacy')}
+              {geo && geo.resolved < geo.totalConns ? ` ${t('swarm.unresolved').replace('{n}', String(geo.totalConns - geo.resolved))}` : ''}
+            </span>
+          </div>
+        </div>
       </div>
     </div>
   );

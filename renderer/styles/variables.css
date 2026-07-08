@@ -263,11 +263,6 @@
   color: #ffffff;
 }
 
-[data-theme="light"] .filter-tab.active {
-  background: var(--gradient-primary);
-  color: #ffffff;
-}
-
 [data-theme="light"] .btn-primary {
   color: #ffffff;
 }

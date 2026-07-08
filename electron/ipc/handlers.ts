@@ -983,6 +983,25 @@ export function setupIpcHandlers(window: BrowserWindow): void {
     async () => app.getVersion()
   ));
 
+  // Relaunch the app (engine switch etc.). app.quit() — not exit() — so the
+  // normal shutdown path (cleanup, sidecar stop, DB flush) still runs.
+  ipcMain.handle('app:relaunch', wrapHandler('app:relaunch',
+    async () => {
+      app.relaunch();
+      app.quit();
+      return { ok: true };
+    }
+  ));
+
+  // The engine this session actually booted with. Captured at handler setup
+  // (before the user can touch settings), so the renderer can tell "configured"
+  // apart from "running" and keep its restart-pending banner honest across
+  // page remounts.
+  const runningEngine = db.getEngineChoice();
+  ipcMain.handle('app:getRunningEngine', wrapHandler('app:getRunningEngine',
+    async () => runningEngine
+  ));
+
   // Default client
   ipcMain.handle('app:isDefaultClient', wrapHandler('app:isDefaultClient',
     async () => {

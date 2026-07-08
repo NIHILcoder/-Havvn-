@@ -84,18 +84,22 @@
   margin: 0;
 }
 
-/* === Settings Group === */
+/* === Settings Group — concept .sgroup: a flat card with hairline border === */
 .settings-group {
-  margin-bottom: 24px;
+  margin-bottom: 16px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
 }
 
 .settings-group-title {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.12em;
   color: var(--color-text-tertiary);
-  margin: 0 0 12px 0;
+  margin: 0 0 10px 0;
 }
 
 .settings-group-header {
@@ -181,10 +185,9 @@
 }
 
 /* === Divider === */
+/* Groups are cards now — an extra divider line between them is noise. */
 .settings-divider {
-  height: 1px;
-  background: var(--color-border-default);
-  margin: 20px 0;
+  display: none;
 }
 
 /* === Toggle Switch (Modern 2026 Style) === */
@@ -931,3 +934,106 @@
 .np-ovr { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 30px; }
 .np-ovr-toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--color-text-secondary); cursor: pointer; }
 .np-editor-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+
+/* === Download engine selector (concept .engine/.eopt) === */
+.engine-select {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 640px) {
+  .engine-select { grid-template-columns: 1fr; }
+}
+
+.engine-opt {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  padding: 14px;
+  padding-right: 40px;
+  background: transparent;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-family);
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.engine-opt:hover {
+  border-color: var(--color-border-strong);
+}
+
+.engine-opt.on {
+  border-color: rgba(var(--color-accent-rgb), 0.55);
+  background: rgba(var(--color-accent-rgb), 0.06);
+  box-shadow: 0 0 0 1px rgba(var(--color-accent-rgb), 0.25);
+}
+
+.engine-opt-radio {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--color-border-strong);
+}
+
+.engine-opt.on .engine-opt-radio {
+  border-color: var(--color-accent-primary);
+  background: radial-gradient(circle at 50%, var(--color-accent-primary) 40%, transparent 46%);
+}
+
+.engine-opt-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.engine-badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-bg-primary);
+  background: var(--color-accent-primary);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.engine-opt-desc {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--color-text-tertiary);
+}
+
+/* "Restart to apply" strip once the choice diverges from the running engine */
+.engine-restart {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: var(--color-warning-bg);
+  border: 1px solid rgba(var(--color-warning-rgb), 0.4);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  color: var(--color-warning);
+}
+
+.engine-restart span { flex: 1; }
+.engine-restart svg { flex-shrink: 0; }
+
+/* Warning flavour of the compact notice (e.g. DoH needs Classic) */
+.settings-notice-compact.warn {
+  background: var(--color-warning-bg);
+  border-color: rgba(var(--color-warning-rgb), 0.4);
+  color: var(--color-warning);
+}

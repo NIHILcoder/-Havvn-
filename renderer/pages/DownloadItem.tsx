@@ -27,6 +27,7 @@ export interface DownloadItemProps {
   onOpenFolder: (path: string) => void;
   onShowFiles: (id: string) => void;
   onStream?: (id: string) => void;
+  onShare?: (id: string) => void;
 }
 
 export const DownloadItem: React.FC<DownloadItemProps> = ({
@@ -46,6 +47,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
   onOpenFolder,
   onShowFiles,
   onStream,
+  onShare,
 }) => {
   const { t } = useTranslation();
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
@@ -84,6 +86,18 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
   const detailed = viewMode === 'detailed' || expanded;
 
   if (!detailed) {
+    const typeIcon = getTypeIcon(download);
+    const ratio = currentStats.downloadedBytes > 0
+      ? currentStats.uploadedBytes / currentStats.downloadedBytes
+      : null;
+
+    // Right-hand label over the progress bar: eta while downloading, the
+    // give-back ratio once finished, otherwise the state name.
+    const progLabel =
+      status === 'downloading' ? formatEta(currentStats.etaSeconds)
+      : status === 'seeding' || status === 'completed' ? (ratio !== null ? `${ratio.toFixed(2)}×` : '—')
+      : t(`status.${status}`).toLowerCase();
+
     return (
       <div
         className={`download-item download-item-compact download-st-${status} ${isSelected ? 'selected' : ''}`}
@@ -99,107 +113,98 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
           />
         )}
         <div
-          className="download-compact-main"
+          className="trow-main"
           onClick={() => onToggleExpand?.(download.id)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onToggleExpand?.(download.id);
+            }
+          }}
           role="button"
+          tabIndex={0}
           title={t('downloads.clickDetails')}
         >
-          <span className={`download-expand-chevron ${expanded ? 'expanded' : ''}`}>
-            <Icon name="chevron-down" size={14} />
+          <span className={`trow-tile tile-${typeIcon}`}>
+            <Icon name={typeIcon} size={17} />
           </span>
-          <span className="download-type-icon"><Icon name={getTypeIcon(download)} size={15} /></span>
-          <StatusBadge status={status} />
-          <div className="download-compact-info">
-            <span className="download-item-name truncate">{download.name}</span>
-            <div className="download-compact-meta">
-              <span className="progress-text">{(progress * 100).toFixed(1)}%</span>
-              {status === 'downloading' && (
-                <>
-                  <span className="meta-separator">•</span>
-                  <HealthBadge
-                    status={status}
-                    seeds={currentStats.seeds}
-                    peers={currentStats.peers}
-                    downSpeedBps={currentStats.downSpeedBps}
-                    progress={progress}
-                    variant="full"
-                  />
-                </>
-              )}
-              {download.totalSize > 0 && (
-                <>
-                  <span className="meta-separator">•</span>
-                  <span>{formatBytes(download.totalSize)}</span>
-                </>
-              )}
-              {status === 'downloading' && (
-                <>
-                  <span className="meta-separator">•</span>
-                  <span>{formatSpeed(currentStats.downSpeedBps)}</span>
-                  <span className="meta-separator">•</span>
-                  <span>{formatEta(currentStats.etaSeconds)}</span>
-                </>
-              )}
+          <div className="trow-name">
+            <div className="trow-title truncate">{download.name}</div>
+            <div className="trow-sub">
+              {download.totalSize > 0 && <span>{formatBytes(download.totalSize)}</span>}
+              {/* Shown only at widths where the progress column is dropped */}
+              <span className="trow-sub-pct">{(progress * 100).toFixed(0)}%</span>
+              {download.category && <span className="trow-sub-cat">{download.category}</span>}
               {status === 'error' && download.lastError && (
-                <>
-                  <span className="meta-separator">•</span>
-                  <span className="error-text truncate">{download.lastError}</span>
-                </>
+                <span className="error-text truncate">{download.lastError}</span>
               )}
             </div>
           </div>
-          <ProgressBar
-            value={progress}
-            variant={getProgressVariant()}
-            className="download-compact-progress"
-          />
+          <div className="trow-prog">
+            <div className="trow-prog-labels">
+              <span className="trow-pct">{(progress * 100).toFixed(progress >= 1 ? 0 : 1)}%</span>
+              <span className="trow-prog-hint">{progLabel}</span>
+            </div>
+            <ProgressBar value={progress} variant={getProgressVariant()} />
+          </div>
+          <div className="trow-rate">
+            {status === 'downloading' ? (
+              <>
+                <span className="trow-rate-main rate-down">↓ {formatSpeed(currentStats.downSpeedBps)}</span>
+                <span className="trow-rate-sub">
+                  {currentStats.peers} {t('downloads.peersShort')}
+                  {currentStats.seeds > 0 && ` · ${currentStats.seeds} ${t('downloads.seedsShort')}`}
+                </span>
+              </>
+            ) : status === 'seeding' ? (
+              <>
+                <span className="trow-rate-main rate-up">↑ {formatSpeed(currentStats.upSpeedBps)}</span>
+                <span className="trow-rate-sub">{currentStats.peers} {t('downloads.peersShort')}</span>
+              </>
+            ) : (
+              <span className="trow-rate-sub">—</span>
+            )}
+          </div>
+          <div className="trow-status">
+            <StatusBadge status={status} showIcon={false} />
+          </div>
         </div>
 
-        <div className="download-item-actions">
-          {canPause(status) && (
+        {/* Hover-reveal actions (always visible on touch): Share + the one
+            state action, then the icon utilities. Everything else lives in
+            the ⋯ / right-click menu. */}
+        <div className="trow-actions">
+          {onShare && (
             <Button
               variant="ghost"
               size="sm"
-              iconOnly
-              icon={<Icon name="pause" size={14} />}
-              onClick={() => onPause(download.id)}
-              title={t('downloads.pause')}
-            />
+              icon={<Icon name="share-2" size={13} />}
+              onClick={() => onShare(download.id)}
+              title={t('downloads.share')}
+            >
+              {t('downloads.share')}
+            </Button>
           )}
-
-          {(status === 'completed' || status === 'seeding') && (
-            <Button
-              variant="ghost"
-              size="sm"
-              iconOnly
-              icon={<Icon name="folder" size={14} />}
-              onClick={() => onOpenFolder(download.savePath)}
-              title={t('downloads.openFolder')}
-            />
+          {(status === 'downloading' || status === 'queued') && (
+            <Button variant="ghost" size="sm" onClick={() => onPause(download.id)}>
+              {t('downloads.pause')}
+            </Button>
           )}
-
+          {status === 'seeding' && (
+            <Button variant="ghost" size="sm" onClick={() => onStopSeeding(download.id)} title={t('downloads.stopSeeding')}>
+              {t('downloads.stop')}
+            </Button>
+          )}
           {status === 'paused' && (
-            <Button
-              variant="ghost"
-              size="sm"
-              iconOnly
-              icon={<Icon name="play" size={14} />}
-              onClick={() => onResume(download.id)}
-              title={t('downloads.resume')}
-            />
+            <Button variant="ghost" size="sm" onClick={() => onResume(download.id)}>
+              {t('downloads.resume')}
+            </Button>
           )}
-
           {status === 'error' && (
-            <Button
-              variant="ghost"
-              size="sm"
-              iconOnly
-              icon={<Icon name="refresh" size={14} />}
-              onClick={() => onRetry(download.id)}
-              title={t('downloads.retry')}
-            />
+            <Button variant="ghost" size="sm" onClick={() => onRetry(download.id)}>
+              {t('downloads.retry')}
+            </Button>
           )}
-
           {canWatch && (
             <Button
               variant="ghost"
@@ -211,55 +216,24 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
               title={watchLabel}
             />
           )}
-
-          <Button
-            variant="ghost"
-            size="sm"
-            iconOnly
-            icon={<Icon name="list" size={14} />}
-            onClick={() => onShowFiles(download.id)}
-            title={t('downloads.files')}
-          />
-
-          {!showRemoveConfirm ? (
+          {(status === 'completed' || status === 'seeding') && (
             <Button
               variant="ghost"
               size="sm"
               iconOnly
-              icon={<Icon name="trash" size={14} />}
-              onClick={() => setShowRemoveConfirm(true)}
-              title={t('downloads.remove')}
+              icon={<Icon name="folder" size={14} />}
+              onClick={() => onOpenFolder(download.savePath)}
+              title={t('downloads.openFolder')}
             />
-          ) : (
-            <div className="remove-confirm">
-              <Button
-                variant="danger"
-                size="sm"
-                onClick={() => {
-                  onRemove(download.id, true);
-                  setShowRemoveConfirm(false);
-                }}
-              >
-                {t('downloads.deleteWithFiles')}
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => {
-                  onRemove(download.id, false);
-                  setShowRemoveConfirm(false);
-                }}
-              >
-                {t('downloads.keepFiles')}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                iconOnly
-                icon={<Icon name="x" size={14} />}
-                onClick={() => setShowRemoveConfirm(false)}
-              />
-            </div>
           )}
+          <Button
+            variant="ghost"
+            size="sm"
+            iconOnly
+            icon={<Icon name="more-horizontal" size={14} />}
+            onClick={(e) => onContextMenu?.(e, download.id)}
+            title={t('downloads.more')}
+          />
         </div>
       </div>
     );

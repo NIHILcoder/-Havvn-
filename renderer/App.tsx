@@ -40,6 +40,10 @@ const AppContent: React.FC = () => {
   // Rooms context for the sidebar's rooms pillar
   const [roomSummaries, setRoomSummaries] = useState<RoomSummary[]>([]);
   const [onlinePeople, setOnlinePeople] = useState<OnlinePerson[]>([]);
+  // A room the user asked to open (rail click / status-bar Join) — consumed by RoomsPage
+  const [roomFocusId, setRoomFocusId] = useState<string | null>(null);
+  // The room currently open on the rooms page — highlights the rail entry
+  const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
   // Last full RoomState per room (pushed via onRoomUpdate) — member-level truth
   const roomStates = useRef<Map<string, RoomState>>(new Map());
 
@@ -151,6 +155,14 @@ const AppContent: React.FC = () => {
         const rooms = await window.api.rooms.list();
         if (cancelled) return;
         setRoomSummaries(rooms);
+        // Drop cached member states for rooms we're no longer in, so stale
+        // "online now" entries can't navigate to a dead room id.
+        const liveIds = new Set(rooms.map((r) => r.roomId));
+        let pruned = false;
+        for (const k of Array.from(roomStates.current.keys())) {
+          if (!liveIds.has(k)) { roomStates.current.delete(k); pruned = true; }
+        }
+        if (pruned) rebuildPeople();
         const now = Date.now();
         let best: RoomPresence | null = null;
         let bestScore = 0;
@@ -175,7 +187,7 @@ const AppContent: React.FC = () => {
         for (const m of s.members) {
           if (!m.online || m.isSelf || seen.has(m.memberId)) continue;
           seen.add(m.memberId);
-          out.push({ memberId: m.memberId, name: m.name, avatarSeed: m.avatarSeed, roomName: s.name });
+          out.push({ memberId: m.memberId, name: m.name, avatarSeed: m.avatarSeed, roomName: s.name, roomId: s.roomId });
         }
       }
       setOnlinePeople(out.slice(0, 6));
@@ -264,6 +276,12 @@ const AppContent: React.FC = () => {
     error: downloads.filter(d => d.status === 'error').length,
   }), [downloads]);
 
+  // Open the rooms page focused on a specific room (rail click / status-bar Join)
+  const openRoom = (roomId: string) => {
+    setRoomFocusId(roomId);
+    setCurrentPage('rooms');
+  };
+
   // Calculate aggregate stats
   const activeDownloads = stats.filter(s => s.status === 'downloading').length;
   const totalDownSpeed = stats.reduce((sum, s) => sum + s.downSpeedBps, 0);
@@ -283,7 +301,13 @@ const AppContent: React.FC = () => {
       case 'rss':
         return <RSSPage />;
       case 'rooms':
-        return <RoomsPage />;
+        return (
+          <RoomsPage
+            focusRoomId={roomFocusId}
+            onFocusHandled={() => setRoomFocusId(null)}
+            onRoomSelected={setActiveRoomId}
+          />
+        );
       case 'swarm':
         return <SwarmPage />;
       default:
@@ -314,6 +338,8 @@ const AppContent: React.FC = () => {
           activeDownloads={activeDownloads}
           rooms={roomSummaries}
           onlinePeople={onlinePeople}
+          onOpenRoom={openRoom}
+          activeRoomId={currentPage === 'rooms' ? activeRoomId : null}
         />
 
         <main className="main-content">
@@ -355,7 +381,7 @@ const AppContent: React.FC = () => {
             totalUpSpeed={totalUpSpeed}
             connectedPeers={totalPeers}
             roomPresence={roomPresence}
-            onJoinRoom={() => setCurrentPage('rooms')}
+            onJoinRoom={() => (roomPresence ? openRoom(roomPresence.roomId) : setCurrentPage('rooms'))}
           />
         </main>
       </div>
