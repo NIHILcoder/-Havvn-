@@ -2,6 +2,7 @@ import { ipcMain, dialog, BrowserWindow, shell, app, Notification } from 'electr
 import { getTorrentManager, TorrentError, getDefaultTrackers } from '../torrent';
 import * as db from '../db/store';
 import { AddDownloadRequest, DownloadStats, CreateTorrentRequest, FilePriority } from '../../shared/types';
+import { safeBaseName } from '../../shared/path-safety';
 import { InvalidStateTransitionError } from '../../shared/state-machine';
 import fs from 'fs/promises';
 import fsSync from 'fs';
@@ -378,6 +379,54 @@ export function setupIpcHandlers(window: BrowserWindow): void {
       });
       if (result.canceled || !result.filePaths.length) return null;
       return roomManager.addFiles(roomId, result.filePaths);
+    }
+  ));
+
+  // Share a finished download into a room ("Share to room" / "Bring a file
+  // from Transfers"). Resolves the download's content on disk and feeds the
+  // FILES to the room engine (it seeds single files only — directories are
+  // walked; E2E rooms encrypt each file individually).
+  const ROOM_SHARE_MAX_FILES = 25;
+  ipcMain.handle('rooms:shareDownload', wrapHandler('rooms:shareDownload',
+    async (_event, roomId: string, downloadId: string) => {
+      const download = await db.getDownloadById(String(downloadId || ''));
+      // Removed downloads are tombstoned (status 'removed') until next boot.
+      if (!download || download.status === 'removed') throw new Error('Download not found');
+      const complete = download.progress >= 1 || ['completed', 'seeding'].includes(download.status);
+      if (!complete) throw new Error('This download is not complete yet');
+
+      const collect = (root: string): string[] => {
+        // lstat: treat a symlinked root like nested entries (don't follow).
+        const st = fsSync.lstatSync(root, { throwIfNoEntry: false });
+        if (st?.isFile()) return [root];
+        if (!st?.isDirectory()) return [];
+        const out: string[] = [];
+        const walk = (dir: string): void => {
+          for (const entry of fsSync.readdirSync(dir, { withFileTypes: true })) {
+            if (out.length > ROOM_SHARE_MAX_FILES) return;
+            const p = path.join(dir, entry.name);
+            if (entry.isDirectory()) walk(p);
+            else if (entry.isFile()) out.push(p);
+          }
+        };
+        walk(root);
+        return out.sort();
+      };
+
+      // Created "start seeding" records are authoritative about their source
+      // paths (same order as share:start) — the record's name may be a custom
+      // torrent name that doesn't exist under savePath.
+      let files = (download.seedPaths ?? []).flatMap(collect);
+      if (!files.length) {
+        // Peer-supplied torrent names are not trusted as path fragments.
+        const safeName = safeBaseName(download.name) || download.name;
+        files = collect(downloadContentPath(download.savePath, safeName));
+      }
+      if (!files.length) throw new Error('Files not found on disk');
+      if (files.length > ROOM_SHARE_MAX_FILES) {
+        throw new Error(`Too many files to share at once (over ${ROOM_SHARE_MAX_FILES}) — add specific files from disk instead`);
+      }
+      return roomManager.addFiles(roomId, files);
     }
   ));
 

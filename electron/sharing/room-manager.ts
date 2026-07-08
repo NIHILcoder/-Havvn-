@@ -322,6 +322,7 @@ export class RoomManager {
         onlineCount: s ? s.members.filter((m) => m.online).length : 1,
         fileCount: s ? s.files.length : 0,
         createdAt: r.createdAt,
+        e2e: r.e2e ?? false,
       };
     });
   }

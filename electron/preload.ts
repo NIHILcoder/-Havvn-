@@ -539,6 +539,7 @@ const api: IpcApi = {
     get: (roomId: string): Promise<RoomState | null> => ipcRenderer.invoke('rooms:get', roomId),
     addFiles: (roomId: string, paths: string[]): Promise<RoomState> => ipcRenderer.invoke('rooms:addFiles', roomId, paths),
     pickAndAddFiles: (roomId: string): Promise<RoomState | null> => ipcRenderer.invoke('rooms:pickAndAddFiles', roomId),
+    shareDownload: (roomId: string, downloadId: string): Promise<RoomState> => ipcRenderer.invoke('rooms:shareDownload', roomId, downloadId),
     openFolder: (roomId: string): Promise<void> => ipcRenderer.invoke('rooms:openFolder', roomId),
     openFile: (roomId: string, fileId: string): Promise<void> => ipcRenderer.invoke('rooms:openFile', roomId, fileId),
     watchFile: (roomId: string, fileId: string): Promise<{ directUrl: string; hlsUrl: string; playerUrl: string; direct: boolean; kind: string; name: string }> =>

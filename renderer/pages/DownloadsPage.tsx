@@ -19,6 +19,7 @@ import {
   TorrentControlModal,
   StreamPlayerModal,
   ShareLinkModal,
+  ShareToRoomModal,
 } from '../components';
 import './DownloadsPage.css';
 
@@ -110,6 +111,9 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
   const streamModalDownload = streamModalId ? downloads.find(d => d.id === streamModalId) : null;
   const [shareModalId, setShareModalId] = useState<string | null>(null);
   const shareModalDownload = shareModalId ? downloads.find(d => d.id === shareModalId) : null;
+  // "Share to room" — the row's Share button + context menu
+  const [shareRoomId, setShareRoomId] = useState<string | null>(null);
+  const shareRoomDownload = shareRoomId ? downloads.find(d => d.id === shareRoomId) : null;
 
   // Refs
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -267,6 +271,9 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // A modal owns the keyboard while open — page-level shortcuts (Delete,
+      // Space, Ctrl+A) acting on the list underneath would be destructive.
+      if (shareRoomId || shareModalId || streamModalId || controlModalId || previewId || showFileSelector) return;
       const target = e.target as HTMLElement;
       const isInInput = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
 
@@ -338,7 +345,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedIds, downloads, addToast]);
+  }, [selectedIds, downloads, addToast, shareRoomId, shareModalId, streamModalId, controlModalId, previewId, showFileSelector]);
 
   // Clipboard magnet detection — on window focus, check for magnet: URIs
   useEffect(() => {
@@ -1116,7 +1123,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
                       onOpenFolder={handleOpenFolder}
                       onShowFiles={(id) => setPreviewId(id)}
                       onStream={(id) => setStreamModalId(id)}
-                      onShare={(id) => setShareModalId(id)}
+                      onShare={(id) => setShareRoomId(id)}
                     />
                   </div>
                 );
@@ -1157,6 +1164,14 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
               icon: 'play',
               onClick: () => {
                 setStreamModalId(contextMenu.downloadId);
+                setContextMenu(null);
+              }
+            },
+            {
+              label: t('share.toRoom.title'),
+              icon: 'users',
+              onClick: () => {
+                setShareRoomId(contextMenu.downloadId);
                 setContextMenu(null);
               }
             },
@@ -1284,6 +1299,23 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
           downloadId={shareModalDownload.id}
           downloadName={shareModalDownload.name}
           onClose={() => setShareModalId(null)}
+        />
+      )}
+
+      {/* Share to room (Phase-5 cross-link) */}
+      {shareRoomDownload && (
+        <ShareToRoomModal
+          downloadId={shareRoomDownload.id}
+          downloadName={shareRoomDownload.name}
+          canShare={
+            (stats.get(shareRoomDownload.id)?.progress ?? shareRoomDownload.progress) >= 1 ||
+            ['completed', 'seeding'].includes(shareRoomDownload.status)
+          }
+          onClose={() => setShareRoomId(null)}
+          onShareLink={() => {
+            setShareModalId(shareRoomDownload.id);
+            setShareRoomId(null);
+          }}
         />
       )}
     </div>

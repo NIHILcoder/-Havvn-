@@ -11,7 +11,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Hls from 'hls.js';
 import toast from 'react-hot-toast';
 import { RoomState, RoomSummary, RoomProfile, RoomFile } from '../../shared/types';
-import { Button, Icon, EmptyState, Identicon, QRCode } from '../components';
+import { Button, Icon, EmptyState, Identicon, QRCode, TransferPickerModal } from '../components';
 import { avatarCandidates } from '../components/Identicon';
 import { classifyMediaKind } from '../../shared/media';
 import { formatBytes, formatSpeed } from '../utils/format-helpers';
@@ -263,6 +263,13 @@ const RoomsPage: React.FC<RoomsPageProps> = ({ focusRoomId, onFocusHandled, onRo
                 onLeave={() => handleLeave(room.roomId)}
                 onCopyCode={() => copy(room.code, t('rooms.codeCopied'))}
                 onWatch={(file) => setWatch({ file })}
+                onShared={(state) => {
+                  // The share can outlive a room switch — only apply the state
+                  // if that room is still the one on screen (same guard as the
+                  // live-update listener).
+                  if (state.roomId === selectedRef.current) setRoom(state);
+                  void refreshList();
+                }}
                 busy={busy}
               />
             )}
@@ -414,11 +421,15 @@ interface DetailProps {
   onLeave: () => void;
   onCopyCode: () => void;
   onWatch: (file: RoomFile) => void;
+  /** A transfer was shared into this room — apply the returned state. */
+  onShared: (state: RoomState) => void;
   busy: boolean;
 }
 
-const RoomDetail: React.FC<DetailProps> = ({ room, onAddFiles, onOpenFolder, onInvite, onLeave, onCopyCode, onWatch, busy }) => {
+const RoomDetail: React.FC<DetailProps> = ({ room, onAddFiles, onOpenFolder, onInvite, onLeave, onCopyCode, onWatch, onShared, busy }) => {
   const { t } = useTranslation();
+  // "Bring a file from Transfers" — pick a finished download to share here
+  const [pickTransfer, setPickTransfer] = useState(false);
   const totalMembers = room.members.length;
   // Connection indicator: removed → connecting → online (peers) → alone (no peers).
   const connState = room.kicked ? 'removed' : !room.connected ? 'connecting' : room.peerCount > 0 ? 'online' : 'alone';
@@ -479,16 +490,28 @@ const RoomDetail: React.FC<DetailProps> = ({ room, onAddFiles, onOpenFolder, onI
               </div>
             )}
 
-            <Button
-              variant="ghost"
-              size="sm"
-              className="room-add-files"
-              onClick={onAddFiles}
-              loading={busy}
-              icon={<Icon name="file-plus" size={14} />}
-            >
-              {t('rooms.addFiles')}
-            </Button>
+            <div className="room-files-actions">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="room-add-files"
+                disabled={busy}
+                onClick={() => setPickTransfer(true)}
+                icon={<Icon name="download" size={14} />}
+              >
+                {t('rooms.fromTransfers')}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="room-add-files"
+                onClick={onAddFiles}
+                loading={busy}
+                icon={<Icon name="file-plus" size={14} />}
+              >
+                {t('rooms.addFiles')}
+              </Button>
+            </div>
           </div>
 
           {/* Activity */}
@@ -565,6 +588,14 @@ const RoomDetail: React.FC<DetailProps> = ({ room, onAddFiles, onOpenFolder, onI
           <RoomChat room={room} />
         </div>
       </div>
+
+      {pickTransfer && (
+        <TransferPickerModal
+          roomId={room.roomId}
+          onClose={() => setPickTransfer(false)}
+          onShared={onShared}
+        />
+      )}
     </div>
   );
 };

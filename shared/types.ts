@@ -190,6 +190,8 @@ export interface RoomSummary {
   onlineCount: number;
   fileCount: number;
   createdAt: number;
+  /** End-to-end encrypted room — sharing makes an encrypted on-disk copy. */
+  e2e?: boolean;
 }
 
 /** This install's identity in rooms. */
@@ -904,6 +906,7 @@ export interface IpcApi {
     get: (roomId: string) => Promise<RoomState | null>;
     addFiles: (roomId: string, paths: string[]) => Promise<RoomState>;
     pickAndAddFiles: (roomId: string) => Promise<RoomState | null>;
+    shareDownload: (roomId: string, downloadId: string) => Promise<RoomState>;
     openFolder: (roomId: string) => Promise<void>;
     openFile: (roomId: string, fileId: string) => Promise<void>;
     watchFile: (roomId: string, fileId: string) => Promise<{ directUrl: string; hlsUrl: string; playerUrl: string; direct: boolean; kind: string; name: string }>;

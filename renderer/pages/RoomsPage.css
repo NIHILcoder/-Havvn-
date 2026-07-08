@@ -363,7 +363,14 @@
 .room-status.downloading { color: var(--color-accent-primary); }
 .room-status.queued { color: var(--color-text-tertiary); }
 
-/* "＋ Bring a file" — ghost affordance under the shared list */
+/* "＋ Bring a file" — ghost affordances under the shared list */
+.room-files-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
 .room-add-files {
   align-self: flex-start;
   border: 1px solid var(--color-border-strong);

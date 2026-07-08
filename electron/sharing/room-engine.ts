@@ -1061,11 +1061,27 @@ function mergeFileLocal(room: Room, file: RoomFile, localPath?: string): void {
 async function addFiles(roomId: string, paths: string[]): Promise<RoomState> {
   const room = rooms.get(roomId);
   if (!room) throw new Error('Room not active');
+  // Track per-file outcomes: resolving with a state while NOTHING was shared
+  // used to read as success upstream ("Shared to <room>" with an empty room).
+  let added = 0;
+  let firstError: string | null = null;
   for (const p of paths) {
     try {
       const file = await seedLocal(room, p);
+      if (room.tombstones.has(file.fileId)) {
+        throw new Error('This file was removed from the room earlier — peers would keep rejecting it');
+      }
       mergeFileLocal(room, file, p);
-    } catch (e) { log('addFile failed: ' + String(e)); }
+      // Already present (same content shared before) counts as success too.
+      if (room.files.has(file.fileId)) added++;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!firstError) firstError = msg;
+      log('addFile failed: ' + msg);
+    }
+  }
+  if (paths.length > 0 && added === 0) {
+    throw new Error(firstError || 'No files could be shared');
   }
   return buildState(room);
 }
