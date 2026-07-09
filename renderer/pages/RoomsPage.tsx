@@ -198,6 +198,13 @@ const RoomsPage: React.FC<RoomsPageProps> = ({ focusRoomId, onFocusHandled, onRo
     catch (e) { toast.error(String(e instanceof Error ? e.message : e)); }
   };
 
+  // Per-room speed ceilings (KB/s, 0 = unlimited) — persisted + throttled live.
+  const handleSetLimits = async (roomId: string, upKbps: number, downKbps: number) => {
+    setRoom((prev) => (prev && prev.roomId === roomId ? { ...prev, upKbps, downKbps } : prev));
+    try { await window.api.rooms.setLimits(roomId, upKbps, downKbps); }
+    catch (e) { toast.error(String(e instanceof Error ? e.message : e)); }
+  };
+
   const openProfile = () => {
     if (!profile) return;
     setProfileName(profile.name);
@@ -272,6 +279,7 @@ const RoomsPage: React.FC<RoomsPageProps> = ({ focusRoomId, onFocusHandled, onRo
                 onCopyCode={() => copy(room.code, t('rooms.codeCopied'))}
                 onWatch={(file) => setWatch({ file })}
                 onToggleAutoFetch={(v) => handleToggleAutoFetch(room.roomId, v)}
+                onSetLimits={(up, down) => handleSetLimits(room.roomId, up, down)}
                 onShared={(state) => {
                   // The share can outlive a room switch — only apply the state
                   // if that room is still the one on screen (same guard as the
@@ -434,13 +442,29 @@ interface DetailProps {
   onShared: (state: RoomState) => void;
   /** Flip the room's auto-download preference. */
   onToggleAutoFetch: (autoFetch: boolean) => void;
+  /** Set the room's speed ceilings (KB/s, 0 = unlimited). */
+  onSetLimits: (upKbps: number, downKbps: number) => void;
   busy: boolean;
 }
 
-const RoomDetail: React.FC<DetailProps> = ({ room, onAddFiles, onOpenFolder, onInvite, onLeave, onCopyCode, onWatch, onShared, onToggleAutoFetch, busy }) => {
+const RoomDetail: React.FC<DetailProps> = ({ room, onAddFiles, onOpenFolder, onInvite, onLeave, onCopyCode, onWatch, onShared, onToggleAutoFetch, onSetLimits, busy }) => {
   const { t } = useTranslation();
   // "Bring a file from Transfers" — pick a finished download to share here
   const [pickTransfer, setPickTransfer] = useState(false);
+  // Speed-limit drafts: commit on blur/Enter; re-seed only on room switch so
+  // live state pushes don't stomp typing. 0/empty = unlimited.
+  const [upDraft, setUpDraft] = useState(String(room.upKbps || ''));
+  const [downDraft, setDownDraft] = useState(String(room.downKbps || ''));
+  useEffect(() => {
+    setUpDraft(String(room.upKbps || ''));
+    setDownDraft(String(room.downKbps || ''));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [room.roomId]);
+  const commitLimits = () => {
+    const up = Math.max(0, Math.floor(Number(upDraft) || 0));
+    const down = Math.max(0, Math.floor(Number(downDraft) || 0));
+    if (up !== room.upKbps || down !== room.downKbps) onSetLimits(up, down);
+  };
   const totalMembers = room.members.length;
   // Connection indicator: removed → connecting → online (peers) → alone (no peers).
   const connState = room.kicked ? 'removed' : !room.connected ? 'connecting' : room.peerCount > 0 ? 'online' : 'alone';
@@ -527,6 +551,38 @@ const RoomDetail: React.FC<DetailProps> = ({ room, onAddFiles, onOpenFolder, onI
               >
                 {t('rooms.addFiles')}
               </Button>
+
+              <div className="room-limits" title={t('rooms.limitsHint')}>
+                <Icon name="gauge" size={13} />
+                <label className="room-limit">
+                  ↑
+                  <input
+                    type="number"
+                    min={0}
+                    placeholder="∞"
+                    value={upDraft}
+                    onChange={(e) => setUpDraft(e.target.value)}
+                    onBlur={commitLimits}
+                    onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                    aria-label={`${t('rooms.limits')} ↑ ${t('rooms.kbps')}`}
+                  />
+                  {t('rooms.kbps')}
+                </label>
+                <label className="room-limit">
+                  ↓
+                  <input
+                    type="number"
+                    min={0}
+                    placeholder="∞"
+                    value={downDraft}
+                    onChange={(e) => setDownDraft(e.target.value)}
+                    onBlur={commitLimits}
+                    onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                    aria-label={`${t('rooms.limits')} ↓ ${t('rooms.kbps')}`}
+                  />
+                  {t('rooms.kbps')}
+                </label>
+              </div>
             </div>
           </div>
 

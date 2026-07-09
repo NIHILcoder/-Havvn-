@@ -129,6 +129,8 @@ interface Room {
   transfers: Map<string, RoomTransfer>;  // by fileId
   tombstones: Map<string, number>;       // deleted fileId → deletedAt; only a newer re-share revives it
   autoFetch: boolean;                    // auto-download peers' files; false = wait for an explicit fetchFile
+  upKbps: number;                        // per-room upload ceiling, KB/s (0 = unlimited)
+  downKbps: number;                      // per-room download ceiling, KB/s (0 = unlimited)
   mutes: Set<string>;                    // locally-muted memberIds (per install)
   history: RoomEvent[];                  // activity log, newest last (capped)
   chat: RoomChatMessage[];               // chat messages, newest last (capped)
@@ -141,21 +143,33 @@ interface Room {
   lastSnapshot: number;
 }
 
-let client: any = null;                  // shared WebTorrent client for transfers
+// One WebTorrent client PER ROOM: webtorrent throttles only at the client
+// level, so per-room clients are what make per-room speed limits real (and
+// two rooms sharing identical content stop colliding on one infoHash).
+const clients = new Map<string, any>();  // roomId → WebTorrent client
 const rooms = new Map<string, Room>();
 let wireSeq = 0;
 
-function ensureClient(iceServers: any[]): any {
-  if (!client) {
-    client = new WebTorrent({
+/** Room KB/s (0 = unlimited) → webtorrent limit (bytes/s, -1 = unlimited). */
+function kbpsToLimit(kbps: number): number {
+  return kbps > 0 ? kbps * 1024 : -1;
+}
+
+function ensureClient(room: Room): any {
+  let c = clients.get(room.roomId);
+  if (!c) {
+    c = new WebTorrent({
       utp: false,
       dht: false,
-      tracker: { wrtc: nativeWrtc, rtcConfig: { iceServers } },
+      uploadLimit: kbpsToLimit(room.upKbps),
+      downloadLimit: kbpsToLimit(room.downKbps),
+      tracker: { wrtc: nativeWrtc, rtcConfig: { iceServers: room.iceServers } },
     } as any);
-    client.on('error', (e: any) => log('wt client error: ' + (e?.message || e)));
-    log('WebTorrent client ready (Chromium WebRTC)');
+    c.on('error', (e: any) => log('wt client error: ' + (e?.message || e)));
+    clients.set(room.roomId, c);
+    log('WebTorrent client ready (Chromium WebRTC) for room ' + room.roomId);
   }
-  return client;
+  return c;
 }
 
 // ── Snapshot / state push ──────────────────────────────────────────────────
@@ -208,6 +222,8 @@ function buildState(room: Room): RoomState {
     connected: room.started,
     peerCount: onlinePeers,
     autoFetch: room.autoFetch,
+    upKbps: room.upKbps,
+    downKbps: room.downKbps,
     kicked: room.kicked,
     ...(room.kicked ? { kickedBy: room.kickedBy } : {}),
   };
@@ -652,7 +668,8 @@ function applyTombstone(room: Room, fileId: string, at: number, by?: { id: strin
   const existed = room.files.get(fileId);
   if (existed) logEvent(room, { type: 'file-removed', actorId: by?.id || '', actorName: by?.name || '?', fileName: existed.name });
   const tr = room.transfers.get(fileId);
-  if (client) { const t = client.get(fileId); if (t) { try { client.remove(t); } catch { /* ignore */ } } }
+  const c = clients.get(room.roomId);
+  if (c) { const t = c.get(fileId); if (t) { try { c.remove(t); } catch { /* ignore */ } } }
   room.files.delete(fileId);
   room.transfers.delete(fileId);
   for (const m of room.members.values()) m.have = m.have.filter((id) => id !== fileId);
@@ -717,7 +734,7 @@ function persistManifest(room: Room, file: RoomFile, localPath?: string, cipherP
  *  the swarm never sees plaintext. localPath still points at the original so the
  *  sharer can watch/open it directly. */
 function seedLocal(room: Room, filePath: string): Promise<RoomFile> {
-  const c = ensureClient(room.iceServers);
+  const c = ensureClient(room);
   const name = path.basename(filePath);
   return new Promise<RoomFile>((resolve, reject) => {
     if (!fs.existsSync(filePath)) return reject(new Error('File not found: ' + filePath));
@@ -767,7 +784,7 @@ function seedLocal(room: Room, filePath: string): Promise<RoomFile> {
  *  otherwise download it into the room folder over the WebTorrent swarm. */
 function ensureLocal(room: Room, file: RoomFile): void {
   if (isTombstonedAt(room, file.fileId, file.addedAt)) return; // deleted — don't fetch it again
-  const c = ensureClient(room.iceServers);
+  const c = ensureClient(room);
   if (c.get(file.infoHash)) return; // already adding/seeding
 
   // E2E: the swarm carries ciphertext. Download it into the cache (never the
@@ -844,7 +861,7 @@ function restoreManifestFile(room: Room, pf: PersistedRoomFile): void {
     ...(pf.enc ? { enc: true } : {}),
   };
   room.files.set(file.fileId, file);
-  const c = ensureClient(room.iceServers);
+  const c = ensureClient(room);
   if (c.get(file.infoHash)) return; // already seeding/adding
 
   // E2E: re-seed the cached CIPHERTEXT (never the plaintext) and make sure the
@@ -999,7 +1016,7 @@ function kickMember(room: Room, memberId: string): void {
 
 // ── Room lifecycle ───────────────────────────────────────────────────────────
 function startRoom(p: { roomId: string; name: string; code: string; folder: string;
-  self: { memberId: string; name: string; avatarSeed: string; pub: string; priv: string }; useTurn: boolean; turnServers?: any[]; tombstones?: Record<string, number>; manifest?: PersistedRoomFile[]; ownerId?: string; mutes?: string[]; history?: RoomEvent[]; chat?: RoomChatMessage[]; identities?: Record<string, string>; e2e?: boolean; secret?: string; cacheDir?: string; autoFetch?: boolean }): RoomState {
+  self: { memberId: string; name: string; avatarSeed: string; pub: string; priv: string }; useTurn: boolean; turnServers?: any[]; tombstones?: Record<string, number>; manifest?: PersistedRoomFile[]; ownerId?: string; mutes?: string[]; history?: RoomEvent[]; chat?: RoomChatMessage[]; identities?: Record<string, string>; e2e?: boolean; secret?: string; cacheDir?: string; autoFetch?: boolean; upKbps?: number; downKbps?: number }): RoomState {
   let room = rooms.get(p.roomId);
   if (room) return buildState(room);
 
@@ -1031,6 +1048,8 @@ function startRoom(p: { roomId: string; name: string; code: string; folder: stri
     transfers: new Map(),
     tombstones: new Map(Object.entries(p.tombstones || {})),
     autoFetch: p.autoFetch !== false, // absent = true (historical behavior)
+    upKbps: Math.max(0, Number(p.upKbps) || 0),
+    downKbps: Math.max(0, Number(p.downKbps) || 0),
     mutes: new Set(p.mutes || []),
     history: (p.history || []).slice(-200),
     chat: (p.chat || []).slice(-200),
@@ -1143,16 +1162,13 @@ function leaveRoom(roomId: string): void {
   // Tell peers we're leaving so they drop us at once (no 45s offline ghost).
   broadcast(room, { t: 'bye', memberId: room.self.memberId });
   rooms.delete(roomId);
+  const c = clients.get(roomId);
+  clients.delete(roomId);
   const teardown = (): void => {
     try { room.tracker?.stop(); room.tracker?.destroy(); } catch { /* ignore */ }
     for (const wire of room.wires.values()) { try { wire.peer.destroy(); } catch { /* ignore */ } }
-    // Stop transferring this room's torrents (only if no other room uses them).
-    if (client) {
-      for (const fileId of room.files.keys()) {
-        const stillUsed = Array.from(rooms.values()).some((r) => r.files.has(fileId));
-        if (!stillUsed) { const t = client.get(fileId); if (t) { try { client.remove(t); } catch { /* ignore */ } } }
-      }
-    }
+    // The client is the room's own — tearing it down stops all its transfers.
+    try { c?.destroy(); } catch { /* ignore */ }
   };
   // Defer the teardown briefly so the 'bye' flushes on the data channels first.
   setTimeout(teardown, 200);
@@ -1166,11 +1182,11 @@ function leaveRoom(roomId: string): void {
 function releaseFile(roomId: string, fileId: string): void {
   const room = rooms.get(roomId);
   if (!room) return;
-  // Only drop the torrent if no other active room still shares this file.
-  const stillUsedElsewhere = Array.from(rooms.values()).some((r) => r !== room && r.files.has(fileId));
-  if (client && !stillUsedElsewhere) {
-    const t = client.get(fileId);
-    if (t) { try { client.remove(t); } catch (e) { log('release failed: ' + String(e)); } }
+  // Per-room clients: dropping the torrent here can't affect other rooms.
+  const c = clients.get(roomId);
+  if (c) {
+    const t = c.get(fileId);
+    if (t) { try { c.remove(t); } catch (e) { log('release failed: ' + String(e)); } }
   }
   const tr = room.transfers.get(fileId);
   if (tr) { tr.status = 'done'; tr.released = true; tr.downSpeed = 0; tr.peers = 0; }
@@ -1283,6 +1299,22 @@ ipcRenderer.on('room-cmd', async (_e, msg: any) => {
       ensureLocal(r, f);
       pushState(r, true);
       data = buildState(r);
+    }
+    else if (type === 'setLimits') {
+      const r = rooms.get(msg.roomId);
+      if (r) {
+        r.upKbps = Math.max(0, Number(msg.upKbps) || 0);
+        r.downKbps = Math.max(0, Number(msg.downKbps) || 0);
+        // Throttle the room's live client; a not-yet-created client picks the
+        // limits up at construction (ensureClient reads them from the room).
+        const c = clients.get(r.roomId);
+        if (c) {
+          try { c.throttleUpload(kbpsToLimit(r.upKbps)); } catch (e) { log('throttleUpload failed: ' + String(e)); }
+          try { c.throttleDownload(kbpsToLimit(r.downKbps)); } catch (e) { log('throttleDownload failed: ' + String(e)); }
+        }
+        pushState(r, true);
+      }
+      data = { ok: true };
     }
     else throw new Error('Unknown room command: ' + type);
     ipcRenderer.send('room-res', { reqId, ok: true, data });

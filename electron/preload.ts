@@ -557,6 +557,8 @@ const api: IpcApi = {
       ipcRenderer.invoke('rooms:setAutoFetch', roomId, autoFetch),
     fetchFile: (roomId: string, fileId: string): Promise<RoomState> =>
       ipcRenderer.invoke('rooms:fetchFile', roomId, fileId),
+    setLimits: (roomId: string, upKbps: number, downKbps: number): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke('rooms:setLimits', roomId, upKbps, downKbps),
     kick: (roomId: string, memberId: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke('rooms:kick', roomId, memberId),
     sendChat: (roomId: string, text: string): Promise<{ ok: boolean }> =>

@@ -97,6 +97,8 @@ export interface PersistedRoom {
   e2e?: boolean;     // end-to-end encryption mode (set at creation; learned via gossip)
   secret?: string;   // E2E content key (32-byte hex); distributed over encrypted gossip
   autoFetch?: boolean; // auto-download files peers share (absent = true, the historical behavior)
+  upKbps?: number;     // per-room upload ceiling, KB/s (absent/0 = unlimited)
+  downKbps?: number;   // per-room download ceiling, KB/s (absent/0 = unlimited)
 }
 
 const defaultCategories: Category[] = [
@@ -1287,6 +1289,15 @@ export function setRoomAutoFetch(roomId: string, autoFetch: boolean): void {
   const room = rooms[roomId];
   if (!room) return;
   rooms[roomId] = { ...room, autoFetch };
+  roomsStore.set('rooms', rooms);
+}
+
+/** Per-room speed ceilings in KB/s (0 = unlimited). */
+export function setRoomLimits(roomId: string, upKbps: number, downKbps: number): void {
+  const rooms = roomsStore.get('rooms') ?? {};
+  const room = rooms[roomId];
+  if (!room) return;
+  rooms[roomId] = { ...room, upKbps: Math.max(0, upKbps || 0), downKbps: Math.max(0, downKbps || 0) };
   roomsStore.set('rooms', rooms);
 }
 

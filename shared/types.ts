@@ -177,6 +177,8 @@ export interface RoomState {
   connected: boolean;    // tracker rendezvous connected
   peerCount: number;     // live gossip peers right now
   autoFetch: boolean;    // auto-download files peers share; false = fetch manually per file
+  upKbps: number;        // per-room upload ceiling, KB/s (0 = unlimited)
+  downKbps: number;      // per-room download ceiling, KB/s (0 = unlimited)
   kicked?: boolean;      // the owner removed us from this room (session-only)
   kickedBy?: string;     // display name of who removed us
 }
@@ -928,6 +930,7 @@ export interface IpcApi {
     setMuted: (roomId: string, memberId: string, muted: boolean) => Promise<{ ok: boolean }>;
     setAutoFetch: (roomId: string, autoFetch: boolean) => Promise<{ ok: boolean }>;
     fetchFile: (roomId: string, fileId: string) => Promise<RoomState>;
+    setLimits: (roomId: string, upKbps: number, downKbps: number) => Promise<{ ok: boolean }>;
     kick: (roomId: string, memberId: string) => Promise<{ ok: boolean }>;
     sendChat: (roomId: string, text: string) => Promise<{ ok: boolean }>;
   };

@@ -398,6 +398,48 @@
   color: var(--color-accent-primary);
 }
 
+/* Per-room speed ceilings (KB/s, blank = unlimited) */
+.room-limits {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+}
+
+.room-limit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+  cursor: text;
+}
+
+.room-limit input {
+  width: 52px;
+  padding: 3px 6px;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: 11px;
+  text-align: right;
+  -moz-appearance: textfield;
+}
+
+.room-limit input::-webkit-outer-spin-button,
+.room-limit input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.room-limit input:focus {
+  outline: none;
+  border-color: var(--color-border-focus);
+}
+
 /* ── Identicon ─────────────────────────────────────────────────────────── */
 .identicon { position: relative; display: inline-flex; flex-shrink: 0; line-height: 0; }
 .identicon svg { display: block; border-radius: inherit; }

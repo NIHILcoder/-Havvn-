@@ -493,6 +493,10 @@ export function setupIpcHandlers(window: BrowserWindow): void {
     async (_event, roomId: string, fileId: string) => roomManager.fetchFile(roomId, fileId)
   ));
 
+  ipcMain.handle('rooms:setLimits', wrapHandler('rooms:setLimits',
+    async (_event, roomId: string, upKbps: number, downKbps: number) => roomManager.setLimits(roomId, upKbps, downKbps)
+  ));
+
   ipcMain.handle('rooms:setMuted', wrapHandler('rooms:setMuted',
     async (_event, roomId: string, memberId: string, muted: boolean) => roomManager.setMuted(roomId, memberId, !!muted)
   ));

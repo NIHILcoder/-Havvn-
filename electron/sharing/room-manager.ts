@@ -215,6 +215,7 @@ export class RoomManager {
   private async joinPayload(roomId: string, name: string, code: string, folder: string, ownerId?: string, e2e?: boolean, secret?: string) {
     const profile = db.getRoomProfile();
     const identity = db.getRoomIdentity();
+    const persisted = db.getPersistedRooms().find((r) => r.roomId === roomId);
     let useTurn = true;
     let turnServers: ReturnType<typeof customTurnToIce> = [];
     try {
@@ -239,8 +240,10 @@ export class RoomManager {
         e2e: e2e ?? false,
         secret: secret ?? '',
         cacheDir: this.encCacheDir(roomId),
-        // Per-room auto-download preference (absent = true).
-        autoFetch: db.getPersistedRooms().find((r) => r.roomId === roomId)?.autoFetch !== false,
+        // Per-room preferences (absent → auto-download on, no speed limits).
+        autoFetch: persisted?.autoFetch !== false,
+        upKbps: persisted?.upKbps ?? 0,
+        downKbps: persisted?.downKbps ?? 0,
       },
     };
   }
@@ -428,6 +431,17 @@ export class RoomManager {
   /** Manual mode: explicitly download one shared file. Returns the fresh state. */
   async fetchFile(roomId: string, fileId: string): Promise<RoomState> {
     return this.call<RoomState>('fetchFile', { roomId, fileId }, 8000);
+  }
+
+  /** Per-room speed ceilings in KB/s, 0 = unlimited (persisted + applied live). */
+  async setLimits(roomId: string, upKbps: number, downKbps: number): Promise<{ ok: boolean }> {
+    const up = Math.max(0, Math.floor(Number(upKbps) || 0));
+    const down = Math.max(0, Math.floor(Number(downKbps) || 0));
+    db.setRoomLimits(roomId, up, down);
+    if (this.win && !this.win.isDestroyed() && this.ready) {
+      this.win.webContents.send('room-cmd', { type: 'setLimits', reqId: ++this.reqSeq, roomId, upKbps: up, downKbps: down });
+    }
+    return { ok: true };
   }
 
   /** Watch-together: broadcast a local playback action to the room's peers. */
