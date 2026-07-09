@@ -1,0 +1,115 @@
+/**
+ * Modal — shared dialog shell (Ember). One backdrop, one card, one header.
+ * Every standard/form dialog in the app renders through this.
+ */
+
+.um-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  animation: um-fade 150ms ease;
+}
+
+.um-card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-height: calc(100vh - 2 * var(--space-6));
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--shadow-xl);
+  overflow: hidden;
+  animation: um-rise 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Sizes — the card is centered; width caps at these, shrinking on small screens. */
+.um-sm   { max-width: 400px; }
+.um-md   { max-width: 480px; }
+.um-lg   { max-width: 620px; }
+.um-xl   { max-width: 780px; }
+.um-full { max-width: 96vw; }
+
+/* Header — ember icon + title on the left, close × on the right */
+.um-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--color-border-subtle);
+  flex-shrink: 0;
+}
+.um-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  min-width: 0;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  letter-spacing: -0.01em;
+}
+.um-title svg { color: var(--color-accent-primary); flex-shrink: 0; }
+
+.um-x {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: color var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast);
+}
+.um-x:hover:not(:disabled) {
+  color: var(--color-text-primary);
+  border-color: var(--color-border-strong);
+  background: var(--color-bg-hover);
+}
+.um-x:disabled { opacity: 0.5; cursor: default; }
+
+/* Body — the scrolling content region */
+.um-body {
+  padding: var(--space-5);
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* Footer — action row, right-aligned by default */
+.um-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+  border-top: 1px solid var(--color-border-subtle);
+  flex-shrink: 0;
+}
+
+/* A tighter body for text-only dialogs (confirm/alert) */
+.um-body-plain { gap: var(--space-2); }
+.um-body-plain p { margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-base); line-height: var(--line-height-normal); }
+
+@keyframes um-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes um-rise { from { opacity: 0; transform: translateY(8px) scale(0.99); } to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .um-backdrop, .um-card { animation: none; }
+}

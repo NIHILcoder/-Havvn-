@@ -1,68 +1,4 @@
-/* Share-to-room / bring-from-transfers pickers — flat Ember modal. */
-
-.rsm-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(4px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  animation: fadeIn 150ms ease;
-}
-
-.rsm-modal {
-  width: 440px;
-  max-width: calc(100vw - 48px);
-  max-height: min(560px, calc(100vh - 96px));
-  padding: var(--space-5);
-  background: var(--color-bg-elevated);
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-xl);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.rsm-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.rsm-head h3 {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin: 0;
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--color-text-primary);
-}
-
-.rsm-head h3 svg { color: var(--color-accent-primary); }
-
-.rsm-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--color-text-tertiary);
-  cursor: pointer;
-  transition: color var(--transition-fast), background var(--transition-fast);
-}
-
-.rsm-close:hover {
-  background: var(--color-bg-hover);
-  color: var(--color-text-primary);
-}
+/* Share-to-room / bring-from-transfers pickers — content for the shared Modal. */
 
 /* The file being shared */
 .rsm-file {
@@ -197,11 +133,6 @@
 }
 
 .rsm-note svg { flex-shrink: 0; margin-top: 1px; }
-
-.rsm-actions {
-  display: flex;
-  justify-content: flex-end;
-}
 
 /* ── File-pick stage ─────────────────────────────────────────────────────── */
 .rsm-files-tools {

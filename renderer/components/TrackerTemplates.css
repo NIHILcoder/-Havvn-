@@ -3,88 +3,7 @@
    Fully theme-aware (dark / light), premium look & feel.
    ============================================================ */
 
-/* ---------- Overlay ---------- */
-.tracker-templates-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.72);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: var(--z-modal);
-  animation: tt-fade-in 0.2s ease;
-}
-
-[data-theme="light"] .tracker-templates-overlay {
-  background: rgba(0, 0, 0, 0.45);
-}
-
-/* ---------- Modal shell ---------- */
-.tracker-templates-modal {
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-xl), 0 0 0 1px var(--color-border-subtle);
-  width: 90%;
-  max-width: 700px;
-  max-height: 85vh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  animation: tt-slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-[data-theme="light"] .tracker-templates-modal {
-  background: var(--color-bg-elevated);
-}
-
-/* ---------- Header ---------- */
-.templates-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 20px 24px 18px;
-  border-bottom: 1px solid var(--color-border-subtle);
-  background: linear-gradient(180deg, var(--color-bg-tertiary) 0%, transparent 100%);
-  flex-shrink: 0;
-}
-
-[data-theme="light"] .templates-header {
-  background: linear-gradient(180deg, var(--color-bg-secondary) 0%, transparent 100%);
-}
-
-.templates-header h3 {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: var(--font-size-lg);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text-primary);
-  margin: 0;
-  letter-spacing: -0.01em;
-}
-
 /* ---------- Body ---------- */
-.templates-content {
-  padding: 20px 24px 24px;
-  overflow-y: auto;
-  flex: 1;
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-border-strong) transparent;
-}
-
-.templates-content::-webkit-scrollbar { width: 5px; }
-.templates-content::-webkit-scrollbar-track { background: transparent; }
-.templates-content::-webkit-scrollbar-thumb {
-  background: var(--color-border-strong);
-  border-radius: 3px;
-}
-.templates-content::-webkit-scrollbar-thumb:hover {
-  background: var(--color-text-disabled);
-}
-
 .templates-description {
   color: var(--color-text-tertiary);
   font-size: var(--font-size-sm);
@@ -225,16 +144,6 @@
 }
 
 /* ---------- Animations ---------- */
-@keyframes tt-fade-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
-
-@keyframes tt-slide-up {
-  from { opacity: 0; transform: translateY(16px) scale(0.98); }
-  to   { opacity: 1; transform: translateY(0)    scale(1);    }
-}
-
 @keyframes tt-check-pop {
   0%   { transform: scale(0);   }
   60%  { transform: scale(1.2); }

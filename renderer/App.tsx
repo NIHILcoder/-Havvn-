@@ -18,6 +18,7 @@ const RoomsPage = lazy(() => import('./pages/RoomsPage'));
 const SwarmPage = lazy(() => import('./pages/SwarmPage'));
 import { formatBytes } from './utils/format-helpers';
 import { I18nProvider, useTranslation } from './utils/i18nContext';
+import { ConfirmProvider } from './components/ConfirmDialog';
 import { dismissSplash } from './utils/splash';
 
 
@@ -392,7 +393,9 @@ const AppContent: React.FC = () => {
 const App: React.FC = () => {
   return (
     <I18nProvider>
-      <AppContent />
+      <ConfirmProvider>
+        <AppContent />
+      </ConfirmProvider>
     </I18nProvider>
   );
 };

@@ -6,6 +6,7 @@
 
 import React, { useState } from 'react';
 import { Icon } from './Icon';
+import { Modal } from './Modal';
 import './TrackerTemplates.css';
 
 export interface TrackerTemplate {
@@ -126,51 +127,37 @@ export const TrackerTemplates: React.FC<TrackerTemplatesProps> = ({
   };
 
   return (
-    <div className="tracker-templates-overlay" onClick={onClose}>
-      <div className="tracker-templates-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="templates-header">
-          <h3>
-            <Icon name="server" size={20} />
-            Tracker Templates
-          </h3>
-          <button className="close-btn" onClick={onClose}>
-            <Icon name="x" size={18} />
+    <Modal onClose={onClose} title="Tracker Templates" icon="server" size="xl">
+      <p className="templates-description">
+        Choose a preset tracker list for your torrent type
+      </p>
+
+      <div className="templates-grid">
+        {allTemplates.map((template) => (
+          <button
+            key={template.id}
+            className={`template-card ${selectedTemplate === template.id ? 'selected' : ''}`}
+            onClick={() => handleSelect(template)}
+          >
+            <div className="template-icon">
+              <Icon name={template.icon as any} size={32} />
+            </div>
+            <div className="template-info">
+              <h4 className="template-name">{template.name}</h4>
+              <p className="template-description">{template.description}</p>
+              <span className="template-count">
+                {template.trackers.length} {template.trackers.length === 1 ? 'tracker' : 'trackers'}
+              </span>
+            </div>
+            {selectedTemplate === template.id && (
+              <div className="template-check">
+                <Icon name="check" size={16} />
+              </div>
+            )}
           </button>
-        </div>
-
-        <div className="templates-content">
-          <p className="templates-description">
-            Choose a preset tracker list for your torrent type
-          </p>
-
-          <div className="templates-grid">
-            {allTemplates.map((template) => (
-              <button
-                key={template.id}
-                className={`template-card ${selectedTemplate === template.id ? 'selected' : ''}`}
-                onClick={() => handleSelect(template)}
-              >
-                <div className="template-icon">
-                  <Icon name={template.icon as any} size={32} />
-                </div>
-                <div className="template-info">
-                  <h4 className="template-name">{template.name}</h4>
-                  <p className="template-description">{template.description}</p>
-                  <span className="template-count">
-                    {template.trackers.length} {template.trackers.length === 1 ? 'tracker' : 'trackers'}
-                  </span>
-                </div>
-                {selectedTemplate === template.id && (
-                  <div className="template-check">
-                    <Icon name="check" size={16} />
-                  </div>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
+        ))}
       </div>
-    </div>
+    </Modal>
   );
 };
 

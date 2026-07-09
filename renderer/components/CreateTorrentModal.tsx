@@ -6,6 +6,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { Button, Icon, Input, ProgressBar } from '../components';
+import { Modal } from './Modal';
 import { CreateTorrentOptions, CreateTorrentProgress, CreateTorrentResult } from '../../shared/types';
 import './CreateTorrentModal.css';
 
@@ -206,26 +207,47 @@ export const CreateTorrentModal: React.FC<CreateTorrentModalProps> = ({
 
   if (!isOpen) return null;
 
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal create-torrent-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2>
-            <Icon name="file-plus" size={20} />
-            Create Torrent
-          </h2>
+  const footer = (
+    <>
+      {stage === 'setup' && (
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
           <Button
-            variant="ghost"
-            size="sm"
-            iconOnly
-            icon={<Icon name="x" size={18} />}
-            onClick={onClose}
-            title="Close"
-          />
-        </div>
+            variant="primary"
+            onClick={handleCreate}
+            disabled={sourcePaths.length === 0}
+          >
+            <Icon name="file-plus" size={16} />
+            Create Torrent
+          </Button>
+        </>
+      )}
 
-        <div className="modal-content">
-          {stage === 'setup' && (
+      {stage === 'creating' && (
+        <Button variant="ghost" onClick={onClose} disabled>
+          Please wait...
+        </Button>
+      )}
+
+      {stage === 'success' && (
+        <Button variant="primary" onClick={onClose}>
+          Done
+        </Button>
+      )}
+    </>
+  );
+
+  return (
+    <Modal
+      onClose={onClose}
+      title="Create Torrent"
+      icon="file-plus"
+      size="lg"
+      footer={footer}
+    >
+      {stage === 'setup' && (
             <>
               {/* Source Selection */}
               <div className="form-section">
@@ -458,39 +480,7 @@ export const CreateTorrentModal: React.FC<CreateTorrentModalProps> = ({
               </div>
             </div>
           )}
-        </div>
-
-        <div className="modal-footer">
-          {stage === 'setup' && (
-            <>
-              <Button variant="ghost" onClick={onClose}>
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                onClick={handleCreate}
-                disabled={sourcePaths.length === 0}
-              >
-                <Icon name="file-plus" size={16} />
-                Create Torrent
-              </Button>
-            </>
-          )}
-
-          {stage === 'creating' && (
-            <Button variant="ghost" onClick={onClose} disabled>
-              Please wait...
-            </Button>
-          )}
-
-          {stage === 'success' && (
-            <Button variant="primary" onClick={onClose}>
-              Done
-            </Button>
-          )}
-        </div>
-      </div>
-    </div>
+        </Modal>
   );
 };
 

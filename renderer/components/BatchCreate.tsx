@@ -7,6 +7,7 @@
 import React, { useState, useCallback } from 'react';
 import { Icon } from './Icon';
 import { Button, ProgressBar } from '.';
+import { Modal } from './Modal';
 import './BatchCreate.css';
 
 interface BatchItem {
@@ -174,20 +175,29 @@ export const BatchCreate: React.FC<BatchCreateProps> = ({
   const totalSize = items.reduce((sum, it) => sum + it.size, 0);
 
   return (
-    <div className="batch-create-overlay" onClick={isProcessing ? undefined : onClose}>
-      <div className="batch-create-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="batch-header">
-          <h3>
-            <Icon name="layers" size={20} />
-            Batch Create Torrents
-          </h3>
-          <button className="close-btn" onClick={onClose} disabled={isProcessing}>
-            <Icon name="x" size={18} />
-          </button>
-        </div>
-
-        <div className="batch-content">
-          <div className="batch-stats">
+    <Modal
+      onClose={onClose}
+      title="Batch Create Torrents"
+      icon="layers"
+      size="lg"
+      busy={isProcessing}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={isProcessing}>
+            {isProcessing ? 'Processing...' : 'Cancel'}
+          </Button>
+          <Button
+            variant="primary"
+            onClick={handleStartBatch}
+            disabled={items.length === 0 || isProcessing}
+          >
+            <Icon name={isProcessing ? 'loader' : 'zap'} size={16} className={isProcessing ? 'spinning' : ''} />
+            {isProcessing ? `Creating ${currentIndex + 1}/${items.length}...` : `Create ${items.length} Torrents`}
+          </Button>
+        </>
+      }
+    >
+      <div className="batch-stats">
             <div className="stat-card">
               <Icon name="folder" size={16} />
               <div className="stat-info">
@@ -304,23 +314,7 @@ export const BatchCreate: React.FC<BatchCreateProps> = ({
               ))}
             </div>
           )}
-        </div>
-
-        <div className="batch-footer">
-          <Button variant="secondary" onClick={onClose} disabled={isProcessing}>
-            {isProcessing ? 'Processing...' : 'Cancel'}
-          </Button>
-          <Button
-            variant="primary"
-            onClick={handleStartBatch}
-            disabled={items.length === 0 || isProcessing}
-          >
-            <Icon name={isProcessing ? 'loader' : 'zap'} size={16} className={isProcessing ? 'spinning' : ''} />
-            {isProcessing ? `Creating ${currentIndex + 1}/${items.length}...` : `Create ${items.length} Torrents`}
-          </Button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 };
 

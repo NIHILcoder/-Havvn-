@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { TorrentFile } from '../../shared/types';
 import { Icon, IconName } from './Icon';
+import { Modal } from './Modal';
+import { Button } from './Button';
 import './FilePreview.css';
 
 interface FilePreviewProps {
@@ -74,45 +76,43 @@ export const FilePreview: React.FC<FilePreviewProps> = ({ downloadId, onClose })
 
   if (loading) {
     return (
-      <div className="file-preview-overlay">
-        <div className="file-preview-modal">
-          <div className="file-preview-loading">
-            <div className="fp-spinner"></div>
-            <p>Loading files...</p>
-          </div>
+      <Modal onClose={onClose} size="xl" ariaLabel="Loading files">
+        <div className="file-preview-loading">
+          <div className="fp-spinner"></div>
+          <p>Loading files...</p>
         </div>
-      </div>
+      </Modal>
     );
   }
 
   if (error) {
     return (
-      <div className="file-preview-overlay" onClick={onClose}>
-        <div className="file-preview-modal" onClick={e => e.stopPropagation()}>
-          <div className="file-preview-error">
-            <div className="fp-state-icon fp-state-icon--error">
-              <Icon name="alert-circle" size={32} />
-            </div>
-            <p>{error}</p>
-            <button onClick={onClose} className="fp-close-action">Close</button>
+      <Modal
+        onClose={onClose}
+        size="xl"
+        ariaLabel={error}
+        footer={<Button variant="secondary" onClick={onClose}>Close</Button>}
+      >
+        <div className="file-preview-error">
+          <div className="fp-state-icon fp-state-icon--error">
+            <Icon name="alert-circle" size={32} />
           </div>
+          <p>{error}</p>
         </div>
-      </div>
+      </Modal>
     );
   }
 
   if (files.length === 0) {
     return (
-      <div className="file-preview-overlay" onClick={onClose}>
-        <div className="file-preview-modal" onClick={e => e.stopPropagation()}>
-          <div className="file-preview-empty">
-            <div className="fp-state-icon">
-              <Icon name="inbox" size={32} />
-            </div>
-            <p>No files information available</p>
+      <Modal onClose={onClose} size="xl" ariaLabel="Files">
+        <div className="file-preview-empty">
+          <div className="fp-state-icon">
+            <Icon name="inbox" size={32} />
           </div>
+          <p>No files information available</p>
         </div>
-      </div>
+      </Modal>
     );
   }
 
@@ -121,120 +121,114 @@ export const FilePreview: React.FC<FilePreviewProps> = ({ downloadId, onClose })
   const totalProgress = totalSize > 0 ? downloadedSize / totalSize : 0;
   const completedCount = files.filter(f => f.progress === 1).length;
 
+  const headerTitle = (
+    <span className="fp-header-text">
+      <span className="fp-title">Files ({files.length})</span>
+      <span className="fp-subtitle">
+        <span className="fp-chip">
+          <Icon name="hard-drive" size={12} />
+          {formatBytes(totalSize)}
+        </span>
+        <span className="fp-chip-sep">·</span>
+        <span className="fp-chip">
+          <Icon name="download" size={12} />
+          {formatBytes(downloadedSize)} downloaded
+        </span>
+        <span className="fp-chip-sep">·</span>
+        <span className="fp-chip fp-chip--progress">
+          {(totalProgress * 100).toFixed(1)}% complete
+        </span>
+        {completedCount > 0 && (
+          <>
+            <span className="fp-chip-sep">·</span>
+            <span className="fp-chip fp-chip--done">
+              <Icon name="check-circle" size={12} />
+              {completedCount} done
+            </span>
+          </>
+        )}
+      </span>
+    </span>
+  );
+
   return (
-    <div className="file-preview-overlay" onClick={onClose}>
-      <div className="file-preview-modal" onClick={e => e.stopPropagation()}>
-
-        {/* ── Header ── */}
-        <div className="fp-header">
-          <div className="fp-header-left">
-            <div className="fp-header-icon">
-              <Icon name="layers" size={18} />
-            </div>
-            <div className="fp-header-text">
-              <h3 className="fp-title">Files ({files.length})</h3>
-              <div className="fp-subtitle">
-                <span className="fp-chip">
-                  <Icon name="hard-drive" size={12} />
-                  {formatBytes(totalSize)}
-                </span>
-                <span className="fp-chip-sep">·</span>
-                <span className="fp-chip">
-                  <Icon name="download" size={12} />
-                  {formatBytes(downloadedSize)} downloaded
-                </span>
-                <span className="fp-chip-sep">·</span>
-                <span className="fp-chip fp-chip--progress">
-                  {(totalProgress * 100).toFixed(1)}% complete
-                </span>
-                {completedCount > 0 && (
-                  <>
-                    <span className="fp-chip-sep">·</span>
-                    <span className="fp-chip fp-chip--done">
-                      <Icon name="check-circle" size={12} />
-                      {completedCount} done
-                    </span>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-          <button onClick={onClose} className="fp-close">
-            <Icon name="x" size={18} />
-          </button>
+    <Modal
+      onClose={onClose}
+      size="xl"
+      icon="layers"
+      title={headerTitle}
+      ariaLabel={`Files (${files.length})`}
+      bodyClassName="fp-body"
+    >
+      {/* ── Overall progress bar (sticky) ── */}
+      <div className="fp-total-progress">
+        <div className="fp-total-bar">
+          <div
+            className="fp-total-fill"
+            style={{ width: `${totalProgress * 100}%` }}
+          />
         </div>
-
-        {/* ── Overall progress bar ── */}
-        <div className="fp-total-progress">
-          <div className="fp-total-bar">
-            <div
-              className="fp-total-fill"
-              style={{ width: `${totalProgress * 100}%` }}
-            />
-          </div>
-        </div>
-
-        {/* ── File list ── */}
-        <div className="fp-list">
-          {files.map((file, index) => {
-            const pct = Math.round(file.progress * 100);
-            const isDone = file.progress === 1;
-            const ext = getFileExtension(file.name);
-
-            return (
-              <div key={index} className={`fp-item ${isDone ? 'fp-item--done' : ''}`}>
-                {/* Icon */}
-                <div className="fp-item-icon" style={{ color: getFileTypeColor(file.name) }}>
-                  <Icon name={getFileIcon(file.name)} size={22} />
-                  <span className="fp-ext-badge">{ext}</span>
-                </div>
-
-                {/* Content */}
-                <div className="fp-item-body">
-                  {/* Row 1: name + size */}
-                  <div className="fp-item-row">
-                    <span className="fp-item-name" title={file.path}>{file.name}</span>
-                    <span className="fp-item-size">{formatBytes(file.length)}</span>
-                  </div>
-
-                  {/* Row 2: path */}
-                  {file.path && file.path !== file.name && (
-                    <div className="fp-item-path" title={file.path}>
-                      <Icon name="folder" size={11} />
-                      {file.path}
-                    </div>
-                  )}
-
-                  {/* Row 3: progress bar */}
-                  <div className="fp-item-progress-track">
-                    <div
-                      className={`fp-item-progress-fill ${isDone ? 'fp-item-progress-fill--done' : ''}`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-
-                  {/* Row 4: percent + downloaded/total */}
-                  <div className="fp-item-meta">
-                    <span className="fp-item-pct">{pct}%</span>
-                    {isDone ? (
-                      <span className="fp-item-status fp-item-status--done">
-                        <Icon name="check-circle" size={12} />
-                        Completed
-                      </span>
-                    ) : (
-                      <span className="fp-item-status">
-                        <Icon name="download" size={12} />
-                        {formatBytes(file.downloaded)} / {formatBytes(file.length)}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
       </div>
-    </div>
+
+      {/* ── File list ── */}
+      <div className="fp-list">
+        {files.map((file, index) => {
+          const pct = Math.round(file.progress * 100);
+          const isDone = file.progress === 1;
+          const ext = getFileExtension(file.name);
+
+          return (
+            <div key={index} className={`fp-item ${isDone ? 'fp-item--done' : ''}`}>
+              {/* Icon */}
+              <div className="fp-item-icon" style={{ color: getFileTypeColor(file.name) }}>
+                <Icon name={getFileIcon(file.name)} size={22} />
+                <span className="fp-ext-badge">{ext}</span>
+              </div>
+
+              {/* Content */}
+              <div className="fp-item-body">
+                {/* Row 1: name + size */}
+                <div className="fp-item-row">
+                  <span className="fp-item-name" title={file.path}>{file.name}</span>
+                  <span className="fp-item-size">{formatBytes(file.length)}</span>
+                </div>
+
+                {/* Row 2: path */}
+                {file.path && file.path !== file.name && (
+                  <div className="fp-item-path" title={file.path}>
+                    <Icon name="folder" size={11} />
+                    {file.path}
+                  </div>
+                )}
+
+                {/* Row 3: progress bar */}
+                <div className="fp-item-progress-track">
+                  <div
+                    className={`fp-item-progress-fill ${isDone ? 'fp-item-progress-fill--done' : ''}`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+
+                {/* Row 4: percent + downloaded/total */}
+                <div className="fp-item-meta">
+                  <span className="fp-item-pct">{pct}%</span>
+                  {isDone ? (
+                    <span className="fp-item-status fp-item-status--done">
+                      <Icon name="check-circle" size={12} />
+                      Completed
+                    </span>
+                  ) : (
+                    <span className="fp-item-status">
+                      <Icon name="download" size={12} />
+                      {formatBytes(file.downloaded)} / {formatBytes(file.length)}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Modal>
   );
 };

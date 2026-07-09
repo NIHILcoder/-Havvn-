@@ -3,91 +3,6 @@
    Fully theme-aware (dark / light), premium look & feel.
    ============================================================ */
 
-/* ---------- Overlay ---------- */
-.batch-create-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.72);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: var(--z-modal);
-  animation: bc-fade-in 0.2s ease;
-}
-
-[data-theme="light"] .batch-create-overlay {
-  background: rgba(0, 0, 0, 0.45);
-}
-
-/* ---------- Modal shell ---------- */
-.batch-create-modal {
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-xl), 0 0 0 1px var(--color-border-subtle);
-  width: 90%;
-  max-width: 800px;
-  max-height: 85vh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  animation: bc-slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-[data-theme="light"] .batch-create-modal {
-  background: var(--color-bg-elevated);
-}
-
-/* ---------- Header ---------- */
-.batch-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 20px 24px 18px;
-  border-bottom: 1px solid var(--color-border-subtle);
-  background: linear-gradient(180deg, var(--color-bg-tertiary) 0%, transparent 100%);
-  flex-shrink: 0;
-}
-
-[data-theme="light"] .batch-header {
-  background: linear-gradient(180deg, var(--color-bg-secondary) 0%, transparent 100%);
-}
-
-.batch-header h3 {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: var(--font-size-lg);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text-primary);
-  margin: 0;
-  letter-spacing: -0.01em;
-}
-
-/* ---------- Body ---------- */
-.batch-content {
-  padding: 20px 24px;
-  overflow-y: auto;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-border-strong) transparent;
-}
-
-.batch-content::-webkit-scrollbar { width: 5px; }
-.batch-content::-webkit-scrollbar-track { background: transparent; }
-.batch-content::-webkit-scrollbar-thumb {
-  background: var(--color-border-strong);
-  border-radius: 3px;
-}
-.batch-content::-webkit-scrollbar-thumb:hover {
-  background: var(--color-text-disabled);
-}
-
 /* ---------- Stats row ---------- */
 .batch-stats {
   display: grid;
@@ -399,33 +314,7 @@
   color: var(--color-error);
 }
 
-/* ---------- Footer ---------- */
-.batch-footer {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  padding: 16px 24px;
-  border-top: 1px solid var(--color-border-subtle);
-  background: var(--color-bg-secondary);
-  flex-shrink: 0;
-}
-
-[data-theme="light"] .batch-footer {
-  background: var(--color-bg-secondary);
-}
-
 /* ---------- Animations ---------- */
-@keyframes bc-fade-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
-
-@keyframes bc-slide-up {
-  from { opacity: 0; transform: translateY(16px) scale(0.98); }
-  to   { opacity: 1; transform: translateY(0)    scale(1);    }
-}
-
 @keyframes bc-spin {
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }

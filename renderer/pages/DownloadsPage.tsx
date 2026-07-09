@@ -20,6 +20,7 @@ import {
   StreamPlayerModal,
   ShareLinkModal,
   ShareToRoomModal,
+  useConfirm,
 } from '../components';
 import './DownloadsPage.css';
 
@@ -53,6 +54,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
   onOpenHandled
 }) => {
   const { t } = useTranslation();
+  const { confirm } = useConfirm();
   const [downloads, setDownloads] = useState<Download[]>([]);
   const [stats, setStats] = useState<Map<string, DownloadStats>>(() => lastStatsSnapshot ?? new Map());
   const [loading, setLoading] = useState(true);
@@ -270,7 +272,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
 
   // Keyboard shortcuts
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
+    const handleKeyDown = async (e: KeyboardEvent) => {
       // A modal owns the keyboard while open — page-level shortcuts (Delete,
       // Space, Ctrl+A) acting on the list underneath would be destructive.
       if (shareRoomId || shareModalId || streamModalId || controlModalId || previewId || showFileSelector) return;
@@ -286,7 +288,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
       // Delete - Remove selected downloads
       if (e.key === 'Delete' && selectedIds.size > 0 && !isInInput) {
         e.preventDefault();
-        if (confirm(`${t('downloads.confirmRemoveMany')} (${selectedIds.size})`)) {
+        if (await confirm({ message: `${t('downloads.confirmRemoveMany')} (${selectedIds.size})`, danger: true })) {
           const idsToRemove = Array.from(selectedIds);
           Promise.all(idsToRemove.map(id => window.api.removeDownload(id, false)))
             .then(() => {
@@ -1017,7 +1019,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
                 size="sm"
                 icon={<Icon name="trash" size={14} />}
                 onClick={async () => {
-                  if (confirm(`${t('downloads.confirmRemoveMany')} (${selectedIds.size})`)) {
+                  if (await confirm({ message: `${t('downloads.confirmRemoveMany')} (${selectedIds.size})`, danger: true })) {
                     const promises = Array.from(selectedIds).map(id => window.api.removeDownload(id, false).catch(err => console.error(err)));
                     await Promise.all(promises);
                     await loadDownloads();
@@ -1252,8 +1254,8 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
               label: t('downloads.remove'),
               icon: 'trash',
               danger: true,
-              onClick: () => {
-                if (confirm(t('downloads.confirmRemove'))) {
+              onClick: async () => {
+                if (await confirm({ message: t('downloads.confirmRemove'), danger: true })) {
                   handleRemove(contextMenu.downloadId, false);
                 }
                 setContextMenu(null);
@@ -1263,8 +1265,8 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
               label: t('downloads.deleteWithFiles'),
               icon: 'trash',
               danger: true,
-              onClick: () => {
-                if (confirm(t('downloads.confirmRemoveWithFiles'))) {
+              onClick: async () => {
+                if (await confirm({ message: t('downloads.confirmRemoveWithFiles'), danger: true })) {
                   handleRemove(contextMenu.downloadId, true);
                 }
                 setContextMenu(null);

@@ -8,6 +8,8 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Icon } from './Icon';
+import { Modal } from './Modal';
+import { Button } from './Button';
 import { QRCode } from './QRCode';
 import { useTranslation } from '../utils/i18nContext';
 import { ShareInfo } from '../../shared/types';
@@ -63,12 +65,6 @@ export const ShareLinkModal: React.FC<ShareLinkModalProps> = ({ downloadId, down
     return () => { if (pollRef.current) window.clearInterval(pollRef.current); };
   }, [share, downloadId]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
   const handleCopy = useCallback(async () => {
     if (!share) return;
     try {
@@ -85,85 +81,77 @@ export const ShareLinkModal: React.FC<ShareLinkModalProps> = ({ downloadId, down
   }, [downloadId, onClose]);
 
   return (
-    <div className="share-overlay" onClick={onClose}>
-      <div className="share-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="share-header">
-          <div className="share-title">
-            <span className="share-title-icon"><Icon name="share-2" size={15} /></span>
-            <span className="share-title-text">{t('share.title')}</span>
-          </div>
-          <button className="share-close" onClick={onClose} title={t('share.close')}>
-            <Icon name="x" size={18} />
-          </button>
-        </div>
-
-        <div className="share-body">
-          <div className="share-file" title={downloadName}>
-            <Icon name="file" size={14} />
-            <span>{downloadName}</span>
-          </div>
-
-          {loading && (
-            <div className="share-state">
-              <span className="spinner spinner-lg" />
-              <p>{t('share.creating')}</p>
-            </div>
-          )}
-
-          {error && (
-            <div className="share-state share-state-error">
-              <Icon name="alert-triangle" size={28} />
-              <p>{error}</p>
-            </div>
-          )}
-
+    <Modal
+      onClose={onClose}
+      title={t('share.title')}
+      icon="share-2"
+      size="lg"
+      footer={
+        <>
           {share && !error && (
-            <>
-              <label className="share-label">{t('share.linkLabel')}</label>
-              <div className="share-link-row">
-                <input className="share-link-input" readOnly value={share.link} onFocus={(e) => e.target.select()} />
-                <button className={`share-copy-btn ${copied ? 'copied' : ''}`} onClick={handleCopy}>
-                  <Icon name={copied ? 'check' : 'copy'} size={14} />
-                  {copied ? t('share.copied') : t('share.copy')}
-                </button>
-              </div>
-
-              <div className="share-status">
-                <span className="share-live-dot" />
-                <span>{t('share.live')}</span>
-                <button className="share-qr-toggle" onClick={() => setShowQR(v => !v)}>
-                  <Icon name="grid" size={12} /> {showQR ? t('share.hideQr') : t('share.showQr')}
-                </button>
-                <span className="share-peers">
-                  <Icon name="users" size={12} /> {peers} {t('share.peers')}
-                </span>
-              </div>
-
-              {showQR && (
-                <div className="share-qr">
-                  <QRCode data={share.link} size={184} />
-                  <span className="share-qr-hint">{t('share.qrHint')}</span>
-                </div>
-              )}
-
-              <div className="share-note">
-                <Icon name="info" size={13} />
-                <span>{t('share.note')}</span>
-              </div>
-            </>
+            <Button variant="danger" icon={<Icon name="x-circle" size={14} />} onClick={handleStop} disabled={stopping}>
+              {t('share.stop')}
+            </Button>
           )}
-        </div>
-
-        <div className="share-footer">
-          {share && !error && (
-            <button className="share-stop-btn" onClick={handleStop} disabled={stopping}>
-              <Icon name="x-circle" size={14} /> {t('share.stop')}
-            </button>
-          )}
-          <button className="share-done-btn" onClick={onClose}>{t('share.done')}</button>
-        </div>
+          <Button variant="primary" onClick={onClose}>{t('share.done')}</Button>
+        </>
+      }
+    >
+      <div className="share-file" title={downloadName}>
+        <Icon name="file" size={14} />
+        <span>{downloadName}</span>
       </div>
-    </div>
+
+      {loading && (
+        <div className="share-state">
+          <span className="spinner spinner-lg" />
+          <p>{t('share.creating')}</p>
+        </div>
+      )}
+
+      {error && (
+        <div className="share-state share-state-error">
+          <Icon name="alert-triangle" size={28} />
+          <p>{error}</p>
+        </div>
+      )}
+
+      {share && !error && (
+        <>
+          <label className="share-label">{t('share.linkLabel')}</label>
+          <div className="share-link-row">
+            <input className="share-link-input" readOnly value={share.link} onFocus={(e) => e.target.select()} />
+            <button className={`share-copy-btn ${copied ? 'copied' : ''}`} onClick={handleCopy}>
+              <Icon name={copied ? 'check' : 'copy'} size={14} />
+              {copied ? t('share.copied') : t('share.copy')}
+            </button>
+          </div>
+
+          <div className="share-status">
+            <span className="share-live-dot" />
+            <span>{t('share.live')}</span>
+            <button className="share-qr-toggle" onClick={() => setShowQR(v => !v)}>
+              <Icon name="grid" size={12} /> {showQR ? t('share.hideQr') : t('share.showQr')}
+            </button>
+            <span className="share-peers">
+              <Icon name="users" size={12} /> {peers} {t('share.peers')}
+            </span>
+          </div>
+
+          {showQR && (
+            <div className="share-qr">
+              <QRCode data={share.link} size={184} />
+              <span className="share-qr-hint">{t('share.qrHint')}</span>
+            </div>
+          )}
+
+          <div className="share-note">
+            <Icon name="info" size={13} />
+            <span>{t('share.note')}</span>
+          </div>
+        </>
+      )}
+    </Modal>
   );
 };
 

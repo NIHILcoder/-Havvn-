@@ -7,11 +7,12 @@
  * finished download, same backend path.
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { Download, RoomSummary, RoomState } from '../../shared/types';
 import { Button } from './Button';
 import { Icon } from './Icon';
+import { Modal } from './Modal';
 import { formatBytes, cleanError } from '../utils/format-helpers';
 import { useTranslation } from '../utils/i18nContext';
 import './RoomShareModals.css';
@@ -22,44 +23,6 @@ const RoomTile: React.FC<{ name: string }> = ({ name }) => (
     {name.trim().slice(0, 2).toUpperCase() || '?'}
   </span>
 );
-
-const useEscape = (onClose: () => void): void => {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-};
-
-/** Move focus into the dialog on open, trap Tab inside it while it's up, and
- *  hand focus back where it was on close. */
-const useModalFocus = (): React.RefObject<HTMLDivElement> => {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const prev = document.activeElement as HTMLElement | null;
-    const dialog = ref.current;
-    dialog?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Tab' || !dialog) return;
-      const focusables = Array.from(dialog.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
-      )).filter((el) => el.offsetParent !== null); // skip display:none
-      if (focusables.length === 0) { e.preventDefault(); return; }
-      const first = focusables[0];
-      const last = focusables[focusables.length - 1];
-      const active = document.activeElement as HTMLElement | null;
-      if (active && !dialog.contains(active)) { e.preventDefault(); first.focus(); }
-      else if (e.shiftKey && (active === first || active === dialog)) { e.preventDefault(); last.focus(); }
-      else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
-    };
-    document.addEventListener('keydown', onKey, true);
-    return () => {
-      document.removeEventListener('keydown', onKey, true);
-      prev?.focus?.();
-    };
-  }, []);
-  return ref;
-};
 
 // ── File-pick stage (multi-file downloads) ───────────────────────────────────
 interface ShareableFile { path: string; name: string; size: number }
@@ -162,8 +125,6 @@ export const ShareToRoomModal: React.FC<ShareToRoomModalProps> = ({
   // downloads. 'error' falls back to a direct share (the backend reports why).
   const [fileList, setFileList] = useState<ShareableList | 'error' | null>(null);
   const [pickFor, setPickFor] = useState<RoomSummary | null>(null);
-  useEscape(useCallback(() => { if (!busyRoomId) onClose(); }, [busyRoomId, onClose]));
-  const dialogRef = useModalFocus();
 
   useEffect(() => {
     window.api.rooms.list().then(setRooms).catch(() => setRooms([]));
@@ -193,89 +154,73 @@ export const ShareToRoomModal: React.FC<ShareToRoomModalProps> = ({
   };
 
   return (
-    <div className="rsm-backdrop" onClick={() => !busyRoomId && onClose()}>
-      <div
-        ref={dialogRef}
-        className="rsm-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-label={t('share.toRoom.title')}
-        tabIndex={-1}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="rsm-head">
-          <h3><Icon name="share-2" size={15} /> {t('share.toRoom.title')}</h3>
-          <button
-            className="rsm-close"
-            disabled={!!busyRoomId}
-            onClick={() => !busyRoomId && onClose()}
-            aria-label={t('common.cancel')}
-          ><Icon name="x" size={16} /></button>
+    <Modal
+      onClose={onClose}
+      title={t('share.toRoom.title')}
+      icon="share-2"
+      size="md"
+      busy={!!busyRoomId}
+      footer={onShareLink && !pickFor ? (
+        <Button variant="ghost" size="sm" disabled={!!busyRoomId} icon={<Icon name="link" size={13} />} onClick={onShareLink}>
+          {t('share.toRoom.linkInstead')}
+        </Button>
+      ) : undefined}
+    >
+      <div className="rsm-file" title={downloadName}>{downloadName}</div>
+
+      {!canShare && (
+        <div className="rsm-note warn">
+          <Icon name="clock" size={14} />
+          <span>{t('share.toRoom.incomplete')}</span>
         </div>
-        <div className="rsm-file" title={downloadName}>{downloadName}</div>
+      )}
 
-        {!canShare && (
-          <div className="rsm-note warn">
-            <Icon name="clock" size={14} />
-            <span>{t('share.toRoom.incomplete')}</span>
-          </div>
-        )}
-
-        {pickFor && fileList && fileList !== 'error' ? (
-          <FilePickStage
-            list={fileList}
-            busy={!!busyRoomId}
-            onBack={() => setPickFor(null)}
-            onShare={(paths) => void share(pickFor, paths)}
-          />
-        ) : rooms === null || (canShare && fileList === null) ? (
-          <div className="rsm-empty">{t('common.loading')}</div>
-        ) : rooms.length === 0 ? (
-          <div className="rsm-empty">{t('share.toRoom.empty')}</div>
-        ) : (
-          <>
-            <p className="rsm-desc">{t('share.toRoom.pick')}</p>
-            <div className="rsm-list">
-              {rooms.map((room) => (
-                <button
-                  key={room.roomId}
-                  className="rsm-item"
-                  disabled={!canShare || !!busyRoomId}
-                  onClick={() => handleRoomClick(room)}
-                >
-                  <RoomTile name={room.name} />
-                  <span className="rsm-text">
-                    <span className="rsm-name">{room.name}</span>
-                    <span className="rsm-meta">
-                      <Icon name="users" size={11} /> {room.memberCount}
-                      <span className="rsm-dot">·</span>
-                      <Icon name="folder" size={11} /> {room.fileCount}
-                      {room.e2e && (
-                        <>
-                          <span className="rsm-dot">·</span>
-                          <Icon name="lock" size={11} /> {t('share.toRoom.e2e')}
-                        </>
-                      )}
-                    </span>
+      {pickFor && fileList && fileList !== 'error' ? (
+        <FilePickStage
+          list={fileList}
+          busy={!!busyRoomId}
+          onBack={() => setPickFor(null)}
+          onShare={(paths) => void share(pickFor, paths)}
+        />
+      ) : rooms === null || (canShare && fileList === null) ? (
+        <div className="rsm-empty">{t('common.loading')}</div>
+      ) : rooms.length === 0 ? (
+        <div className="rsm-empty">{t('share.toRoom.empty')}</div>
+      ) : (
+        <>
+          <p className="rsm-desc">{t('share.toRoom.pick')}</p>
+          <div className="rsm-list">
+            {rooms.map((room) => (
+              <button
+                key={room.roomId}
+                className="rsm-item"
+                disabled={!canShare || !!busyRoomId}
+                onClick={() => handleRoomClick(room)}
+              >
+                <RoomTile name={room.name} />
+                <span className="rsm-text">
+                  <span className="rsm-name">{room.name}</span>
+                  <span className="rsm-meta">
+                    <Icon name="users" size={11} /> {room.memberCount}
+                    <span className="rsm-dot">·</span>
+                    <Icon name="folder" size={11} /> {room.fileCount}
+                    {room.e2e && (
+                      <>
+                        <span className="rsm-dot">·</span>
+                        <Icon name="lock" size={11} /> {t('share.toRoom.e2e')}
+                      </>
+                    )}
                   </span>
-                  {busyRoomId === room.roomId
-                    ? <span className="spinner" />
-                    : <Icon name="chevron-right" size={15} className="rsm-go" />}
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-
-        {onShareLink && !pickFor && (
-          <div className="rsm-actions">
-            <Button variant="ghost" size="sm" disabled={!!busyRoomId} icon={<Icon name="link" size={13} />} onClick={onShareLink}>
-              {t('share.toRoom.linkInstead')}
-            </Button>
+                </span>
+                {busyRoomId === room.roomId
+                  ? <span className="spinner" />
+                  : <Icon name="chevron-right" size={15} className="rsm-go" />}
+              </button>
+            ))}
           </div>
-        )}
-      </div>
-    </div>
+        </>
+      )}
+    </Modal>
   );
 };
 
@@ -293,8 +238,6 @@ export const TransferPickerModal: React.FC<TransferPickerModalProps> = ({ roomId
   const [busyId, setBusyId] = useState<string | null>(null);
   // Multi-file download chosen → its file-pick stage.
   const [pick, setPick] = useState<{ download: Download; list: ShareableList } | null>(null);
-  useEscape(useCallback(() => { if (!busyId) onClose(); }, [busyId, onClose]));
-  const dialogRef = useModalFocus();
 
   useEffect(() => {
     window.api.getDownloads()
@@ -337,65 +280,51 @@ export const TransferPickerModal: React.FC<TransferPickerModalProps> = ({ roomId
   };
 
   return (
-    <div className="rsm-backdrop" onClick={() => !busyId && onClose()}>
-      <div
-        ref={dialogRef}
-        className="rsm-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-label={t('rooms.fromTransfers.title')}
-        tabIndex={-1}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="rsm-head">
-          <h3><Icon name="download" size={15} /> {t('rooms.fromTransfers.title')}</h3>
-          <button
-            className="rsm-close"
-            disabled={!!busyId}
-            onClick={() => !busyId && onClose()}
-            aria-label={t('common.cancel')}
-          ><Icon name="x" size={16} /></button>
-        </div>
-
-        {pick ? (
-          <>
-            <div className="rsm-file" title={pick.download.name}>{pick.download.name}</div>
-            <FilePickStage
-              list={pick.list}
-              busy={!!busyId}
-              onBack={() => setPick(null)}
-              onShare={(paths) => void share(pick.download, paths)}
-            />
-          </>
-        ) : downloads === null ? (
-          <div className="rsm-empty">{t('common.loading')}</div>
-        ) : downloads.length === 0 ? (
-          <div className="rsm-empty">{t('rooms.fromTransfers.empty')}</div>
-        ) : (
-          <>
-            <p className="rsm-desc">{t('rooms.fromTransfers.pick')}</p>
-            <div className="rsm-list">
-              {downloads.map((d) => (
-                <button
-                  key={d.id}
-                  className="rsm-item"
-                  disabled={!!busyId}
-                  onClick={() => void handleDownloadClick(d)}
-                >
-                  <span className="rsm-tile" aria-hidden="true"><Icon name="file" size={15} /></span>
-                  <span className="rsm-text">
-                    <span className="rsm-name">{d.name}</span>
-                    <span className="rsm-meta">{d.totalSize > 0 ? formatBytes(d.totalSize) : ''}</span>
-                  </span>
-                  {busyId === d.id
-                    ? <span className="spinner" />
-                    : <Icon name="chevron-right" size={15} className="rsm-go" />}
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-    </div>
+    <Modal
+      onClose={onClose}
+      title={t('rooms.fromTransfers.title')}
+      icon="download"
+      size="md"
+      busy={!!busyId}
+    >
+      {pick ? (
+        <>
+          <div className="rsm-file" title={pick.download.name}>{pick.download.name}</div>
+          <FilePickStage
+            list={pick.list}
+            busy={!!busyId}
+            onBack={() => setPick(null)}
+            onShare={(paths) => void share(pick.download, paths)}
+          />
+        </>
+      ) : downloads === null ? (
+        <div className="rsm-empty">{t('common.loading')}</div>
+      ) : downloads.length === 0 ? (
+        <div className="rsm-empty">{t('rooms.fromTransfers.empty')}</div>
+      ) : (
+        <>
+          <p className="rsm-desc">{t('rooms.fromTransfers.pick')}</p>
+          <div className="rsm-list">
+            {downloads.map((d) => (
+              <button
+                key={d.id}
+                className="rsm-item"
+                disabled={!!busyId}
+                onClick={() => void handleDownloadClick(d)}
+              >
+                <span className="rsm-tile" aria-hidden="true"><Icon name="file" size={15} /></span>
+                <span className="rsm-text">
+                  <span className="rsm-name">{d.name}</span>
+                  <span className="rsm-meta">{d.totalSize > 0 ? formatBytes(d.totalSize) : ''}</span>
+                </span>
+                {busyId === d.id
+                  ? <span className="spinner" />
+                  : <Icon name="chevron-right" size={15} className="rsm-go" />}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </Modal>
   );
 };

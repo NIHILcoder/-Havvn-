@@ -7,6 +7,8 @@
 import React, { useState, useEffect } from 'react';
 import { Download, TorrentFile, TrackerInfo, FilePriority, PeerInfo } from '../../shared/types';
 import { Button, Icon } from './index';
+import { Modal } from './Modal';
+import { useConfirm } from './ConfirmDialog';
 import { useTranslation } from '../utils/i18nContext';
 import './TorrentControlModal.css';
 
@@ -53,6 +55,7 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
   onUpdate,
 }) => {
   const { t } = useTranslation();
+  const { alert } = useConfirm();
   const [tab, setTab] = useState<Tab>('download');
 
   // Localized "Ns/Nm/Nh ago" for a tracker's last-announce timestamp.
@@ -139,7 +142,7 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
       await window.api.setSequentialDownload(download.id, sequential);
       onUpdate?.();
     } catch (err: any) {
-      alert(`Failed: ${err?.message}`);
+      await alert({ message: `Failed: ${err?.message}` });
     } finally {
       setSavingDownload(false);
     }
@@ -153,7 +156,7 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
       await window.api.setSeedTimeLimit(download.id, seedTime);
       onUpdate?.();
     } catch (err: any) {
-      alert(`Failed: ${err?.message}`);
+      await alert({ message: `Failed: ${err?.message}` });
     } finally {
       setSavingSeeding(false);
     }
@@ -168,7 +171,7 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
         prev.map((f, i) => i === fileIndex ? { ...f, priority } : f)
       );
     } catch (err: any) {
-      alert(`Failed: ${err?.message}`);
+      await alert({ message: `Failed: ${err?.message}` });
     } finally {
       setSavingPriority(null);
     }
@@ -183,7 +186,7 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
       setNewTrackerUrl('');
       await loadTrackers();
     } catch (err: any) {
-      alert(`Failed: ${err?.message}`);
+      await alert({ message: `Failed: ${err?.message}` });
     } finally {
       setAddingTracker(false);
     }
@@ -195,7 +198,7 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
       await window.api.removeTracker(download.id, url);
       setTrackers(prev => prev.filter(t => t.url !== url));
     } catch (err: any) {
-      alert(`Failed: ${err?.message}`);
+      await alert({ message: `Failed: ${err?.message}` });
     }
   };
 
@@ -208,22 +211,19 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
   ];
 
   return (
-    <div className="tcm-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="tcm-modal">
-        {/* Header */}
-        <div className="tcm-header">
-          <div className="tcm-title-row">
-            <Icon name="settings" size={18} />
-            <div className="tcm-title-text">
-              <h2 className="tcm-title">Torrent Controls</h2>
-              <p className="tcm-subtitle" title={download.name}>{download.name}</p>
-            </div>
-          </div>
-          <button className="tcm-close" onClick={onClose}>
-            <Icon name="x" size={18} />
-          </button>
-        </div>
-
+    <Modal
+      onClose={onClose}
+      icon="settings"
+      title={
+        <span className="tcm-title-block">
+          <span>Torrent Controls</span>
+          <span className="tcm-subtitle" title={download.name}>{download.name}</span>
+        </span>
+      }
+      ariaLabel="Torrent Controls"
+      size="lg"
+      bodyClassName="tcm-modal-body"
+    >
         {/* Tabs */}
         <div className="tcm-tabs">
           {tabs.map(t => (
@@ -528,8 +528,7 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
             </div>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 };
 

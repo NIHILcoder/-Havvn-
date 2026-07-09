@@ -5,7 +5,7 @@
 
 import React, { useState, useCallback, useEffect } from 'react';
 import { SearchResult, SearchProvider, PythonStatus } from '../../shared/types';
-import { Button, Icon, EmptyState } from '../components';
+import { Button, Icon, EmptyState, useConfirm } from '../components';
 import { cleanError } from '../utils/format-helpers';
 import { useTranslation } from '../utils/i18nContext';
 import './SearchPage.css';
@@ -20,6 +20,7 @@ const formatBytes = (bytes: number): string => {
 
 const SearchPage: React.FC = () => {
   const { t } = useTranslation();
+  const { confirm, alert } = useConfirm();
   const CATEGORIES = [
     { value: '', label: t('search.category.all') },
     { value: '2000', label: t('search.category.movies') },
@@ -114,7 +115,7 @@ const SearchPage: React.FC = () => {
 
       setAddedIndices(prev => new Set(prev).add(idx));
     } catch (err) {
-      alert(`Failed to add: ${cleanError(err)}`);
+      await alert({ title: 'Failed', message: `Failed to add: ${cleanError(err)}` });
     } finally {
       setDownloading(prev => {
         const next = new Set(prev);
@@ -132,19 +133,19 @@ const SearchPage: React.FC = () => {
       setNewProvider({ name: '', url: '', apiKey: '', username: '', password: '', type: 'jackett', enabled: true });
       await loadProviders();
     } catch (err: any) {
-      alert(`Failed to add provider: ${err?.message}`);
+      await alert({ title: 'Failed', message: `Failed to add provider: ${err?.message}` });
     } finally {
       setSavingProvider(false);
     }
   };
 
   const handleDeleteProvider = async (id: string) => {
-    if (!confirm(t('search.provider.removeConfirm'))) return;
+    if (!(await confirm({ message: t('search.provider.removeConfirm'), danger: true }))) return;
     try {
       await window.api.search.removeProvider(id);
       await loadProviders();
     } catch (err: any) {
-      alert(`Failed: ${err?.message}`);
+      await alert({ title: 'Failed', message: `Failed: ${err?.message}` });
     }
   };
 
@@ -153,7 +154,7 @@ const SearchPage: React.FC = () => {
       await window.api.search.updateProvider(id, { enabled });
       await loadProviders();
     } catch (err: any) {
-      alert(`Failed: ${err?.message}`);
+      await alert({ title: 'Failed', message: `Failed: ${err?.message}` });
     }
   };
 

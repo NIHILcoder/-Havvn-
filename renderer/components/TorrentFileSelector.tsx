@@ -6,6 +6,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Button, Icon } from './index';
+import { Modal } from './Modal';
 import { useTranslation } from '../utils/i18nContext';
 import './TorrentFileSelector.css';
 
@@ -182,54 +183,75 @@ export const TorrentFileSelector: React.FC<TorrentFileSelectorProps> = ({
 
   if (loading) {
     return (
-      <div className="torrent-file-selector-overlay">
-        <div className="torrent-file-selector">
-          <div className="file-selector-loading">
-            <span className="spinner spinner-lg" />
-            <p>{t('filePicker.loading')}</p>
-          </div>
+      <Modal
+        onClose={onCancel}
+        size="xl"
+        hideClose
+        closeOnBackdrop={false}
+        busy
+        ariaLabel={t('filePicker.loading')}
+      >
+        <div className="file-selector-loading">
+          <span className="spinner spinner-lg" />
+          <p>{t('filePicker.loading')}</p>
         </div>
-      </div>
+      </Modal>
     );
   }
 
   if (error || !torrentInfo) {
     return (
-      <div className="torrent-file-selector-overlay">
-        <div className="torrent-file-selector">
-          <div className="file-selector-error">
-            <Icon name="alert-circle" size={48} />
-            <h3>{t('filePicker.loadFailed')}</h3>
-            <p>{error || 'Unknown error occurred'}</p>
-            <div className="file-selector-error-actions">
-              {/* Preview is optional — a metadata timeout must not block the add.
-                  Empty selection = download everything. */}
-              <Button variant="primary" onClick={() => onConfirm([])}>{t('filePicker.addAnyway')}</Button>
-              <Button onClick={onCancel}>{t('player.close')}</Button>
-            </div>
+      <Modal
+        onClose={onCancel}
+        size="xl"
+        hideClose
+        closeOnBackdrop={false}
+        ariaLabel={t('filePicker.loadFailed')}
+      >
+        <div className="file-selector-error">
+          <Icon name="alert-circle" size={48} />
+          <h3>{t('filePicker.loadFailed')}</h3>
+          <p>{error || 'Unknown error occurred'}</p>
+          <div className="file-selector-error-actions">
+            {/* Preview is optional — a metadata timeout must not block the add.
+                Empty selection = download everything. */}
+            <Button variant="primary" onClick={() => onConfirm([])}>{t('filePicker.addAnyway')}</Button>
+            <Button onClick={onCancel}>{t('player.close')}</Button>
           </div>
         </div>
-      </div>
+      </Modal>
     );
   }
 
   return (
-    <div className="torrent-file-selector-overlay" onClick={onCancel}>
-      <div className="torrent-file-selector" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div className="file-selector-header">
-          <div className="file-selector-title">
-            <Icon name="file" size={24} />
-            <div>
-              <h2>{t('filePicker.title')}</h2>
-              <p className="torrent-name">{torrentInfo.name}</p>
-            </div>
-          </div>
-          <button className="close-button" onClick={onCancel}>
-            <Icon name="x" size={24} />
-          </button>
-        </div>
-
+    <Modal
+      onClose={onCancel}
+      size="xl"
+      icon="file"
+      bodyClassName="tfs-body"
+      ariaLabel={t('filePicker.title')}
+      title={
+        <span className="tfs-heading">
+          {t('filePicker.title')}
+          <span className="torrent-name">{torrentInfo.name}</span>
+        </span>
+      }
+      footer={
+        <>
+          <Button variant="ghost" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            icon={<Icon name="download" size={16} />}
+            onClick={handleConfirm}
+            disabled={selectedFiles.size === 0}
+          >
+            Download Selected ({selectedFiles.size})
+          </Button>
+        </>
+      }
+    >
         {/* Stats Bar */}
         <div className="file-selector-stats">
           <div className="stat">
@@ -335,22 +357,6 @@ export const TorrentFileSelector: React.FC<TorrentFileSelectorProps> = ({
             ))
           )}
         </div>
-
-        {/* Footer */}
-        <div className="file-selector-footer">
-          <Button variant="ghost" onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button
-            variant="primary"
-            icon={<Icon name="download" size={16} />}
-            onClick={handleConfirm}
-            disabled={selectedFiles.size === 0}
-          >
-            Download Selected ({selectedFiles.size})
-          </Button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 };

@@ -11,7 +11,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import Hls from 'hls.js';
 import toast from 'react-hot-toast';
 import { RoomState, RoomSummary, RoomProfile, RoomFile } from '../../shared/types';
-import { Button, Icon, EmptyState, Identicon, QRCode, TransferPickerModal, Toggle, PlayerControls } from '../components';
+import { Button, Icon, EmptyState, Identicon, QRCode, TransferPickerModal, Toggle, PlayerControls, Modal, useConfirm } from '../components';
 import { avatarCandidates } from '../components/Identicon';
 import { classifyMediaKind } from '../../shared/media';
 import { formatBytes, formatSpeed } from '../utils/format-helpers';
@@ -194,14 +194,6 @@ const RoomsPage: React.FC<RoomsPageProps> = ({ focusRoomId, onFocusHandled, onRo
     finally { setBusy(false); setLeaveTarget(null); }
   };
 
-  // Escape closes the open inline dialog (create/join/profile/invite/leave).
-  useEffect(() => {
-    if (!dialog) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) setDialog(null); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [dialog, busy]);
-
   const handleAddFiles = async (roomId: string) => {
     setBusy(true);
     try {
@@ -316,145 +308,120 @@ const RoomsPage: React.FC<RoomsPageProps> = ({ focusRoomId, onFocusHandled, onRo
         </div>
       )}
 
-      {/* ── Dialogs ─────────────────────────────────────────────────────── */}
-      {dialog && (
-        <div className="rooms-modal-backdrop" onClick={() => !busy && setDialog(null)}>
-          <div className="rooms-modal" onClick={(e) => e.stopPropagation()}>
-            {dialog === 'create' && (
-              <>
-                <h3>{t('rooms.createTitle')}</h3>
-                <p className="rooms-modal-desc">{t('rooms.createDesc')}</p>
-                <input
-                  className="rooms-input"
-                  autoFocus
-                  placeholder={t('rooms.namePlaceholder')}
-                  value={createName}
-                  onChange={(e) => setCreateName(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-                />
-                <button
-                  type="button"
-                  className={`rooms-e2e-toggle ${createE2E ? 'on' : ''}`}
-                  onClick={() => setCreateE2E((v) => !v)}
-                >
-                  <span className="rooms-e2e-check">{createE2E && <Icon name="check" size={12} />}</span>
-                  <span className="rooms-e2e-text">
-                    <span className="rooms-e2e-label"><Icon name="lock" size={12} /> {t('rooms.e2e')} <em>{t('rooms.e2eExperimental')}</em></span>
-                    <span className="rooms-e2e-hint">{t('rooms.e2eHint')}</span>
-                  </span>
-                </button>
-                <div className="rooms-modal-actions">
-                  <Button variant="ghost" onClick={() => setDialog(null)} disabled={busy}>{t('common.cancel')}</Button>
-                  <Button variant="primary" onClick={handleCreate} loading={busy}>{t('rooms.create')}</Button>
-                </div>
-              </>
-            )}
+      {/* ── Dialogs (shared Ember Modal shell) ──────────────────────────── */}
+      {dialog === 'create' && (
+        <Modal
+          title={t('rooms.createTitle')} icon="plus" busy={busy} onClose={() => setDialog(null)}
+          footer={<>
+            <Button variant="ghost" onClick={() => setDialog(null)} disabled={busy}>{t('common.cancel')}</Button>
+            <Button variant="primary" onClick={handleCreate} loading={busy}>{t('rooms.create')}</Button>
+          </>}
+        >
+          <p className="rooms-modal-desc">{t('rooms.createDesc')}</p>
+          <input
+            className="rooms-input" data-autofocus
+            placeholder={t('rooms.namePlaceholder')}
+            value={createName}
+            onChange={(e) => setCreateName(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+          />
+          <button type="button" className={`rooms-e2e-toggle ${createE2E ? 'on' : ''}`} onClick={() => setCreateE2E((v) => !v)}>
+            <span className="rooms-e2e-check">{createE2E && <Icon name="check" size={12} />}</span>
+            <span className="rooms-e2e-text">
+              <span className="rooms-e2e-label"><Icon name="lock" size={12} /> {t('rooms.e2e')} <em>{t('rooms.e2eExperimental')}</em></span>
+              <span className="rooms-e2e-hint">{t('rooms.e2eHint')}</span>
+            </span>
+          </button>
+        </Modal>
+      )}
 
-            {dialog === 'join' && (
-              <>
-                <h3>{t('rooms.joinTitle')}</h3>
-                <p className="rooms-modal-desc">{t('rooms.joinDesc')}</p>
-                <input
-                  className="rooms-input rooms-input-code"
-                  autoFocus
-                  placeholder="swift-amber-otter-comet-4821"
-                  value={joinCode}
-                  onChange={(e) => setJoinCode(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
-                />
-                <div className="rooms-modal-actions">
-                  <Button variant="ghost" onClick={() => setDialog(null)} disabled={busy}>{t('common.cancel')}</Button>
-                  <Button variant="primary" onClick={handleJoin} loading={busy} disabled={!joinCode.trim()}>{t('rooms.join')}</Button>
-                </div>
-              </>
-            )}
+      {dialog === 'join' && (
+        <Modal
+          title={t('rooms.joinTitle')} icon="link" busy={busy} onClose={() => setDialog(null)}
+          footer={<>
+            <Button variant="ghost" onClick={() => setDialog(null)} disabled={busy}>{t('common.cancel')}</Button>
+            <Button variant="primary" onClick={handleJoin} loading={busy} disabled={!joinCode.trim()}>{t('rooms.join')}</Button>
+          </>}
+        >
+          <p className="rooms-modal-desc">{t('rooms.joinDesc')}</p>
+          <input
+            className="rooms-input rooms-input-code" data-autofocus
+            placeholder="swift-amber-otter-comet-4821"
+            value={joinCode}
+            onChange={(e) => setJoinCode(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
+          />
+        </Modal>
+      )}
 
-            {dialog === 'leave' && (
-              <>
-                <h3>{t('rooms.leaveTitle')}</h3>
-                <p className="rooms-modal-desc">{t('rooms.leaveDesc')}</p>
-                <div className="rooms-leave">
-                  <button type="button" className="rooms-leave-opt" onClick={() => doLeave(false)} disabled={busy}>
-                    <span className="rooms-leave-ico"><Icon name="check" size={16} /></span>
-                    <span className="rooms-leave-txt"><strong>{t('rooms.leaveKeep')}</strong></span>
-                  </button>
-                  <button type="button" className="rooms-leave-opt danger" onClick={() => doLeave(true)} disabled={busy}>
-                    <span className="rooms-leave-ico"><Icon name="trash" size={16} /></span>
-                    <span className="rooms-leave-txt"><strong>{t('rooms.leaveDelete')}</strong><em>{t('rooms.leaveDeleteHint')}</em></span>
-                  </button>
-                </div>
-                <div className="rooms-modal-actions">
-                  <Button variant="ghost" onClick={() => setDialog(null)} disabled={busy}>{t('common.cancel')}</Button>
-                </div>
-              </>
-            )}
-
-            {dialog === 'profile' && profile && (
-              <>
-                <h3>{t('rooms.profileTitle')}</h3>
-                <div className="rooms-profile-edit">
-                  <Identicon seed={profileSeed} size={64} ring />
-                  <input
-                    className="rooms-input"
-                    autoFocus
-                    placeholder={t('rooms.namePlaceholder')}
-                    value={profileName}
-                    onChange={(e) => setProfileName(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSaveProfile()}
-                  />
-                </div>
-
-                <div className="rooms-avatar-pick-head">
-                  <span className="rooms-avatar-pick-label">{t('rooms.avatarPick')}</span>
-                  <button
-                    type="button"
-                    className="rooms-avatar-shuffle"
-                    onClick={() => setAvatarPool(avatarCandidates(3, profileSeed))}
-                    title={t('rooms.avatarShuffle')}
-                  >
-                    <Icon name="refresh" size={13} /> {t('rooms.avatarShuffle')}
-                  </button>
-                </div>
-                <div className="rooms-avatar-grid">
-                  {avatarPool.map((seed) => (
-                    <button
-                      key={seed}
-                      type="button"
-                      className={`rooms-avatar-option ${seed === profileSeed ? 'active' : ''}`}
-                      onClick={() => setProfileSeed(seed)}
-                      aria-pressed={seed === profileSeed}
-                    >
-                      <Identicon seed={seed} size={44} />
-                    </button>
-                  ))}
-                </div>
-
-                <p className="rooms-modal-desc">{t('rooms.profileDesc')}</p>
-                <div className="rooms-modal-actions">
-                  <Button variant="ghost" onClick={() => setDialog(null)} disabled={busy}>{t('common.cancel')}</Button>
-                  <Button variant="primary" onClick={handleSaveProfile} loading={busy}>{t('common.save')}</Button>
-                </div>
-              </>
-            )}
-
-            {dialog === 'invite' && room && (
-              <>
-                <h3>{t('rooms.inviteTitle')}</h3>
-                <p className="rooms-modal-desc">{t('rooms.inviteDesc')}</p>
-                <div className="rooms-invite-code" onClick={() => copy(room.code, t('rooms.codeCopied'))} title={t('rooms.copyCode')}>
-                  <span>{room.code}</span>
-                  <Icon name="copy" size={16} />
-                </div>
-                <div className="rooms-invite-qr">
-                  <QRCode data={room.code} size={168} />
-                </div>
-                <div className="rooms-modal-actions">
-                  <Button variant="primary" onClick={() => setDialog(null)}>{t('common.done')}</Button>
-                </div>
-              </>
-            )}
+      {dialog === 'leave' && (
+        <Modal
+          title={t('rooms.leaveTitle')} busy={busy} onClose={() => setDialog(null)}
+          footer={<Button variant="ghost" onClick={() => setDialog(null)} disabled={busy}>{t('common.cancel')}</Button>}
+        >
+          <p className="rooms-modal-desc">{t('rooms.leaveDesc')}</p>
+          <div className="rooms-leave">
+            <button type="button" className="rooms-leave-opt" onClick={() => doLeave(false)} disabled={busy}>
+              <span className="rooms-leave-ico"><Icon name="check" size={16} /></span>
+              <span className="rooms-leave-txt"><strong>{t('rooms.leaveKeep')}</strong></span>
+            </button>
+            <button type="button" className="rooms-leave-opt danger" onClick={() => doLeave(true)} disabled={busy}>
+              <span className="rooms-leave-ico"><Icon name="trash" size={16} /></span>
+              <span className="rooms-leave-txt"><strong>{t('rooms.leaveDelete')}</strong><em>{t('rooms.leaveDeleteHint')}</em></span>
+            </button>
           </div>
-        </div>
+        </Modal>
+      )}
+
+      {dialog === 'profile' && profile && (
+        <Modal
+          title={t('rooms.profileTitle')} icon="user" busy={busy} onClose={() => setDialog(null)}
+          footer={<>
+            <Button variant="ghost" onClick={() => setDialog(null)} disabled={busy}>{t('common.cancel')}</Button>
+            <Button variant="primary" onClick={handleSaveProfile} loading={busy}>{t('common.save')}</Button>
+          </>}
+        >
+          <div className="rooms-profile-edit">
+            <Identicon seed={profileSeed} size={64} ring />
+            <input
+              className="rooms-input" data-autofocus
+              placeholder={t('rooms.namePlaceholder')}
+              value={profileName}
+              onChange={(e) => setProfileName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSaveProfile()}
+            />
+          </div>
+          <div className="rooms-avatar-pick-head">
+            <span className="rooms-avatar-pick-label">{t('rooms.avatarPick')}</span>
+            <button type="button" className="rooms-avatar-shuffle" onClick={() => setAvatarPool(avatarCandidates(3, profileSeed))} title={t('rooms.avatarShuffle')}>
+              <Icon name="refresh" size={13} /> {t('rooms.avatarShuffle')}
+            </button>
+          </div>
+          <div className="rooms-avatar-grid">
+            {avatarPool.map((seed) => (
+              <button key={seed} type="button" className={`rooms-avatar-option ${seed === profileSeed ? 'active' : ''}`} onClick={() => setProfileSeed(seed)} aria-pressed={seed === profileSeed}>
+                <Identicon seed={seed} size={44} />
+              </button>
+            ))}
+          </div>
+          <p className="rooms-modal-desc">{t('rooms.profileDesc')}</p>
+        </Modal>
+      )}
+
+      {dialog === 'invite' && room && (
+        <Modal
+          title={t('rooms.inviteTitle')} icon="share-2" onClose={() => setDialog(null)}
+          footer={<Button variant="primary" onClick={() => setDialog(null)}>{t('common.done')}</Button>}
+        >
+          <p className="rooms-modal-desc">{t('rooms.inviteDesc')}</p>
+          <div className="rooms-invite-code" onClick={() => copy(room.code, t('rooms.codeCopied'))} title={t('rooms.copyCode')}>
+            <span>{room.code}</span>
+            <Icon name="copy" size={16} />
+          </div>
+          <div className="rooms-invite-qr">
+            <QRCode data={room.code} size={168} />
+          </div>
+        </Modal>
       )}
 
       {/* In-app player (watch a downloaded shared file, optionally in sync) */}
@@ -491,17 +458,12 @@ interface DetailProps {
 
 const RoomDetail: React.FC<DetailProps> = ({ room, onAddFiles, onOpenFolder, onInvite, onLeave, onCopyCode, onWatch, onShared, onToggleAutoFetch, onSetLimits, busy }) => {
   const { t } = useTranslation();
+  const { confirm } = useConfirm();
   // "Bring a file from Transfers" — pick a finished download to share here
   const [pickTransfer, setPickTransfer] = useState(false);
   // Activity log lives in its own modal now (opened from the title bar) so it
   // doesn't crowd the files column.
   const [showActivity, setShowActivity] = useState(false);
-  useEffect(() => {
-    if (!showActivity) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowActivity(false); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [showActivity]);
   // Speed-limit drafts: commit on blur/Enter; re-seed only on room switch so
   // live state pushes don't stomp typing. 0/empty = unlimited.
   const [upDraft, setUpDraft] = useState(String(room.upKbps || ''));
@@ -659,10 +621,10 @@ const RoomDetail: React.FC<DetailProps> = ({ room, onAddFiles, onOpenFolder, onI
                     <button
                       className="room-member-mute"
                       title={m.muted ? t('rooms.unmute') : t('rooms.mute')}
-                      onClick={() => {
+                      onClick={async () => {
                         if (m.muted) {
                           window.api.rooms.setMuted(room.roomId, m.memberId, false).catch((e) => toast.error(String(e instanceof Error ? e.message : e)));
-                        } else if (window.confirm(t('rooms.muteConfirm'))) {
+                        } else if (await confirm({ message: t('rooms.muteConfirm') })) {
                           window.api.rooms.setMuted(room.roomId, m.memberId, true).catch((e) => toast.error(String(e instanceof Error ? e.message : e)));
                         }
                       }}
@@ -674,8 +636,8 @@ const RoomDetail: React.FC<DetailProps> = ({ room, onAddFiles, onOpenFolder, onI
                     <button
                       className="room-member-kick"
                       title={t('rooms.kick')}
-                      onClick={() => {
-                        if (window.confirm(t('rooms.kickConfirm'))) {
+                      onClick={async () => {
+                        if (await confirm({ message: t('rooms.kickConfirm'), danger: true })) {
                           window.api.rooms.kick(room.roomId, m.memberId)
                             .then(() => toast.success(t('rooms.kicked')))
                             .catch((e) => toast.error(String(e instanceof Error ? e.message : e)));
@@ -704,27 +666,21 @@ const RoomDetail: React.FC<DetailProps> = ({ room, onAddFiles, onOpenFolder, onI
       )}
 
       {showActivity && (
-        <div className="rooms-modal-backdrop" onClick={() => setShowActivity(false)}>
-          <div className="rooms-modal rooms-modal-activity" onClick={(e) => e.stopPropagation()}>
-            <div className="rooms-modal-head">
-              <h3><Icon name="activity" size={16} /> {t('rooms.history')}</h3>
-              <button className="rooms-modal-x" onClick={() => setShowActivity(false)} title={t('common.close')}><Icon name="x" size={16} /></button>
+        <Modal title={t('rooms.history')} icon="activity" size="lg" onClose={() => setShowActivity(false)}>
+          {room.history.length === 0 ? (
+            <div className="room-files-empty">{t('rooms.historyEmpty')}</div>
+          ) : (
+            <div className="room-history room-history-modal">
+              {room.history.slice().reverse().map((ev) => (
+                <div key={ev.id} className="room-history-item">
+                  <span className="room-history-actor">{ev.actorName}</span>
+                  <span className="room-history-text">{eventText(t, ev)}</span>
+                  <span className="room-history-time">{shortTime(ev.at)}</span>
+                </div>
+              ))}
             </div>
-            {room.history.length === 0 ? (
-              <div className="room-files-empty">{t('rooms.historyEmpty')}</div>
-            ) : (
-              <div className="room-history room-history-modal">
-                {room.history.slice().reverse().map((ev) => (
-                  <div key={ev.id} className="room-history-item">
-                    <span className="room-history-actor">{ev.actorName}</span>
-                    <span className="room-history-text">{eventText(t, ev)}</span>
-                    <span className="room-history-time">{shortTime(ev.at)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+          )}
+        </Modal>
       )}
     </div>
   );
@@ -798,6 +754,7 @@ const RoomChat: React.FC<{ room: RoomState }> = ({ room }) => {
 
 const RoomFileRow: React.FC<{ file: RoomFile; room: RoomState; onWatch: (file: RoomFile) => void }> = ({ file, room, onWatch }) => {
   const { t } = useTranslation();
+  const { confirm } = useConfirm();
   const tr = room.transfers[file.fileId];
   const owner = room.members.find((m) => m.memberId === file.addedBy);
   const haveCount = membersWithFile(room, file.fileId);
@@ -865,8 +822,8 @@ const RoomFileRow: React.FC<{ file: RoomFile; room: RoomState; onWatch: (file: R
       )}
       <button
         className="room-file-del"
-        onClick={() => {
-          if (window.confirm(t('rooms.deleteConfirm')))
+        onClick={async () => {
+          if (await confirm({ message: t('rooms.deleteConfirm'), danger: true }))
             window.api.rooms.removeFile(room.roomId, file.fileId).catch((e) => toast.error(String(e instanceof Error ? e.message : e)));
         }}
         title={t('rooms.deleteHint')}

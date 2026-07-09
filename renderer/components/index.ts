@@ -49,3 +49,7 @@ export { PlayerControls } from './PlayerControls';
 export { ShareLinkModal } from './ShareLinkModal';
 export { ShareToRoomModal, TransferPickerModal } from './RoomShareModals';
 export { Identicon } from './Identicon';
+export { Modal, useEscape, useModalFocus } from './Modal';
+export type { ModalProps, ModalSize } from './Modal';
+export { ConfirmProvider, useConfirm } from './ConfirmDialog';
+export type { ConfirmOptions, AlertOptions } from './ConfirmDialog';

@@ -16,6 +16,7 @@ import { Icon, IconName } from './Icon';
 import { Toggle } from './Toggle';
 import { Button } from './Button';
 import { Alert } from './Alert';
+import { useConfirm } from './ConfirmDialog';
 import { PrivacyConfig, IpInfo } from '../../shared/types';
 import { useTranslation } from '../utils/i18nContext';
 import './PrivacySettings.css';
@@ -24,6 +25,7 @@ type Posture = 'checking' | 'protected' | 'caution' | 'exposed';
 
 export const PrivacySettings: React.FC = () => {
   const { t } = useTranslation();
+  const { confirm, alert } = useConfirm();
   // For keys built at runtime (posture/confidence). The static t() is strongly
   // typed against the dictionary, so dynamic lookups go through this view.
   const tk = t as (key: string) => string;
@@ -140,15 +142,15 @@ export const PrivacySettings: React.FC = () => {
   };
 
   const handleClearAllData = async () => {
-    if (!confirm(t('privacy.confirm1'))) return;
-    if (!confirm(t('privacy.confirm2'))) return;
+    if (!(await confirm({ message: t('privacy.confirm1'), danger: true }))) return;
+    if (!(await confirm({ message: t('privacy.confirm2'), danger: true }))) return;
     try {
       await window.api.clearAllData();
-      alert(t('privacy.cleared'));
+      await alert({ message: t('privacy.cleared') });
       window.location.reload();
     } catch (e) {
       console.error('Failed to clear data:', e);
-      alert(t('privacy.clearFailed'));
+      await alert({ message: t('privacy.clearFailed') });
     }
   };
 

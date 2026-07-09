@@ -2,111 +2,41 @@
  * TorrentControlModal CSS
  */
 
-/* Overlay */
-.tcm-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(4px);
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1rem;
-}
-
-/* Modal box */
-.tcm-modal {
-  background: var(--color-bg-primary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg, 12px);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.4);
-  width: 100%;
-  max-width: 560px;
-  max-height: 88vh;
+/* ── Header title block (rendered inside the shared Modal header) ── */
+.tcm-title-block {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  animation: tcm-enter 0.18s ease;
-}
-
-@keyframes tcm-enter {
-  from { opacity: 0; transform: scale(0.95) translateY(8px); }
-  to   { opacity: 1; transform: scale(1)   translateY(0); }
-}
-
-/* Header */
-.tcm-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  padding: 1.1rem 1.25rem 0.85rem;
-  border-bottom: 1px solid var(--color-border);
-  flex-shrink: 0;
-  gap: 0.75rem;
-}
-
-.tcm-title-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.6rem;
+  gap: 2px;
   min-width: 0;
-  flex: 1;
-}
-
-.tcm-title-row svg {
-  flex-shrink: 0;
-  margin-top: 2px;
-  color: var(--color-accent);
-}
-
-.tcm-title-text {
-  min-width: 0;
-}
-
-.tcm-title {
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--color-text-primary);
-  margin: 0 0 0.2rem;
 }
 
 .tcm-subtitle {
   font-size: 0.75rem;
+  font-weight: var(--font-weight-normal, 400);
   color: var(--color-text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   margin: 0;
-  max-width: 380px;
 }
 
-.tcm-close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border-radius: var(--radius-sm, 6px);
-  border: none;
-  background: transparent;
-  color: var(--color-text-muted);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: all 0.15s ease;
+/* Neutralize the shared Modal body padding/gap so the tabs sit edge-to-edge
+   and .tcm-body owns its own padding. */
+.tcm-modal-body {
+  padding: 0;
+  gap: 0;
 }
 
-.tcm-close:hover {
-  background: var(--color-bg-hover);
-  color: var(--color-text-primary);
-}
-
-/* Tabs */
+/* Tabs — pinned below the Modal header while the body scrolls. */
 .tcm-tabs {
   display: flex;
   border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
   overflow-x: auto;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--color-bg-elevated);
 }
 
 .tcm-tab {
@@ -133,8 +63,6 @@
 
 /* Body */
 .tcm-body {
-  flex: 1;
-  overflow-y: auto;
   padding: 1.25rem;
 }
 

@@ -1,90 +1,15 @@
 /* ============================================================
-   File Preview Modal — Havvn Design System 2.0
+   File Preview — Havvn Design System 2.0
+   Content for the shared Ember <Modal> shell (see Modal.tsx/css).
+   The backdrop, card, header and scrolling body come from Modal;
+   everything below is the file-list body content + header pieces
+   passed through Modal's title/icon props.
    Spacious, detailed, fully theme-aware (dark / light).
    ============================================================ */
 
-/* ──────────────────────────── Overlay ──────────────────────────── */
-.file-preview-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.75);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: var(--z-modal);
-  padding: 24px;
-  animation: fp-fade 0.2s ease-out;
-}
-
-[data-theme="light"] .file-preview-overlay {
-  background: rgba(0, 0, 0, 0.40);
-}
-
-/* ──────────────────────────── Modal shell ───────────────────────── */
-.file-preview-modal {
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border-default);
-  border-radius: 20px;
-  box-shadow: var(--shadow-xl), 0 0 0 1px var(--color-border-subtle);
-  width: 800px;
-  max-width: 96vw;
-  max-height: 90vh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  animation: fp-rise 0.32s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-[data-theme="light"] .file-preview-modal {
-  background: var(--color-bg-elevated);
-  border-color: rgba(0, 0, 0, 0.10);
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.14), 0 8px 24px rgba(0, 0, 0, 0.08);
-}
-
-/* ──────────────────────────── Header ───────────────────────────── */
-.fp-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 22px 26px 18px;
-  border-bottom: 1px solid var(--color-border-subtle);
-  background: linear-gradient(180deg, var(--color-bg-tertiary) 0%, transparent 100%);
-  flex-shrink: 0;
-}
-
-[data-theme="light"] .fp-header {
-  background: linear-gradient(180deg, rgba(0,0,0,0.03) 0%, transparent 100%);
-}
-
-.fp-header-left {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  min-width: 0;
-}
-
-/* Icon circle */
-.fp-header-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  background: var(--color-bg-elevated);
-  border: 1px solid var(--color-border-default);
-  border-radius: 12px;
-  color: var(--color-text-secondary);
-  flex-shrink: 0;
-}
-
-[data-theme="light"] .fp-header-icon {
-  background: var(--color-bg-tertiary);
-  border-color: var(--color-border-default);
-}
-
+/* ──────────────────────────── Header content ────────────────────
+   Rendered inside Modal's <h3 class="um-title"> via the `title` prop;
+   the ember layers icon comes from Modal's `icon` prop. */
 .fp-header-text {
   display: flex;
   flex-direction: column;
@@ -151,33 +76,19 @@
   border-color: rgba(var(--color-success-rgb), 0.2);
 }
 
-/* Close button */
-.fp-close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  background: var(--color-bg-hover);
-  border: 1px solid var(--color-border-default);
-  border-radius: 10px;
-  color: var(--color-text-tertiary);
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  flex-shrink: 0;
+/* ──────────────────────────── Body layout ───────────────────────
+   Zero Modal's default body padding/gap so the sticky progress band
+   and the file list run edge-to-edge and manage their own spacing. */
+.fp-body {
+  padding: 0;
+  gap: 0;
 }
 
-.fp-close:hover {
-  background: var(--color-bg-active);
-  border-color: var(--color-border-strong);
-  color: var(--color-text-primary);
-  transform: scale(1.06);
-}
-
-.fp-close:active { transform: scale(0.94); }
-
-/* ──────────────────────────── Total progress bar ────────────────── */
+/* ──────────────────────────── Total progress bar (sticky) ───────── */
 .fp-total-progress {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   padding: 0 26px;
   height: 32px;
   display: flex;
@@ -228,6 +139,7 @@
   flex-direction: column;
   gap: 6px;
   flex: 1;
+  min-height: 0;
   scrollbar-width: thin;
   scrollbar-color: var(--color-border-strong) transparent;
 }
@@ -496,24 +408,6 @@
   color: var(--color-error);
 }
 
-.fp-close-action {
-  padding: 8px 20px;
-  background: var(--color-bg-tertiary);
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-md);
-  color: var(--color-text-primary);
-  font-size: 13px;
-  font-weight: 600;
-  font-family: var(--font-family);
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.fp-close-action:hover {
-  background: var(--color-bg-elevated);
-  border-color: var(--color-border-strong);
-}
-
 /* Spinner */
 .fp-spinner {
   width: 40px;
@@ -525,16 +419,6 @@
 }
 
 /* ──────────────────────────── Animations ────────────────────────── */
-@keyframes fp-fade {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
-
-@keyframes fp-rise {
-  from { opacity: 0; transform: translateY(20px) scale(0.97); }
-  to   { opacity: 1; transform: translateY(0)    scale(1);    }
-}
-
 @keyframes fp-spin {
   to { transform: rotate(360deg); }
 }
