@@ -107,3 +107,13 @@ createTorrentFile. NB: `castPublishDiskFile` зовут ещё и комнаты
 лимиты в кБ/с; трекеры править через `trackerList` (add/remove deprecated);
 `session-close` для чистого стопа; sidecar-модули уже готовы:
 `electron/torrent/native/transmission-{rpc,sidecar}.ts`.
+
+addSeed («start seeding»): у демона нет «seed вот эти пути» — контент ищется
+строго как `download-dir/<имя из metainfo>`. Поэтому: add ПАУЗНУТЫМ с
+download-dir=родитель источника → при кастомном имени торрента корень
+переименовывается в имя на диске (`torrent-rename-path`; данных по старому
+пути нет, так что это чистая правка внутреннего маппинга — infoHash и
+розданный .torrent/magnet не меняются, rename живёт в resume демона) →
+verify → start-now. Ре-адды (addToDaemon при seedPaths) повторяют
+паузу→remap→verify. Несколько НЕЗАВИСИМЫХ источников замапить нельзя —
+addSeed кидает INVALID_INPUT (webtorrent-движок это умеет).

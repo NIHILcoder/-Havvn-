@@ -203,4 +203,15 @@ export class TransmissionRpc {
   torrentSet(ids: TrIds, args: Record<string, unknown>): Promise<void> {
     return this.call('torrent-set', { ...args, ids }).then(() => undefined);
   }
+
+  /**
+   * Rename a path inside ONE torrent (the spec forbids multi-torrent ids here).
+   * `oldPath` = current path relative to the torrent root ("name" alone renames
+   * the root), `newName` = new last component. If nothing exists on disk at the
+   * old path the daemon only rewrites its internal mapping — which is exactly
+   * how a torrent's content gets pointed at data stored under a different name.
+   */
+  torrentRenamePath(id: number | string, oldPath: string, newName: string): Promise<void> {
+    return this.call('torrent-rename-path', { ids: [id], path: oldPath, name: newName }).then(() => undefined);
+  }
 }

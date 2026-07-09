@@ -265,6 +265,11 @@ export class NativeTorrentManager {
 
   /** Re-add a DB record to the daemon from its source (restore / lazy resume). */
   private async addToDaemon(d: Download, paused: boolean): Promise<string> {
+    // A fresh re-add loses the daemon-side root rename AND the resume state, so
+    // "start seeding" records go in PAUSED, get their root remapped onto the
+    // on-disk name, then verify before (optionally) starting — otherwise the
+    // daemon would look for data under the torrent's name and re-download it.
+    const isSeed = (d.seedPaths?.length ?? 0) > 0;
     let res;
     if (d.sourceType === 'torrent_file' && d.torrentFilePath) {
       let file = d.torrentFilePath;
@@ -276,13 +281,18 @@ export class NativeTorrentManager {
         await db.updateDownloadField(d.id, 'torrentFilePath', healed);
       }
       const buf = fs.readFileSync(file);
-      res = await this.rpc!.torrentAdd({ metainfo: buf, downloadDir: d.savePath, paused, filesUnwanted: unwantedIndices(buf, d.selectedFiles) });
+      res = await this.rpc!.torrentAdd({ metainfo: buf, downloadDir: d.savePath, paused: paused || isSeed, filesUnwanted: unwantedIndices(buf, d.selectedFiles) });
     } else {
       res = await this.rpc!.torrentAdd({ filename: d.sourceUri, downloadDir: d.savePath, paused });
     }
     const hash = res.hashString.toLowerCase();
     this.link(d.id, hash);
     if (d.infoHash !== hash) { d.infoHash = hash; await db.updateDownloadField(d.id, 'infoHash', hash); }
+    if (isSeed && !res.duplicate) {
+      await this.mapSeedRootToDisk(hash, res.name, d.seedPaths![0]);
+      await this.rpc!.torrentVerify(hash);
+      if (!paused) await this.rpc!.torrentStartNow(hash);
+    }
     // Re-apply the user's tracker edits — the daemon's own resume state has them
     // only if it kept the torrent across the restart; on a fresh re-add it doesn't.
     if (d.customTrackers?.length || d.removedTrackers?.length) {
@@ -731,18 +741,39 @@ export class NativeTorrentManager {
    * Seed a folder/file the creator just turned into a .torrent. transmission has
    * no "seed this disk path" — instead we add the .torrent with download-dir set
    * so `download-dir/<name>` lands on the existing data, then verify (hashes the
-   * files → 100%) and start (→ seeding) without downloading a byte.
+   * files → 100%) and start (→ seeding) without downloading a byte. A custom
+   * torrent name breaks that implicit mapping (the data sits under the folder's
+   * real name), so the root is renamed to the on-disk name first — see
+   * mapSeedRootToDisk.
    */
   async addSeed(params: { sourcePaths: string[]; name?: string; announceList?: string[][]; pieceLength?: number; torrentFilePath?: string }): Promise<Download> {
     await this.whenReady();
     if (!params.torrentFilePath || !fs.existsSync(params.torrentFilePath)) {
       throw new TorrentError('Seed torrent file missing', 'FILE_NOT_FOUND');
     }
+    // Several scattered sources have no `download-dir/<root>` layout the daemon
+    // could be pointed at (webtorrent seeds the path list directly). Refuse
+    // loudly instead of letting the daemon stall at "downloading 0%".
+    if (params.sourcePaths.length > 1) {
+      throw new TorrentError(
+        'The native engine can only seed a single file or folder — switch Settings → Engine to webtorrent to seed multiple sources at once',
+        'INVALID_INPUT',
+      );
+    }
     const downloadDir = path.dirname(params.sourcePaths[0]);
     const buf = fs.readFileSync(params.torrentFilePath);
     const res = await this.rpc!.torrentAdd({ metainfo: buf, downloadDir, paused: true });
     const hash = res.hashString.toLowerCase();
     if (res.duplicate) throw new TorrentError('This torrent is already in your downloads', 'DUPLICATE', this.hashToId.get(hash));
+
+    try {
+      await this.mapSeedRootToDisk(hash, res.name, params.sourcePaths[0]);
+    } catch (e) {
+      // Don't leave a stray paused torrent that would verify against the wrong
+      // path; reconcile() would only reap it at next boot.
+      await this.rpc!.torrentRemove(hash, false).catch(() => undefined);
+      throw e;
+    }
 
     const stored = this.copyTorrentIntoAppData(params.torrentFilePath);
     const download = await db.createDownload({
@@ -756,7 +787,12 @@ export class NativeTorrentManager {
     });
     download.infoHash = hash;
     download.status = 'seeding';
-    await db.updateDownloadField(download.id, 'infoHash', hash);
+    // Freeze totalSize now: it keeps the stats tick's metadata-arrival branch
+    // from "adopting" the daemon's name — which after the root rename is the
+    // DISK name, not the display name the user chose for the torrent.
+    const [t] = await this.rpc!.torrentGet(['totalSize'], hash);
+    download.totalSize = t?.totalSize ?? 0;
+    await db.updateDownloadFields(download.id, { infoHash: hash, totalSize: download.totalSize });
     this.records.set(download.id, download);
     this.link(download.id, hash);
     // verify existing data → start-now → seeding (add PAUSED first so it doesn't
@@ -766,6 +802,23 @@ export class NativeTorrentManager {
     void this.warmMetaCache(download.id);
     log.info('Seed added', { id: download.id, hash, name: download.name });
     return download;
+  }
+
+  /**
+   * Point a seed's content at the data's real on-disk name. The daemon resolves
+   * content strictly as `download-dir/<root name>`; when the torrent was created
+   * with a custom name that path doesn't exist, so verify finds nothing and a
+   * start "downloads" the content beside the user's real files (the 0%-stall
+   * bug). Renaming the root to the disk basename fixes the mapping: nothing
+   * exists at the old path, so the daemon just rewrites its internal paths (no
+   * disk I/O) and persists the rename in its resume state. The infoHash — and
+   * therefore the .torrent/magnet handed to the user — is untouched.
+   */
+  private async mapSeedRootToDisk(hash: string, torrentName: string, sourcePath: string): Promise<void> {
+    const diskName = path.basename(sourcePath);
+    if (!diskName || !torrentName || diskName === torrentName) return;
+    await this.rpc!.torrentRenamePath(hash, torrentName, diskName);
+    log.info('Seed root remapped to on-disk name', { hash, torrentName, diskName });
   }
 
   // ── In-app streaming ─────────────────────────────────────────────────────────
