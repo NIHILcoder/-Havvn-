@@ -1,0 +1,102 @@
+/**
+ * Settings UI primitives — the single row/card/field system every settings
+ * section is built from. Replaces the old triple pattern (renderSettingItem
+ * helper, PrivacySettings' local Row, hand-rolled markup) and the two toggle
+ * implementations. Controls carry a min-width and rows stack cleanly at narrow
+ * widths, so labels and controls never collide.
+ */
+import React from 'react';
+import { Icon, IconName } from '../../components';
+import './controls.css';
+
+/** A titled group of setting rows. */
+export const SettingsCard: React.FC<{
+  title: string;
+  icon?: IconName;
+  description?: string;
+  children: React.ReactNode;
+}> = ({ title, icon, description, children }) => (
+  <section className="stg-card">
+    <header className="stg-card-h">
+      {icon && <span className="stg-card-ic"><Icon name={icon} size={16} /></span>}
+      <div className="stg-card-ht">
+        <h3>{title}</h3>
+        {description && <p>{description}</p>}
+      </div>
+    </header>
+    <div className="stg-card-b">{children}</div>
+  </section>
+);
+
+/** One setting: label + optional description on the left, a control on the right. */
+export const SettingRow: React.FC<{
+  label: string;
+  description?: string;
+  icon?: IconName;
+  control: React.ReactNode;
+  /** Widen the control column for multi-field controls (e.g. path + browse). */
+  wide?: boolean;
+}> = ({ label, description, icon, control, wide }) => (
+  <div className="stg-row">
+    <div className="stg-row-info">
+      <div className="stg-row-label">
+        {icon && <Icon name={icon} size={15} />}
+        <span>{label}</span>
+      </div>
+      {description && <p className="stg-row-desc">{description}</p>}
+    </div>
+    <div className={`stg-row-ctl${wide ? ' wide' : ''}`}>{control}</div>
+  </div>
+);
+
+/** Number input with an optional unit chip (KB/s, MB, min, …). */
+export const NumberField: React.FC<{
+  value: number;
+  onChange: (n: number) => void;
+  unit?: string;
+  min?: number;
+  max?: number;
+  step?: number;
+  width?: number;
+  ariaLabel?: string;
+}> = ({ value, onChange, unit, min, max, step, width, ariaLabel }) => (
+  <span className="stg-num">
+    <input
+      type="number"
+      value={value}
+      min={min}
+      max={max}
+      step={step}
+      aria-label={ariaLabel}
+      style={width ? { width } : undefined}
+      onChange={(e) => onChange(e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+    />
+    {unit && <span className="stg-num-u">{unit}</span>}
+  </span>
+);
+
+/** Single-line text input (paths, hosts, tokens). */
+export const TextField: React.FC<{
+  value: string;
+  onChange: (s: string) => void;
+  placeholder?: string;
+  mono?: boolean;
+  ariaLabel?: string;
+}> = ({ value, onChange, placeholder, mono, ariaLabel }) => (
+  <input
+    className={`stg-text${mono ? ' mono' : ''}`}
+    type="text"
+    value={value}
+    placeholder={placeholder}
+    aria-label={ariaLabel}
+    onChange={(e) => onChange(e.target.value)}
+  />
+);
+
+/** Small status pill (olive = good/active, muted = neutral, ember = attention). */
+export const StatusPill: React.FC<{
+  children: React.ReactNode;
+  tone?: 'ok' | 'muted' | 'accent';
+}> = ({ children, tone = 'muted' }) => (
+  <span className={`stg-pill stg-pill-${tone}`}>{children}</span>
+);

@@ -31,15 +31,46 @@ export const formatBytes = (bytes: number): string => {
 };
 
 /**
- * Format speed to human-readable
+ * Speed display units (Settings → Interface). Module-level cache so the hot
+ * formatSpeed path never touches localStorage; live numbers repaint on the
+ * next stats tick after a change.
+ *  - binary: ×1024, KB/s (the historical default)
+ *  - si:     ×1000, KB/s
+ *  - bits:   ×1000, Kbit/s / Mbit/s (bytes × 8)
+ */
+export type SpeedUnits = 'binary' | 'si' | 'bits';
+
+let speedUnits: SpeedUnits = (() => {
+  try {
+    const v = localStorage.getItem('speedUnits');
+    return v === 'si' || v === 'bits' ? v : 'binary';
+  } catch { return 'binary'; }
+})();
+
+export const getSpeedUnits = (): SpeedUnits => speedUnits;
+
+export const setSpeedUnits = (units: SpeedUnits): void => {
+  speedUnits = units;
+  try { localStorage.setItem('speedUnits', units); } catch { /* cosmetic */ }
+};
+
+/**
+ * Format speed to human-readable, honoring the configured units.
  */
 export const formatSpeed = (bytesPerSecond: number): string => {
+  if (speedUnits === 'bits') {
+    const bits = bytesPerSecond * 8;
+    if (bits === 0) return '0 bit/s';
+    const k = 1000;
+    const sizes = ['bit/s', 'Kbit/s', 'Mbit/s', 'Gbit/s'];
+    const i = Math.min(sizes.length - 1, Math.floor(Math.log(bits) / Math.log(k)));
+    return `${(bits / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
+  }
+
   if (bytesPerSecond === 0) return '0 B/s';
-
-  const k = 1024;
+  const k = speedUnits === 'si' ? 1000 : 1024;
   const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s'];
-
-  const i = Math.floor(Math.log(bytesPerSecond) / Math.log(k));
+  const i = Math.min(sizes.length - 1, Math.floor(Math.log(bytesPerSecond) / Math.log(k)));
   const value = bytesPerSecond / Math.pow(k, i);
 
   return `${value.toFixed(2)} ${sizes[i]}`;

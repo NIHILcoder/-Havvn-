@@ -24,7 +24,11 @@ import { dismissSplash } from './utils/splash';
 
 const AppContent: React.FC = () => {
   const { t } = useTranslation();
-  const [currentPage, setCurrentPage] = useState<PageId>('downloads');
+  // Start page honors the Settings → Interface preference (downloads is the default).
+  const [currentPage, setCurrentPage] = useState<PageId>(() => {
+    try { return localStorage.getItem('startPage') === 'rooms' ? 'rooms' : 'downloads'; }
+    catch { return 'downloads'; }
+  });
   const [stats, setStats] = useState<DownloadStats[]>([]);
   const [downloads, setDownloads] = useState<Download[]>([]);
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
@@ -70,6 +74,25 @@ const AppContent: React.FC = () => {
     };
     mediaQuery.addEventListener('change', handleChange);
     return () => mediaQuery.removeEventListener('change', handleChange);
+  }, []);
+
+  // Boot-apply persisted interface prefs (UI scale / reduced motion / density).
+  // The Interface settings section owns changing them; this only restores them.
+  useEffect(() => {
+    try {
+      const scale = parseInt(localStorage.getItem('uiScale') ?? '', 10);
+      if (Number.isFinite(scale) && scale > 0 && scale !== 100) {
+        // webFrame zoom (via preload) — scales the viewport too, so the
+        // 100vh/100vw shell keeps filling the window at any factor.
+        window.api.setZoomFactor?.(scale / 100);
+      }
+      if (localStorage.getItem('reduceMotion') === '1') {
+        document.documentElement.dataset.reduceMotion = 'true';
+      }
+      if (localStorage.getItem('density') === 'compact') {
+        document.documentElement.dataset.density = 'compact';
+      }
+    } catch { /* prefs are cosmetic — never block boot */ }
   }, []);
 
   // Load downloads for counts

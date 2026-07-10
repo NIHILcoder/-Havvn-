@@ -82,6 +82,24 @@
   animation: dropdownFadeIn 0.15s ease-out;
 }
 
+/* Near the bottom edge the menu opens upward instead of getting clipped. */
+.custom-select-dropdown.drop-up {
+  top: auto;
+  bottom: calc(100% + 0.5rem);
+  animation: dropdownFadeInUp 0.15s ease-out;
+}
+
+@keyframes dropdownFadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @keyframes dropdownFadeIn {
   from {
     opacity: 0;

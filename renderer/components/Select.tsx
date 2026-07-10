@@ -28,9 +28,23 @@ export const Select: React.FC<SelectProps> = ({
 }) => {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
+  // Open upward when the trigger sits near the bottom of the window, so the
+  // menu is never clipped by the viewport or a scroll container's edge.
+  const [dropUp, setDropUp] = useState(false);
   const selectRef = useRef<HTMLDivElement>(null);
 
   const selectedOption = options.find((opt) => opt.value === value);
+
+  const openMenu = () => {
+    const el = selectRef.current;
+    if (el) {
+      const r = el.getBoundingClientRect();
+      const menuH = Math.min(options.length, 6) * 40 + 16; // rough menu height
+      const below = window.innerHeight - r.bottom;
+      setDropUp(below < menuH && r.top > below);
+    }
+    setIsOpen(true);
+  };
 
   // Handle outside click to close dropdown
   useEffect(() => {
@@ -58,13 +72,13 @@ export const Select: React.FC<SelectProps> = ({
     
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      setIsOpen((prev) => !prev);
+      if (isOpen) setIsOpen(false); else openMenu();
     } else if (e.key === 'Escape') {
       setIsOpen(false);
     } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       if (!isOpen) {
-        setIsOpen(true);
+        openMenu();
         return;
       }
       
@@ -86,9 +100,9 @@ export const Select: React.FC<SelectProps> = ({
       className={`custom-select-container ${className} ${disabled ? 'disabled' : ''}`} 
       ref={selectRef}
     >
-      <div 
+      <div
         className={`custom-select-trigger ${isOpen ? 'open' : ''}`}
-        onClick={() => !disabled && setIsOpen(!isOpen)}
+        onClick={() => { if (!disabled) { if (isOpen) setIsOpen(false); else openMenu(); } }}
         onKeyDown={handleKeyDown}
         tabIndex={disabled ? -1 : 0}
         role="button"
@@ -111,7 +125,7 @@ export const Select: React.FC<SelectProps> = ({
       </div>
 
       {isOpen && (
-        <div className="custom-select-dropdown">
+        <div className={`custom-select-dropdown${dropUp ? ' drop-up' : ''}`}>
           <ul role="listbox" className="custom-select-list">
             {options.map((option) => (
               <li

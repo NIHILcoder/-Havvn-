@@ -213,3 +213,46 @@ svg {
   0%, 100% { box-shadow: 0 0 0 0 rgba(var(--color-accent-rgb), 0); }
   50% { box-shadow: 0 0 0 8px rgba(var(--color-accent-rgb), 0.15); }
 }
+
+/* interface prefs */
+/* Segmented UI-scale picker on the Interface settings page. */
+.iface-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+}
+.iface-seg button {
+  border: none;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-family);
+  font-size: 12px;
+  font-weight: var(--font-weight-medium);
+  font-variant-numeric: tabular-nums;
+  padding: 5px 10px;
+  border-radius: calc(var(--radius-md) - 2px);
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.iface-seg button:hover { color: var(--color-text-primary); }
+.iface-seg button.active {
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
+/* Reduced motion: collapse every transition/animation to a single instant. */
+[data-reduce-motion] * {
+  transition-duration: 0.01ms !important;
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+}
+
+/* Compact density (v1: settings surfaces) — tighter rows and card paddings. */
+[data-density="compact"] .stg-row { padding: 8px 0; min-height: 44px; }
+[data-density="compact"] .stg-card-b { padding: 0 14px; }
+[data-density="compact"] .stg-card-h { padding: 10px 14px; }

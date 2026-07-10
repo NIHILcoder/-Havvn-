@@ -848,6 +848,8 @@ export interface IpcApi {
   notifyReady: () => void;
   // Mirror the renderer's UI language to main (localizes tray/dialogs/notifications)
   setLanguage: (lang: string) => void;
+  // UI scale via webFrame zoom (scales viewport too, unlike CSS zoom)
+  setZoomFactor: (factor: number) => void;
   // Resolve the absolute path of a dropped/selected File (webUtils.getPathForFile)
   getPathForFile: (file: File) => string;
   // Bulk torrent actions (the tray menu calls the manager directly)

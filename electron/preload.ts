@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
+import { contextBridge, ipcRenderer, IpcRendererEvent, webFrame } from 'electron';
 
 // webUtils was added in Electron 30; the bundled type defs for older versions
 // don't declare it, so access it defensively without a typed named import.
@@ -383,6 +383,14 @@ const api: IpcApi = {
   // OS notifications localize too (renderer owns the setting via localStorage).
   setLanguage: (lang: string): void => {
     ipcRenderer.send('app:setLanguage', lang);
+  },
+
+  // UI scale. webFrame zoom scales the page INCLUDING the viewport, so
+  // 100vh/100vw layouts keep filling the window — unlike CSS zoom, which
+  // multiplies vh/vw sizes and clips (>100%) or leaves dead bands (<100%).
+  setZoomFactor: (factor: number): void => {
+    const f = Number(factor);
+    if (Number.isFinite(f) && f >= 0.5 && f <= 2) webFrame.setZoomFactor(f);
   },
 
   // Resolve the absolute filesystem path of a dropped/selected File.

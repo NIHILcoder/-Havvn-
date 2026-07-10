@@ -1,0 +1,370 @@
+/**
+ * Settings primitives styling. Uses the app's design tokens (variables.css) so
+ * it stays theme-aware. The key anti-overlap rules: the control column has a
+ * min-width and the label wraps rather than being squeezed; below a breakpoint
+ * the whole row stacks. No absolute positioning, no fixed heights that clip.
+ */
+
+/* === Titled card === */
+.stg-card {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-xl);
+  /* No overflow:hidden — it clipped Select dropdowns near the card edge.
+     Nothing inside paints over the rounded corners (the header is bg-less). */
+}
+.stg-card + .stg-card { margin-top: var(--space-5); }
+
+.stg-card-h {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+.stg-card-ic {
+  display: flex;
+  color: var(--color-accent-primary);
+  flex: none;
+}
+.stg-card-ht { min-width: 0; }
+.stg-card-ht h3 {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  letter-spacing: -0.01em;
+}
+.stg-card-ht p {
+  margin: 2px 0 0;
+  font-size: 11.5px;
+  color: var(--color-text-tertiary);
+  line-height: 1.4;
+}
+.stg-card-b { padding: 2px 18px; }
+
+/* === Setting row === */
+.stg-row {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 14px 0;
+  min-height: 56px;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+.stg-row:last-child { border-bottom: none; }
+
+.stg-row-info { flex: 1 1 auto; min-width: 0; }
+.stg-row-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+  line-height: 1.35;
+}
+.stg-row-label svg { flex: none; color: var(--color-text-tertiary); }
+.stg-row-desc {
+  margin: 3px 0 0;
+  font-size: 11.5px;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+  max-width: 52ch;
+}
+
+/* The fix: a real min-width + no shrink, so the control keeps its size and the
+   label column (min-width:0) gives instead of the two overlapping. */
+.stg-row-ctl {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 190px;
+}
+.stg-row-ctl.wide { min-width: 300px; }
+
+/* === Number field === */
+.stg-num {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-bg-tertiary);
+}
+.stg-num:focus-within { border-color: var(--color-border-focus); }
+.stg-num input {
+  width: 84px;
+  background: transparent;
+  border: none;
+  color: var(--color-text-primary);
+  font-family: var(--font-family);
+  font-size: 13px;
+  text-align: right;
+  padding: 8px 9px;
+  outline: none;
+  font-variant-numeric: tabular-nums;
+}
+.stg-num-u {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  padding: 0 9px;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  border-left: 1px solid var(--color-border-subtle);
+  white-space: nowrap;
+}
+
+/* === Text field === */
+.stg-text {
+  width: 240px;
+  max-width: 100%;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-family: var(--font-family);
+  font-size: 13px;
+  padding: 8px 10px;
+  outline: none;
+}
+.stg-text.mono { font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; }
+.stg-text:focus { border-color: var(--color-border-focus); }
+.stg-text::placeholder { color: var(--color-text-disabled); }
+
+/* Multi-field control (e.g. path input + Browse) shares the wide column. */
+.stg-path { display: flex; align-items: center; gap: 8px; width: 100%; justify-content: flex-end; }
+.stg-path .stg-text { flex: 1 1 auto; }
+
+/* Stacked full-width sub-block for controls that never fit the row's control
+   column (multi-input groups): label + description on top, fields below. */
+.stg-sub {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+.stg-sub:last-child { border-bottom: none; }
+.stg-row-desc-wide { max-width: none; }
+.stg-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.stg-fields .stg-text { flex: 1 1 160px; min-width: 140px; width: auto; }
+.stg-fields .stg-text.mono { flex: 2 1 240px; }
+
+/* === Status pill === */
+.stg-pill {
+  font-size: 10.5px;
+  font-weight: var(--font-weight-semibold);
+  padding: 3px 8px;
+  border-radius: 99px;
+  white-space: nowrap;
+}
+.stg-pill-ok { background: var(--color-success-bg); color: var(--color-success); }
+.stg-pill-muted { background: var(--color-bg-hover); color: var(--color-text-tertiary); }
+.stg-pill-accent { background: var(--color-accent-bg); color: var(--color-accent-primary); }
+
+/* === About: identity block === */
+.abt-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 34px 24px 30px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-xl);
+}
+.abt-name {
+  margin: 4px 0 0;
+  font-size: 26px;
+  font-weight: var(--font-weight-bold);
+  letter-spacing: -0.02em;
+  color: var(--color-text-primary);
+}
+.abt-name b { color: var(--color-accent-primary); font-weight: inherit; }
+.abt-pills { display: flex; gap: 6px; }
+.abt-tagline {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  color: var(--color-text-secondary);
+  line-height: 1.55;
+  max-width: 46ch;
+}
+.abt-stack { font-size: 11px; color: var(--color-text-tertiary); letter-spacing: 0.02em; }
+.abt-github {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 10px;
+  padding: 8px 16px;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+  font-size: 12.5px;
+  font-weight: var(--font-weight-semibold);
+  text-decoration: none;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+.abt-github:hover { background: var(--color-accent-bg); border-color: var(--color-border-strong); }
+.abt-github-sm { margin-top: 0; padding: 6px 12px; font-size: 12px; }
+.abt-value {
+  font-size: 12.5px;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* scheduler */
+.sched-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 0 4px;
+}
+.sched-entry {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 12px 14px;
+}
+.sched-entry-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sched-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.sched-day {
+  min-width: 34px;
+  padding: 5px 7px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-default);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-tertiary);
+  font-family: var(--font-family);
+  font-size: 11px;
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+.sched-day:hover { color: var(--color-text-primary); border-color: var(--color-border-focus); }
+.sched-day.active {
+  background: var(--color-accent-bg);
+  border-color: var(--color-accent-primary);
+  color: var(--color-accent-primary);
+}
+.sched-del {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+}
+.sched-del:hover { color: var(--color-error, #e5484d); border-color: var(--color-border-default); }
+
+.sched-entry-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+.sched-timepair { display: inline-flex; align-items: center; gap: 6px; }
+.sched-time-sep { color: var(--color-text-tertiary); font-size: 12px; }
+/* Native time input, themed: dark field + color-scheme so the picker glyph and
+   popup aren't white-on-white. */
+.sched-time {
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-family: var(--font-family);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  padding: 7px 9px;
+  outline: none;
+  color-scheme: dark;
+}
+.sched-time:focus { border-color: var(--color-border-focus); }
+.sched-hint {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  line-height: 1.45;
+}
+.sched-add { padding: 4px 0 14px; }
+
+/* Week-at-a-glance: one mini-bar per day; windows are flex segments sized by
+   % of the 24h span (spacer + segment — no absolute positioning). */
+.sched-week {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+.sched-week-row { display: flex; align-items: center; gap: 10px; }
+.sched-week-day {
+  flex: none;
+  width: 28px;
+  font-size: 10.5px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-tertiary);
+}
+.sched-week-day.today { color: var(--color-accent-primary); }
+.sched-week-track {
+  flex: 1 1 auto;
+  display: flex;
+  height: 10px;
+  border-radius: 99px;
+  background: var(--color-bg-tertiary);
+  overflow: hidden;
+}
+.sched-week-sp { flex: none; height: 100%; }
+.sched-week-seg {
+  flex: none;
+  height: 100%;
+  background: var(--color-accent-primary);
+  border-radius: 2px;
+}
+.sched-week-seg.noop { background: var(--color-border-default); }
+.sched-week-scale {
+  display: flex;
+  justify-content: space-between;
+  margin-left: 38px; /* day label width + gap, keeps ticks under the tracks */
+  font-size: 9.5px;
+  color: var(--color-text-disabled);
+  font-variant-numeric: tabular-nums;
+}
+
+/* === Responsive: stack the row so nothing is ever squeezed === */
+@media (max-width: 860px) {
+  .stg-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    min-height: 0;
+  }
+  .stg-row-ctl,
+  .stg-row-ctl.wide {
+    min-width: 0;
+    justify-content: flex-start;
+  }
+  .stg-path { justify-content: flex-start; }
+}
