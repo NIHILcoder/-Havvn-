@@ -4,6 +4,65 @@ All notable changes to Havvn (formerly TorrentHunt) are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [2.9.0] - 2026-07-10
+
+Havvn now speaks Russian everywhere — including the tray, native dialogs and the
+installer — Settings was rebuilt from the ground up, and the app finally ships a
+portable ZIP alongside a branded installer.
+
+### Added
+- **Full interface localization (RU/EN).** Every window, form and toast is translated —
+  including the parts React can't reach: the tray menu, native file dialogs, OS
+  notifications and the application menu all follow the language switch live.
+- **Settings search.** A search box above the settings nav finds any setting by name or
+  keyword, in both languages.
+- **A scheduler that actually does something.** Schedule windows now expose the speed
+  limit the engine applies (they silently did nothing before), show a live
+  "limit active" status, and render a week-at-a-glance strip of your windows.
+- **Interface preferences.** UI scale (90–125%), speed units (binary/decimal KB/s or
+  Mbit/s, applied app-wide), start page (Transfers or Rooms), reduced motion, and a
+  compact density mode for settings.
+- **Seeding at a glance.** The Seeding tab shows live stats: active seeds, total
+  uploaded, and your overall ratio.
+- **Portable ZIP distribution.** `Havvn-x.y.z-win-portable.zip` — unpack and run, no
+  installer needed; ships the native engine inside and shares its data with installed
+  copies, so switching between the two loses nothing.
+- **Branded installer.** The NSIS installer got the Double-V treatment (graphite
+  welcome/finish sidebar, ember mark) and now installs in Russian or English,
+  following the system language.
+
+### Changed
+- **Settings rebuilt on a modular Ember system.** The 1900-line monolith is now a thin
+  shell over per-tab components with one shared row/card/toggle system — labels and
+  controls no longer collide, toggles line up in a clean column, and rows stack
+  gracefully on narrow windows. The IA was regrouped: Network split into
+  **Connection** (absorbing Advanced: DHT, µTP, ports, UPnP) and **Sharing** (web
+  remote, TURN relay, network profiles), with DNS-over-HTTPS moving under Privacy.
+- **Privacy tab rebuilt.** A live exposure dashboard with an honest protection verdict
+  replaced the old synthetic privacy score; every control is wired to real state.
+- **The browser receive page** (share links) was redesigned on the Ember system, and
+  per-file **Download buttons now appear only once the file has fully arrived** —
+  until then each row shows its live progress.
+- **About page** is now a clean identity page (version, session engine, license,
+  source); update and default-client actions live only under System.
+- Dropdown selects open upward near the bottom edge instead of getting clipped.
+
+### Fixed
+- **Downloads page crash** — "torrent host exited before ready": importing the
+  main-process i18n from the torrent host's utility process pulled in Electron APIs
+  that don't exist there. The host boots reliably again.
+- **Scheduler day chips were off by one** — a window created for Monday actually
+  fired on Sunday. Existing schedules were unaffected in practice (they had no
+  speed limit and thus never fired).
+- **UI scale no longer clips the window** — scaling switched from CSS zoom (which
+  fought the full-viewport layout, cutting content above 100% and leaving dead bands
+  below) to Electron's native page zoom.
+- Privacy DHT toggle kept the Connection tab in sync; a failed IP lookup no longer
+  leaves the exposure check spinning forever; save failures surface a toast instead
+  of dying silently.
+- The custom TURN relay form no longer overflows its card.
+- The About page's GitHub link pointed at the pre-rebrand repository.
+
 ## [2.8.0] - 2026-07-09
 
 The big one: **TorrentHunt is now Havvn**, the download engine was rebuilt, the whole
