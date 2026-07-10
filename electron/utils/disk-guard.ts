@@ -16,6 +16,7 @@ import { BrowserWindow, Notification } from 'electron';
 import { logger, checkDiskSpace, formatBytes, getAppIconPath } from './index';
 import * as db from '../db/store';
 import { getTorrentManager } from '../torrent';
+import { t } from '../i18n';
 
 const log = logger.child('DiskGuard');
 
@@ -121,10 +122,10 @@ function notifyLowSpace(free: number, count: number): void {
     if (!Notification.isSupported()) return;
     const iconPath = getAppIconPath();
     const n = new Notification({
-      title: 'Low disk space — torrents paused',
+      title: t('notify.lowDisk.title'),
       body: count > 0
-        ? `Only ${formatBytes(free)} free. Paused ${count} torrent${count === 1 ? '' : 's'}. Free up space, then resume manually.`
-        : `Only ${formatBytes(free)} free on the download drive.`,
+        ? t(count === 1 ? 'notify.lowDisk.bodyOne' : 'notify.lowDisk.bodyMany', { free: formatBytes(free), count })
+        : t('notify.lowDisk.bodyNone', { free: formatBytes(free) }),
       ...(iconPath ? { icon: iconPath } : {}),
       urgency: 'critical',
     });

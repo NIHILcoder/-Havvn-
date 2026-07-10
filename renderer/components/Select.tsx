@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Icon } from './Icon';
+import { useTranslation } from '../utils/i18nContext';
 import './Select.css';
 
 export interface SelectOption {
@@ -21,10 +22,11 @@ export const Select: React.FC<SelectProps> = ({
   options,
   value,
   onChange,
-  placeholder = 'Select...',
+  placeholder,
   className = '',
   disabled = false,
 }) => {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const selectRef = useRef<HTMLDivElement>(null);
 
@@ -100,7 +102,7 @@ export const Select: React.FC<SelectProps> = ({
               <span>{selectedOption.label}</span>
             </>
           ) : (
-            <span className="placeholder">{placeholder}</span>
+            <span className="placeholder">{placeholder ?? t('select.placeholder')}</span>
           )}
         </div>
         <div className="custom-select-icon">

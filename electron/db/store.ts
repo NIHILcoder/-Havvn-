@@ -41,6 +41,7 @@ interface ConfigSchema {
   splitStoresMigrated?: boolean;         // One-time migration marker (see migrateToSplitStores)
   utpDefaultOnMigrated?: boolean;        // One-time flip of µTP on for existing installs (see migrateUtpDefaultOn)
   networkProfiles?: NetworkProfile[];    // Smart per-network settings overlays
+  uiLanguage?: 'en' | 'ru';              // Mirror of the renderer's language, so main can localize tray/dialogs/notifications
 }
 
 interface DownloadsSchema {
@@ -521,6 +522,16 @@ export async function regenerateWebRemoteToken(): Promise<string> {
   const token = crypto.randomBytes(24).toString('hex');
   configStore.set('settings', { ...s, webRemoteToken: token });
   return token;
+}
+
+// === UI language (mirrored from the renderer for main-process i18n) ===
+
+export function getUiLanguage(): 'en' | 'ru' {
+  return configStore.get('uiLanguage') === 'ru' ? 'ru' : 'en';
+}
+
+export function setUiLanguage(lang: 'en' | 'ru'): void {
+  configStore.set('uiLanguage', lang === 'ru' ? 'ru' : 'en');
 }
 
 // === Window bounds ===

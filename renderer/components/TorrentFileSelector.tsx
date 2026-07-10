@@ -90,7 +90,7 @@ export const TorrentFileSelector: React.FC<TorrentFileSelectorProps> = ({
       setSelectedFiles(allIndices);
     } catch (err) {
       console.error('Failed to load torrent info:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load torrent information');
+      setError(err instanceof Error ? err.message : t('filePicker.errorLoadInfo'));
     } finally {
       setLoading(false);
     }
@@ -211,7 +211,7 @@ export const TorrentFileSelector: React.FC<TorrentFileSelectorProps> = ({
         <div className="file-selector-error">
           <Icon name="alert-circle" size={48} />
           <h3>{t('filePicker.loadFailed')}</h3>
-          <p>{error || 'Unknown error occurred'}</p>
+          <p>{error || t('filePicker.errorUnknown')}</p>
           <div className="file-selector-error-actions">
             {/* Preview is optional — a metadata timeout must not block the add.
                 Empty selection = download everything. */}
@@ -239,7 +239,7 @@ export const TorrentFileSelector: React.FC<TorrentFileSelectorProps> = ({
       footer={
         <>
           <Button variant="ghost" onClick={onCancel}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button
             variant="primary"
@@ -247,7 +247,7 @@ export const TorrentFileSelector: React.FC<TorrentFileSelectorProps> = ({
             onClick={handleConfirm}
             disabled={selectedFiles.size === 0}
           >
-            Download Selected ({selectedFiles.size})
+            {t('filePicker.downloadSelected')} ({selectedFiles.size})
           </Button>
         </>
       }
@@ -263,7 +263,7 @@ export const TorrentFileSelector: React.FC<TorrentFileSelectorProps> = ({
           <div className="stat">
             <Icon name="hard-drive" size={16} />
             <span>
-              <strong>{formatBytes(selectedSize)}</strong> of <strong>{formatBytes(torrentInfo.totalSize)}</strong>
+              <strong>{formatBytes(selectedSize)}</strong> {t('filePicker.of')} <strong>{formatBytes(torrentInfo.totalSize)}</strong>
             </span>
           </div>
         </div>
@@ -307,19 +307,19 @@ export const TorrentFileSelector: React.FC<TorrentFileSelectorProps> = ({
               <div className="quick-select-menu">
                 <button onClick={() => handleSelectByExtension('.mp4')}>
                   <Icon name="film" size={14} />
-                  Select Videos
+                  {t('filePicker.selectVideos')}
                 </button>
                 <button onClick={() => handleSelectByExtension('.mkv')}>
                   <Icon name="film" size={14} />
-                  Select MKV
+                  {t('filePicker.selectMkv')}
                 </button>
                 <button onClick={() => handleDeselectByExtension('.txt')}>
                   <Icon name="file-text" size={14} />
-                  Deselect Text Files
+                  {t('filePicker.deselectText')}
                 </button>
                 <button onClick={() => handleDeselectByExtension('.nfo')}>
                   <Icon name="file" size={14} />
-                  Deselect NFO Files
+                  {t('filePicker.deselectNfo')}
                 </button>
               </div>
             </div>

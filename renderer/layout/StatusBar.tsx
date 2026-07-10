@@ -10,6 +10,7 @@
 import React, { useState } from 'react';
 import { Icon, SpeedGraph } from '../components';
 import { formatSpeed } from '../utils/format-helpers';
+import { useTranslation } from '../utils/i18nContext';
 
 /** The single most-alive room right now, computed in App from rooms data. */
 export interface RoomPresence {
@@ -36,6 +37,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   roomPresence = null,
   onJoinRoom,
 }) => {
+  const { t } = useTranslation();
   const [showGraph, setShowGraph] = useState(false);
 
   return (
@@ -53,31 +55,31 @@ export const StatusBar: React.FC<StatusBarProps> = ({
         <div className="status-bar-section">
           <div className="status-item">
             <span className="status-dot status-dot-connected" />
-            <span>Connected</span>
+            <span>{t('statusbar.connected')}</span>
           </div>
           <div className="status-item">
             <Icon name="activity" size={12} />
-            <span>{activeDownloads} active</span>
+            <span>{activeDownloads} {t('statusbar.active')}</span>
           </div>
           <div className="status-item">
             <Icon name="users" size={12} />
-            <span>{connectedPeers} peers</span>
+            <span>{connectedPeers} {t('downloads.peersShort')}</span>
           </div>
         </div>
 
         {roomPresence && (
-          <div className="status-bar-section status-presence" title={`${roomPresence.name} — open Rooms`}>
+          <div className="status-bar-section status-presence" title={`${roomPresence.name} — ${t('statusbar.openRooms')}`}>
             <span className="presence-dot" />
             <span className="presence-text">
               <b>{roomPresence.name}</b>
               <span className="presence-detail">
                 {roomPresence.watching
-                  ? ' — watching together'
-                  : ` — ${roomPresence.othersOnline} online`}
+                  ? ` — ${t('statusbar.watchingTogether')}`
+                  : ` — ${roomPresence.othersOnline} ${t('rooms.rail.online')}`}
               </span>
             </span>
             <button className="presence-join" onClick={onJoinRoom}>
-              Join →
+              {t('rooms.join')} →
             </button>
           </div>
         )}
@@ -86,7 +88,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
           <button
             className="status-graph-btn"
             onClick={() => setShowGraph(!showGraph)}
-            title={showGraph ? 'Hide graph' : 'Show speed graph'}
+            title={showGraph ? t('statusbar.hideGraph') : t('statusbar.showGraph')}
           >
             <Icon name="activity" size={14} />
           </button>

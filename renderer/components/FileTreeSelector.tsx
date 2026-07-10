@@ -6,6 +6,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Icon } from './Icon';
+import { useTranslation } from '../utils/i18nContext';
 import './FileTreeSelector.css';
 
 export interface FileNode {
@@ -39,6 +40,7 @@ interface TreeNodeProps {
 }
 
 const TreeNode: React.FC<TreeNodeProps> = ({ node, level, excludedPaths, onToggle }) => {
+  const { t } = useTranslation();
   const [isExpanded, setIsExpanded] = useState(true);
   const isExcluded = excludedPaths.has(node.path);
   
@@ -110,7 +112,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({ node, level, excludedPaths, onToggl
             <span className="node-size">{formatBytes(node.size)}</span>
           )}
           {node.isDirectory && hasExcludedChildren && !isExcluded && (
-            <span className="partial-indicator" title="Some files excluded">
+            <span className="partial-indicator" title={t('create.someFilesExcluded')}>
               <Icon name="minus-circle" size={12} />
             </span>
           )}
@@ -140,6 +142,7 @@ export const FileTreeSelector: React.FC<FileTreeSelectorProps> = ({
   onToggle,
   onToggleAll,
 }) => {
+  const { t } = useTranslation();
   const stats = useMemo(() => {
     const countFiles = (nodes: FileNode[]): { total: number; excluded: number; totalSize: number; excludedSize: number } => {
       let total = 0;
@@ -185,7 +188,7 @@ export const FileTreeSelector: React.FC<FileTreeSelectorProps> = ({
           />
           <span className="checkbox-mark"></span>
           <span className="header-label">
-            {allIncluded ? 'All files selected' : `${includedCount} of ${stats.total} files selected`}
+            {allIncluded ? t('create.allFilesSelected') : `${includedCount} ${t('filePicker.of')} ${stats.total} ${t('create.filesSelected')}`}
           </span>
         </label>
         

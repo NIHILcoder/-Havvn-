@@ -217,7 +217,7 @@ const SettingsPage: React.FC = () => {
           setMessage({ type: 'success', text: t('settings.msg.downloaded') });
           break;
         case 'error':
-          setMessage({ type: 'error', text: `${t('settings.msg.updateError')} ${status.message ?? 'unknown'}` });
+          setMessage({ type: 'error', text: `${t('settings.msg.updateError')} ${status.message ?? t('privacy.conf.unknown')}` });
           break;
         case 'dev-disabled':
           setMessage({ type: 'error', text: t('settings.msg.devOnly') });
@@ -389,7 +389,7 @@ const SettingsPage: React.FC = () => {
         totalDownloaded: realStats.totalDownloaded,
         cacheSize: '-',
         diskUsage: realStats.diskUsage,
-        uptime: `${realStats.activeDownloads} active, ${realStats.completedDownloads} done`,
+        uptime: `${realStats.activeDownloads} ${t('settings.stats.active')}, ${realStats.completedDownloads} ${t('settings.stats.done')}`,
       });
     } catch (error) {
       console.error('Failed to load stats:', error);
@@ -870,7 +870,7 @@ const SettingsPage: React.FC = () => {
             >
               <span className="engine-opt-radio" aria-hidden="true" />
               <span className="engine-opt-title">
-                Havvn native <span className="engine-badge">{t('settings.engine.nativeBadge')}</span>
+                Havvn {t('settings.engine.nativeWord')} <span className="engine-badge">{t('settings.engine.nativeBadge')}</span>
               </span>
               <span className="engine-opt-desc">{t('settings.engine.nativeDesc')}</span>
             </button>
@@ -1583,9 +1583,9 @@ const SettingsPage: React.FC = () => {
       const o = p.overrides; const parts: string[] = [];
       if (o.maxDownKbps !== undefined) parts.push(`↓ ${o.maxDownKbps || '∞'}`);
       if (o.maxUpKbps !== undefined) parts.push(`↑ ${o.maxUpKbps || '∞'}`);
-      if (o.maxConnectionsGlobal !== undefined) parts.push(`${o.maxConnectionsGlobal} conn`);
-      if (o.adaptiveUpload !== undefined) parts.push(`adaptive ${o.adaptiveUpload ? 'on' : 'off'}`);
-      if (o.dohEnabled !== undefined) parts.push(`DoH ${o.dohEnabled ? 'on' : 'off'}`);
+      if (o.maxConnectionsGlobal !== undefined) parts.push(`${o.maxConnectionsGlobal} ${t('settings.net.connShort')}`);
+      if (o.adaptiveUpload !== undefined) parts.push(`${t('settings.net.adaptiveShort')} ${o.adaptiveUpload ? t('swarm.on') : t('swarm.off')}`);
+      if (o.dohEnabled !== undefined) parts.push(`DoH ${o.dohEnabled ? t('swarm.on') : t('swarm.off')}`);
       return parts.length ? parts.join(' · ') : t('settings.net.noOverrides');
     };
 

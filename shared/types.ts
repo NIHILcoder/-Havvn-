@@ -846,6 +846,8 @@ export interface IpcApi {
   onOpenTorrent: (callback: (torrentUri: string) => void) => () => void;
   // Renderer announces its IPC listeners are attached (flushes buffered OS opens)
   notifyReady: () => void;
+  // Mirror the renderer's UI language to main (localizes tray/dialogs/notifications)
+  setLanguage: (lang: string) => void;
   // Resolve the absolute path of a dropped/selected File (webUtils.getPathForFile)
   getPathForFile: (file: File) => string;
   // Bulk torrent actions (the tray menu calls the manager directly)

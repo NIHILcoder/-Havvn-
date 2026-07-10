@@ -113,7 +113,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Pillar switch */}
-      <div className="pillar-switch" role="tablist" aria-label="Main sections">
+      <div className="pillar-switch" role="tablist" aria-label={t('nav.mainSections')}>
         <button
           className={`pillar-btn ${pillar === 'transfers' ? 'on' : ''}`}
           role="tab"
@@ -211,7 +211,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Footer: utilities + version */}
       <div className="sidebar-footer">
-        <div className="sidebar-utils" role="navigation" aria-label="Utilities">
+        <div className="sidebar-utils" role="navigation" aria-label={t('nav.utilities')}>
           {utilItems.map((util) => (
             <button
               key={util.id}

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Icon } from './Icon';
+import { useTranslation } from '../utils/i18nContext';
 import './ThemeSelector.css';
 
 type Theme = 'light' | 'dark' | 'system';
@@ -13,10 +14,11 @@ export const ThemeSelector: React.FC<ThemeSelectorProps> = ({
   currentTheme,
   onThemeChange,
 }) => {
+  const { t } = useTranslation();
   const themes: { id: Theme; label: string; icon: string }[] = [
-    { id: 'light', label: 'Light', icon: '☀️' },
-    { id: 'dark', label: 'Dark', icon: '🌙' },
-    { id: 'system', label: 'System', icon: '💻' },
+    { id: 'light', label: t('theme.light'), icon: '☀️' },
+    { id: 'dark', label: t('theme.dark'), icon: '🌙' },
+    { id: 'system', label: t('settings.system'), icon: '💻' },
   ];
 
   return (

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Icon } from './Icon';
+import { useTranslation } from '../utils/i18nContext';
 import './NotificationSettings.css';
 
 interface NotificationSettingsProps {
@@ -22,6 +23,7 @@ export const NotificationSettings: React.FC<NotificationSettingsProps> = ({
   notifyOnError,
   onSettingsChange,
 }) => {
+  const { t } = useTranslation();
   const [testingNotification, setTestingNotification] = useState(false);
 
   const handleTestNotification = async () => {
@@ -30,7 +32,7 @@ export const NotificationSettings: React.FC<NotificationSettingsProps> = ({
       // Mock notification for now - implement actual API call later
       if (window.Notification && Notification.permission === 'granted') {
         new Notification('Havvn', {
-          body: 'This is a test notification. Everything works! 🎉',
+          body: t('notif.testBody'),
         });
       }
     } catch (error) {
@@ -46,10 +48,10 @@ export const NotificationSettings: React.FC<NotificationSettingsProps> = ({
         <div className="setting-info">
           <label className="setting-label">
             <Icon name="bell" size={16} />
-            System Notifications
+            {t('notif.system')}
           </label>
           <p className="setting-description">
-            Show Windows notifications when downloads complete
+            {t('notif.systemDesc')}
           </p>
         </div>
         <div className="setting-control">
@@ -75,9 +77,9 @@ export const NotificationSettings: React.FC<NotificationSettingsProps> = ({
 
           <div className="setting-item">
             <div className="setting-info">
-              <label className="setting-label">Sound Notifications</label>
+              <label className="setting-label">{t('notif.sound')}</label>
               <p className="setting-description">
-                Play sound with notifications
+                {t('settings.notif.sounds.desc')}
               </p>
             </div>
             <div className="setting-control">
@@ -100,7 +102,7 @@ export const NotificationSettings: React.FC<NotificationSettingsProps> = ({
           <div className="setting-divider" />
 
           <div className="notification-events">
-            <div className="notification-events-label">Notify on events:</div>
+            <div className="notification-events-label">{t('notif.onEvents')}</div>
             <div className="notification-event-item">
               <label className="notification-checkbox">
                 <input
@@ -120,7 +122,7 @@ export const NotificationSettings: React.FC<NotificationSettingsProps> = ({
                 </span>
                 <span className="checkbox-label">
                   <Icon name="check-circle" size={16} />
-                  Download Complete
+                  {t('notif.downloadComplete')}
                 </span>
               </label>
             </div>
@@ -143,7 +145,7 @@ export const NotificationSettings: React.FC<NotificationSettingsProps> = ({
                 </span>
                 <span className="checkbox-label">
                   <Icon name="alert-triangle" size={16} />
-                  Download Errors
+                  {t('notif.downloadErrors')}
                 </span>
               </label>
             </div>
@@ -158,7 +160,7 @@ export const NotificationSettings: React.FC<NotificationSettingsProps> = ({
               disabled={testingNotification}
             >
               <Icon name="bell" size={16} />
-              {testingNotification ? 'Sending...' : 'Test Notification'}
+              {testingNotification ? t('notif.sending') : t('notif.test')}
             </button>
           </div>
         </>

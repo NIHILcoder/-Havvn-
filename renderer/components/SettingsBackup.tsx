@@ -1,5 +1,6 @@
 import React from 'react';
 import { Icon } from './Icon';
+import { useTranslation } from '../utils/i18nContext';
 import './SettingsBackup.css';
 
 interface SettingsBackupProps {
@@ -8,6 +9,7 @@ interface SettingsBackupProps {
 }
 
 export const SettingsBackup: React.FC<SettingsBackupProps> = ({ onExport, onImport }) => {
+  const { t } = useTranslation();
   return (
     <div className="settings-backup">
       <div className="backup-card">
@@ -15,12 +17,12 @@ export const SettingsBackup: React.FC<SettingsBackupProps> = ({ onExport, onImpo
           <Icon name="upload-cloud" size={32} />
         </div>
         <div className="backup-info">
-          <h3>Export Settings</h3>
-          <p>Save all settings to a file for backup or transfer to another computer</p>
+          <h3>{t('settings.exportSettings')}</h3>
+          <p>{t('settings.backup.exportDesc')}</p>
         </div>
         <button className="btn-backup" onClick={onExport}>
           <Icon name="upload" size={16} />
-          Export
+          {t('settings.export')}
         </button>
       </div>
 
@@ -29,19 +31,19 @@ export const SettingsBackup: React.FC<SettingsBackupProps> = ({ onExport, onImpo
           <Icon name="download-cloud" size={32} />
         </div>
         <div className="backup-info">
-          <h3>Import Settings</h3>
-          <p>Restore settings from a previously saved file</p>
+          <h3>{t('settings.importSettings')}</h3>
+          <p>{t('settings.backup.importDesc')}</p>
         </div>
         <button className="btn-backup secondary" onClick={onImport}>
           <Icon name="download" size={16} />
-          Import
+          {t('settings.import')}
         </button>
       </div>
 
       <div className="backup-notice">
         <Icon name="info" size={16} />
         <span>
-          Export includes: app settings, hotkeys, themes, but does not include torrents and their data.
+          {t('settings.backup.notice')}
         </span>
       </div>
     </div>

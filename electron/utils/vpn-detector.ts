@@ -14,6 +14,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import https from 'https';
 import { logger } from './logger';
+import { t } from '../i18n';
 
 const execAsync = promisify(exec);
 
@@ -414,25 +415,24 @@ export async function getIpInfo(): Promise<{
  */
 export function showVPNWarning(result: VPNDetectionResult): void {
 
-  // For now, show English version (will be replaced with i18n in main process)
-  const message = 'VPN not detected! Your real IP address may be visible to peers.';
-  let detail = 'Consider using a VPN for better privacy when using BitTorrent.\n\n';
+  const message = t('vpnWarn.message');
+  let detail = t('vpnWarn.detailIntro') + '\n\n';
 
   if (result.details.publicIP) {
-    detail += `Your public IP: ${result.details.publicIP}\n`;
+    detail += t('vpnWarn.yourIp', { ip: result.details.publicIP }) + '\n';
   }
 
-  detail += '\nRecommended VPN providers:\n';
-  detail += '• Mullvad VPN (anonymous, no logs)\n';
-  detail += '• ProtonVPN (secure, privacy-focused)\n';
-  detail += '• IVPN (privacy-first)\n';
+  detail += '\n' + t('vpnWarn.recommended') + '\n';
+  detail += t('vpnWarn.mullvad') + '\n';
+  detail += t('vpnWarn.proton') + '\n';
+  detail += t('vpnWarn.ivpn') + '\n';
 
   dialog.showMessageBox({
     type: 'warning',
-    title: 'Privacy Warning',
+    title: t('vpnWarn.title'),
     message,
     detail,
-    buttons: ['OK', 'Don\'t show again'],
+    buttons: [t('common.ok'), t('vpnWarn.dontShowAgain')],
     defaultId: 0,
     cancelId: 1,
   });

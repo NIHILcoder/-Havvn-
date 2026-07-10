@@ -328,7 +328,7 @@ export const StreamPlayerModal: React.FC<StreamPlayerModalProps> = ({ downloadId
           onClick={() => { if (mediaEl) { if (mediaEl.paused) void mediaEl.play().catch(() => {}); else mediaEl.pause(); } }}
           onError={handleMediaError}
         >
-          {subUrl && <track kind="subtitles" src={subUrl} srcLang="und" label="Subtitles" default />}
+          {subUrl && <track kind="subtitles" src={subUrl} srcLang="und" label={t('player.subtitles')} default />}
         </video>
         <PlayerControls media={mediaEl} fullscreenTarget={stageRef} seekable={!transcoded} />
       </div>

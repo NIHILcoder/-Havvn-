@@ -15,6 +15,7 @@
  */
 
 import React, { useMemo, useId } from 'react';
+import { useTranslation } from '../utils/i18nContext';
 
 export const AVATAR_STYLES = ['mirror', 'grid', 'rings', 'bauhaus'] as const;
 export type AvatarStyle = (typeof AVATAR_STYLES)[number];
@@ -230,6 +231,7 @@ function buildBauhaus(rng: () => number, size: number, fg: string): React.ReactN
 }
 
 export const Identicon: React.FC<IdenticonProps> = ({ seed, size = 40, online, ring, className, title }) => {
+  const { t } = useTranslation();
   const { style, base } = useMemo(() => parseAvatar(seed), [seed]);
   const pal = useMemo(() => palette(mulberry32(hashSeed(base))), [base]);
   const fg = pal.fg;
@@ -265,7 +267,7 @@ export const Identicon: React.FC<IdenticonProps> = ({ seed, size = 40, online, r
       style={{ width: size, height: size }}
       title={title}
     >
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={title || 'avatar'}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={title || t('identicon.avatar')}>
         <defs>
           <linearGradient id={gradId} gradientTransform={`rotate(${pal.angle} 0.5 0.5)`}>
             <stop offset="0%" stopColor={pal.c1} />

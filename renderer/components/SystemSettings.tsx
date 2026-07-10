@@ -1,5 +1,6 @@
 import React from 'react';
 import { Icon } from './Icon';
+import { useTranslation } from '../utils/i18nContext';
 import './SystemSettings.css';
 
 interface SystemSettingsProps {
@@ -29,16 +30,17 @@ export const SystemSettings: React.FC<SystemSettingsProps> = ({
   onSetDefaultClient,
   onCheckForUpdates,
 }) => {
+  const { t } = useTranslation();
   return (
     <div className="system-settings">
       <div className="setting-item">
         <div className="setting-info">
           <label className="setting-label">
             <Icon name="power" size={16} />
-            Auto Launch with Windows
+            {t('settings.autoLaunchWin')}
           </label>
           <p className="setting-description">
-            Automatically start Havvn when you log in
+            {t('settings.autoLaunchWin.desc')}
           </p>
         </div>
         <div className="setting-control">
@@ -57,10 +59,10 @@ export const SystemSettings: React.FC<SystemSettingsProps> = ({
         <div className="setting-info">
           <label className="setting-label">
             <Icon name="download-cloud" size={16} />
-            Automatic Updates
+            {t('settings.autoUpdates')}
           </label>
           <p className="setting-description">
-            Automatically download and install app updates
+            {t('settings.autoUpdates.desc')}
           </p>
         </div>
         <div className="setting-control">
@@ -77,9 +79,9 @@ export const SystemSettings: React.FC<SystemSettingsProps> = ({
 
       <div className="setting-item">
         <div className="setting-info">
-          <label className="setting-label">Minimize to Tray</label>
+          <label className="setting-label">{t('settings.minTray')}</label>
           <p className="setting-description">
-            Minimize app to system tray instead of taskbar
+            {t('settings.minToTray.desc')}
           </p>
         </div>
         <div className="setting-control">
@@ -96,9 +98,9 @@ export const SystemSettings: React.FC<SystemSettingsProps> = ({
 
       <div className="setting-item">
         <div className="setting-info">
-          <label className="setting-label">Close to Tray</label>
+          <label className="setting-label">{t('settings.closeTray')}</label>
           <p className="setting-description">
-            Hide window to tray instead of quitting when closing
+            {t('settings.closeToTray.desc')}
           </p>
         </div>
         <div className="setting-control">
@@ -117,21 +119,21 @@ export const SystemSettings: React.FC<SystemSettingsProps> = ({
         <div className="setting-info">
           <label className="setting-label">
             <Icon name="link" size={16} />
-            Default Torrent Client
+            {t('settings.defaultClient')}
           </label>
           <p className="setting-description">
-            Open .torrent files and magnet links with Havvn
+            {t('settings.defaultClient.desc')}
           </p>
         </div>
         <div className="setting-control">
           {isDefaultClient ? (
             <span className="status-badge success" style={{ color: 'var(--color-success)', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}>
               <Icon name="check-circle" size={14} />
-              Current Default
+              {t('settings.currentDefault')}
             </span>
           ) : (
             <button className="btn btn-secondary btn-sm" onClick={onSetDefaultClient}>
-              Set as Default
+              {t('settings.setDefault')}
             </button>
           )}
         </div>
@@ -142,9 +144,9 @@ export const SystemSettings: React.FC<SystemSettingsProps> = ({
       <div className="update-check">
         <button className="btn-check-updates" onClick={onCheckForUpdates}>
           <Icon name="refresh-cw" size={16} />
-          Check for Updates
+          {t('settings.checkUpdates')}
         </button>
-        <p className="update-info">Last checked: today at 12:34</p>
+        <p className="update-info">{t('settings.lastChecked')}</p>
       </div>
     </div>
   );

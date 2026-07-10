@@ -146,7 +146,7 @@ const RoomsPage: React.FC<RoomsPageProps> = ({ focusRoomId, onFocusHandled, onRo
   const handleCreate = async () => {
     setBusy(true);
     try {
-      const state = await window.api.rooms.create(createName.trim() || 'My Room', createE2E);
+      const state = await window.api.rooms.create(createName.trim() || t('rooms.defaultName'), createE2E);
       await refreshList();
       setSelectedId(state.roomId);
       setRoom(state);
@@ -430,7 +430,7 @@ const RoomsPage: React.FC<RoomsPageProps> = ({ focusRoomId, onFocusHandled, onRo
           room={room}
           roomId={room.roomId}
           file={watch.file}
-          self={room.members.find((m) => m.isSelf) || { memberId: 'self', name: 'You', avatarSeed: 'self' }}
+          self={room.members.find((m) => m.isSelf) || { memberId: 'self', name: t('rooms.you'), avatarSeed: 'self' }}
           onClose={() => setWatch(null)}
         />
       )}
@@ -1070,13 +1070,13 @@ const RoomPlayer: React.FC<{ room: RoomState; roomId: string; file: RoomFile; se
 
   useEffect(() => {
     // Seed self into the watcher list right away.
-    setWatchers({ [self.memberId]: { memberId: self.memberId, name: self.name || 'You', avatarSeed: self.avatarSeed, playing: false, lastSeen: Date.now() } });
+    setWatchers({ [self.memberId]: { memberId: self.memberId, name: self.name || t('rooms.you'), avatarSeed: self.avatarSeed, playing: false, lastSeen: Date.now() } });
     presence('join');
     const beat = setInterval(() => presence('beat'), 5000);
     // Self heartbeat so our own card stays fresh and reflects play state.
     const selfTick = setInterval(() => {
       const v = videoRef.current;
-      setWatchers((w) => ({ ...w, [self.memberId]: { ...(w[self.memberId] || { memberId: self.memberId, name: self.name || 'You', avatarSeed: self.avatarSeed }), playing: v ? !v.paused : false, lastSeen: Date.now() } as Watcher }));
+      setWatchers((w) => ({ ...w, [self.memberId]: { ...(w[self.memberId] || { memberId: self.memberId, name: self.name || t('rooms.you'), avatarSeed: self.avatarSeed }), playing: v ? !v.paused : false, lastSeen: Date.now() } as Watcher }));
     }, 2000);
     // Prune members we haven't heard from for a while.
     const prune = setInterval(() => {
@@ -1299,7 +1299,7 @@ const RoomPlayer: React.FC<{ room: RoomState; roomId: string; file: RoomFile; se
               <span className="room-player-watchers-label"><Icon name="users" size={13} /> {isAudio ? t('rooms.listening') : t('rooms.watching')}</span>
               <div className="room-player-avatars">
                 {Object.values(watchers).sort((a, b) => a.name.localeCompare(b.name)).map((w) => (
-                  <span key={w.memberId} className={`room-watcher ${w.playing ? 'playing' : 'paused'}`} title={`${w.name}${w.memberId === self.memberId ? ' (you)' : ''} — ${w.playing ? '▶' : '❚❚'}`}>
+                  <span key={w.memberId} className={`room-watcher ${w.playing ? 'playing' : 'paused'}`} title={`${w.name}${w.memberId === self.memberId ? ` ${t('rooms.youParen')}` : ''} — ${w.playing ? '▶' : '❚❚'}`}>
                     <Identicon seed={w.avatarSeed} size={26} />
                     <span className="room-watcher-dot" />
                   </span>

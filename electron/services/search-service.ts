@@ -12,6 +12,7 @@ import { execFile } from 'child_process';
 import { URL } from 'url';
 import { app } from 'electron';
 import { logger } from '../utils';
+import { t } from '../i18n';
 import * as db from '../db/store';
 import { SearchProvider, SearchResult } from '../../shared/types';
 import { parseScriptOutput } from '../../shared/search-parse';
@@ -63,11 +64,11 @@ export class SearchService {
   async testProvider(id: string): Promise<{ success: boolean; message: string }> {
     const providers = await db.getSearchProviders();
     const provider = providers.find(p => p.id === id);
-    if (!provider) return { success: false, message: 'Provider not found' };
+    if (!provider) return { success: false, message: t('search.providerNotFound') };
 
     try {
       await this.searchProvider(provider, 'test', undefined);
-      return { success: true, message: 'Provider is working correctly' };
+      return { success: true, message: t('search.providerWorking') };
     } catch (err: any) {
       return { success: false, message: err?.message || String(err) };
     }

@@ -204,9 +204,9 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
       if (!name && paths.length === 1) {
         setName(paths[0].split(/[/\\]/).pop() || '');
       }
-      addToast(`Selected ${paths.length} file(s)`, 'success');
+      addToast(`${t('create.selected')} ${paths.length} ${t('create.filesCount')}`, 'success');
     }
-  }, [name, addToast]);
+  }, [name, addToast, t]);
 
   const handleSelectFolder = useCallback(async () => {
     const folder = await window.api.selectFolderForTorrent();
@@ -218,9 +218,9 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
         const folderName = folder.split(/[/\\]/).pop() || '';
         setName(folderName);
       }
-      addToast('Folder selected', 'success');
+      addToast(t('create.folderSelected'), 'success');
     }
-  }, [name, addToast]);
+  }, [name, addToast, t]);
 
   // Drag and drop handlers
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -242,7 +242,7 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
       // Resolve real filesystem paths (webUtils / legacy File.path)
       const paths = files.map(f => window.api.getPathForFile(f)).filter(Boolean);
       if (paths.length === 0) {
-        addToast('Could not read the dropped path. Use the Select button instead.', 'error');
+        addToast(t('create.dropReadError'), 'error');
         return;
       }
       setSourcePaths(paths);
@@ -252,9 +252,9 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
         const fileName = paths[0].split(/[/\\]/).pop() || '';
         setName(fileName.replace(/\.[^/.]+$/, ''));
       }
-      addToast(`Added ${paths.length} item(s)`, 'success');
+      addToast(`${t('create.added')} ${paths.length} ${t('create.itemsCount')}`, 'success');
     }
-  }, [name, addToast]);
+  }, [name, addToast, t]);
 
   // Clear selection
   const handleClearSource = useCallback(() => {
@@ -298,8 +298,8 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
   // Create torrent
   const handleCreate = useCallback(async () => {
     if (sourcePaths.length === 0) {
-      setError('Please select files or folder');
-      addToast('Please select files or folder first', 'warning');
+      setError(t('create.selectSourceError'));
+      addToast(t('create.selectSourceFirst'), 'warning');
       return;
     }
 
@@ -355,11 +355,11 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
         isSeeding: startSeeding,
       };
       setHistory(prev => [historyItem, ...prev.slice(0, 9)]); // Keep last 10
-      addToast('Torrent created successfully!', 'success');
+      addToast(t('create.createdSuccess'), 'success');
     } else {
-      addToast(r.error || 'Failed to create torrent', 'error');
+      addToast(r.error || t('create.createFailed'), 'error');
     }
-  }, [sourcePaths, name, comment, createdBy, trackers, webSeeds, isPrivate, pieceLength, startSeeding, excludedPaths, addToast, setError, startCreate]);
+  }, [sourcePaths, name, comment, createdBy, trackers, webSeeds, isPrivate, pieceLength, startSeeding, excludedPaths, addToast, setError, startCreate, t]);
 
   // Copy magnet link
   const handleCopyMagnet = useCallback(() => {
@@ -367,9 +367,9 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
       navigator.clipboard.writeText(result.magnetUri);
       setCopiedMagnet(true);
       setTimeout(() => setCopiedMagnet(false), 2000);
-      addToast('Magnet link copied!', 'success');
+      addToast(t('create.magnetCopied'), 'success');
     }
-  }, [result, addToast]);
+  }, [result, addToast, t]);
 
   // Copy info hash
   const handleCopyHash = useCallback(() => {
@@ -377,9 +377,9 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
       navigator.clipboard.writeText(result.infoHash);
       setCopiedHash(true);
       setTimeout(() => setCopiedHash(false), 2000);
-      addToast('Info hash copied!', 'success');
+      addToast(t('create.hashCopied'), 'success');
     }
-  }, [result, addToast]);
+  }, [result, addToast, t]);
 
   // Show in folder
   const handleShowInFolder = useCallback(() => {
@@ -476,8 +476,8 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
   // Tracker templates handler
   const handleSelectTrackerTemplate = useCallback((trackerList: string[]) => {
     setTrackers(trackerList.join('\n'));
-    addToast('Tracker template applied', 'success');
-  }, [addToast]);
+    addToast(t('create.templateApplied'), 'success');
+  }, [addToast, t]);
   
   // Metadata preview handler
   const handleShowMetadataPreview = useCallback(() => {
@@ -507,11 +507,11 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
             </div>
             <div className="dropzone-text">
               <p className="dropzone-title">
-                {isDragging 
-                  ? 'Drop here!' 
-                  : `Drag & drop ${sourceMode === 'folder' ? 'a folder' : 'files'} here`}
+                {isDragging
+                  ? t('create.dropHere')
+                  : `${t('create.dragDrop')} ${sourceMode === 'folder' ? t('create.aFolder') : t('create.dragFiles')} ${t('create.here')}`}
               </p>
-              <p className="dropzone-subtitle">or click to browse</p>
+              <p className="dropzone-subtitle">{t('create.browse')}</p>
             </div>
           </div>
         </div>
@@ -519,7 +519,7 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
     }
 
     // Source is selected - show info
-    const sourceName = name || sourcePaths[0].split(/[/\\]/).pop() || 'Unknown';
+    const sourceName = name || sourcePaths[0].split(/[/\\]/).pop() || t('create.unknown');
     
     return (
       <div className="source-selected">
@@ -530,11 +530,11 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
           <div className="source-card-info">
             <h4 className="source-card-name">{sourceName}</h4>
             <p className="source-card-meta">
-              {sourceFileCount} {sourceFileCount === 1 ? 'file' : 'files'}
+              {sourceFileCount} {sourceFileCount === 1 ? t('create.fileWord') : t('create.filesLower')}
               {sourceSize > 0 && ` • ${formatBytes(sourceSize)}`}
             </p>
           </div>
-          <button className="source-card-remove" onClick={handleClearSource} title="Remove">
+          <button className="source-card-remove" onClick={handleClearSource} title={t('create.remove')}>
             <Icon name="x" size={18} />
           </button>
         </div>
@@ -544,7 +544,7 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
           onClick={sourceMode === 'folder' ? handleSelectFolder : handleSelectFiles}
         >
           <Icon name="refresh" size={16} />
-          Change {sourceMode === 'folder' ? 'Folder' : 'Files'}
+          {t('create.change')} {sourceMode === 'folder' ? t('create.folder') : t('create.files')}
         </button>
       </div>
     );
@@ -555,7 +555,7 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
       {/* Page Header */}
       <div className="page-header create-header">
         <div className="page-title-section">
-          <button className="back-button" onClick={onNavigateBack} title="Back to Downloads">
+          <button className="back-button" onClick={onNavigateBack} title={t('create.backToDownloads')}>
             <Icon name="chevron-left" size={20} />
           </button>
           <div className="page-title-wrapper">
@@ -572,14 +572,14 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
             <>
               <Button variant="ghost" onClick={() => setShowBatchCreate(true)}>
                 <Icon name="layers" size={16} />
-                Batch Create
+                {t('create.batchCreate')}
               </Button>
             </>
           )}
           {stage === 'success' && (
             <Button variant="secondary" onClick={handleCreateNew}>
               <Icon name="plus" size={16} />
-              Create New
+              {t('create.createNew')}
             </Button>
           )}
         </div>
@@ -594,7 +594,7 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
               <div className="panel-header">
                 <h3>
                   <Icon name="folder-plus" size={18} />
-                  Source
+                  {t('create.source')}
                 </h3>
               </div>
               
@@ -606,14 +606,14 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
                     onClick={() => setSourceMode('folder')}
                   >
                     <Icon name="folder" size={18} />
-                    <span>Folder</span>
+                    <span>{t('create.folder')}</span>
                   </button>
                   <button
                     className={`mode-btn ${sourceMode === 'files' ? 'active' : ''}`}
                     onClick={() => setSourceMode('files')}
                   >
                     <Icon name="file" size={18} />
-                    <span>Files</span>
+                    <span>{t('create.files')}</span>
                   </button>
                 </div>
 
@@ -626,14 +626,14 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
                     <div className="section-header">
                       <h4>
                         <Icon name="list" size={14} />
-                        Files to Include
+                        {t('create.filesToInclude')}
                       </h4>
                       <button
                         className="toggle-tree-btn"
                         onClick={() => setShowFileTree(!showFileTree)}
                       >
                         <Icon name={showFileTree ? 'chevron-up' : 'chevron-down'} size={14} />
-                        {showFileTree ? 'Hide' : 'Show'}
+                        {showFileTree ? t('create.hide') : t('create.show')}
                       </button>
                     </div>
                     {showFileTree && (
@@ -654,7 +654,7 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
               <div className="panel-header">
                 <h3>
                   <Icon name="settings" size={18} />
-                  Options
+                  {t('create.options')}
                 </h3>
                 <div className="options-tabs">
                   <button 
@@ -662,21 +662,21 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
                     onClick={() => setActiveTab('basic')}
                   >
                     <Icon name="file-text" size={14} />
-                    Basic
+                    {t('create.tabBasic')}
                   </button>
                   <button 
                     className={`tab-btn ${activeTab === 'trackers' ? 'active' : ''}`}
                     onClick={() => setActiveTab('trackers')}
                   >
                     <Icon name="server" size={14} />
-                    Trackers
+                    {t('create.trackers')}
                   </button>
                   <button 
                     className={`tab-btn ${activeTab === 'advanced' ? 'active' : ''}`}
                     onClick={() => setActiveTab('advanced')}
                   >
                     <Icon name="zap" size={14} />
-                    Advanced
+                    {t('create.tabAdvanced')}
                   </button>
                 </div>
               </div>
@@ -698,7 +698,7 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
                         onChange={(e) => setName(e.target.value)}
                         placeholder={t('create.name.placeholder')}
                       />
-                      <p className="field-hint">Leave empty to use source folder/file name</p>
+                      <p className="field-hint">{t('create.nameHint')}</p>
                     </div>
 
                     {/* Description */}
@@ -721,7 +721,7 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
                       <label className="toggle-option">
                         <div className="toggle-info">
                           <span className="toggle-name">{t('create.startSeeding')}</span>
-                          <span className="toggle-desc">Begin sharing after creation</span>
+                          <span className="toggle-desc">{t('create.seedingDesc')}</span>
                         </div>
                         <div className="toggle-control">
                           <input
@@ -736,7 +736,7 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
                       <label className="toggle-option">
                         <div className="toggle-info">
                           <span className="toggle-name">{t('create.private')}</span>
-                          <span className="toggle-desc">Disable DHT/PEX (for private trackers)</span>
+                          <span className="toggle-desc">{t('create.privateDesc')}</span>
                         </div>
                         <div className="toggle-control">
                           <input
@@ -761,7 +761,7 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
                           {t('create.trackers')}
                         </label>
                         <span className="tracker-count">
-                          {trackers.split('\n').filter(t => t.trim()).length} trackers
+                          {trackers.split('\n').filter(t => t.trim()).length} {t('create.trackersCount')}
                         </span>
                       </div>
                       <textarea
@@ -772,7 +772,7 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
                         rows={10}
                       />
                       <p className="field-hint">
-                        Public trackers are pre-filled. Add custom trackers or modify as needed.
+                        {t('create.trackersHint')}
                       </p>
                     </div>
 
@@ -782,7 +782,7 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
                         onClick={() => setShowTrackerTemplates(true)}
                       >
                         <Icon name="layout-template" size={14} />
-                        Templates
+                        {t('create.templates')}
                       </button>
                       <button
                         className="tracker-btn"
@@ -790,22 +790,22 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
                           window.api.getDefaultTrackers().then((defaultTrackers) => {
                             const trackerList = defaultTrackers.map(group => group.join('\n')).join('\n');
                             setTrackers(trackerList);
-                            addToast('Default trackers restored', 'success');
+                            addToast(t('create.defaultsRestored'), 'success');
                           });
                         }}
                       >
                         <Icon name="refresh" size={14} />
-                        Restore Defaults
+                        {t('create.restoreDefaults')}
                       </button>
                       <button
                         className="tracker-btn danger"
                         onClick={() => {
                           setTrackers('');
-                          addToast('Trackers cleared', 'info');
+                          addToast(t('create.trackersCleared'), 'info');
                         }}
                       >
                         <Icon name="trash" size={14} />
-                        Clear All
+                        {t('create.clearAll')}
                       </button>
                     </div>
                   </div>
@@ -818,7 +818,7 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
                     <div className="form-field">
                       <label className="field-label">
                         <Icon name="grid" size={14} />
-                        Piece Size
+                        {t('create.pieceSize')}
                       </label>
                       <select
                         className="field-select"
@@ -827,12 +827,12 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
                       >
                         {PIECE_SIZE_OPTIONS.map((opt) => (
                           <option key={opt.value} value={opt.value}>
-                            {opt.label}
+                            {opt.value === 0 ? t('create.pieceAuto') : opt.label}
                           </option>
                         ))}
                       </select>
                       <p className="field-hint">
-                        Auto mode chooses optimal size based on content. Smaller = more pieces, larger = fewer pieces.
+                        {t('create.pieceHint')}
                       </p>
                     </div>
 
@@ -840,19 +840,19 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
                     {sourceSize > 0 && pieceInfo && (
                       <div className="piece-info-card">
                         <div className="piece-info-row">
-                          <span className="piece-info-label">Total Size</span>
+                          <span className="piece-info-label">{t('create.totalSize')}</span>
                           <span className="piece-info-value">{formatBytes(sourceSize)}</span>
                         </div>
                         <div className="piece-info-row">
-                          <span className="piece-info-label">Piece Size</span>
+                          <span className="piece-info-label">{t('create.pieceSize')}</span>
                           <span className="piece-info-value">{formatBytes(pieceInfo.pieceLength)}</span>
                         </div>
                         <div className="piece-info-row">
-                          <span className="piece-info-label">Total Pieces</span>
+                          <span className="piece-info-label">{t('create.totalPieces')}</span>
                           <span className="piece-info-value">{pieceInfo.pieceCount.toLocaleString()}</span>
                         </div>
                         <div className="piece-info-row">
-                          <span className="piece-info-label">Est. .torrent Size</span>
+                          <span className="piece-info-label">{t('create.estTorrentSize')}</span>
                           <span className="piece-info-value">{formatBytes(pieceInfo.estimatedTorrentSize)}</span>
                         </div>
                       </div>
@@ -862,7 +862,7 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
                     <div className="form-field">
                       <label className="field-label">
                         <Icon name="user" size={14} />
-                        Created By
+                        {t('create.createdBy')}
                       </label>
                       <input
                         type="text"
@@ -877,17 +877,17 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
                     <div className="form-field">
                       <label className="field-label">
                         <Icon name="external-link" size={14} />
-                        Web Seeds (Optional)
+                        {t('create.webSeeds')}
                       </label>
                       <textarea
                         className="field-textarea"
                         value={webSeeds}
                         onChange={(e) => setWebSeeds(e.target.value)}
-                        placeholder="HTTP/HTTPS URLs for direct download fallback..."
+                        placeholder={t('create.webSeedsPlaceholder')}
                         rows={3}
                       />
                       <p className="field-hint">
-                        Add HTTP URLs hosting the same files as backup download sources.
+                        {t('create.webSeedsHint')}
                       </p>
                     </div>
                   </div>
@@ -927,8 +927,8 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
                 </svg>
               </div>
               
-              <h2 className="progress-title">Creating Torrent</h2>
-              <p className="progress-stage">{progress.stage === 'hashing' ? 'Hashing files...' : progress.message}</p>
+              <h2 className="progress-title">{t('create.creating')}</h2>
+              <p className="progress-stage">{progress.stage === 'hashing' ? t('create.hashing') : progress.stage === 'writing' ? t('create.stageWriting') : t('create.stageComplete')}</p>
               
               <div className="progress-bar-wrapper">
                 <ProgressBar value={progress.progress} />
@@ -938,11 +938,11 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
               <div className="progress-details">
                 <div className="progress-detail-item">
                   <Icon name="file" size={14} />
-                  <span>{name || 'Torrent'}</span>
+                  <span>{name || t('create.torrentFallback')}</span>
                 </div>
                 <div className="progress-detail-item">
                   <Icon name="clock" size={14} />
-                  <span>Please wait...</span>
+                  <span>{t('create.pleaseWait')}</span>
                 </div>
               </div>
             </div>
@@ -957,8 +957,8 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
                 <div className="success-icon-wrapper">
                   <Icon name="check-circle" size={64} />
                 </div>
-                <h2>Torrent Created Successfully!</h2>
-                <p>Your torrent file is ready to share</p>
+                <h2>{t('create.successTitle')}</h2>
+                <p>{t('create.successSubtitle')}</p>
               </div>
 
               <div className="success-info-grid">
@@ -967,7 +967,7 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
                     <Icon name="file" size={20} />
                   </div>
                   <div className="info-card-content">
-                    <span className="info-label">File Name</span>
+                    <span className="info-label">{t('create.fileName')}</span>
                     <span className="info-value truncate">{result.torrentFilePath.split(/[/\\]/).pop()}</span>
                   </div>
                 </div>
@@ -977,7 +977,7 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
                     <Icon name="hard-drive" size={20} />
                   </div>
                   <div className="info-card-content">
-                    <span className="info-label">Total Size</span>
+                    <span className="info-label">{t('create.totalSize')}</span>
                     <span className="info-value">{formatBytes(result.totalSize)}</span>
                   </div>
                 </div>
@@ -987,7 +987,7 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
                     <Icon name="grid" size={20} />
                   </div>
                   <div className="info-card-content">
-                    <span className="info-label">Pieces</span>
+                    <span className="info-label">{t('create.pieces')}</span>
                     <span className="info-value">{result.pieceCount} × {formatBytes(result.pieceLength)}</span>
                   </div>
                 </div>
@@ -997,9 +997,9 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
                     <Icon name={startSeeding ? 'upload' : 'pause'} size={20} />
                   </div>
                   <div className="info-card-content">
-                    <span className="info-label">Status</span>
+                    <span className="info-label">{t('table.status')}</span>
                     <span className="info-value status-value">
-                      {startSeeding ? 'Seeding' : 'Not seeding'}
+                      {startSeeding ? t('status.seeding') : t('create.notSeeding')}
                       {startSeeding && <span className="status-dot active"></span>}
                     </span>
                   </div>
@@ -1007,7 +1007,7 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
               </div>
 
               <div className="info-hash-section">
-                <label className="section-label">Info Hash</label>
+                <label className="section-label">{t('create.infoHash')}</label>
                 <div className="hash-box">
                   <code className="hash-value">{result.infoHash}</code>
                   <Button
@@ -1016,13 +1016,13 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
                     iconOnly
                     icon={<Icon name={copiedHash ? 'check' : 'copy'} size={16} />}
                     onClick={handleCopyHash}
-                    title="Copy hash"
+                    title={t('create.copyHash')}
                   />
                 </div>
               </div>
 
               <div className="magnet-section">
-                <label className="section-label">Magnet Link</label>
+                <label className="section-label">{t('create.magnetLink')}</label>
                 <div className="magnet-box">
                   <input
                     type="text"
@@ -1036,7 +1036,7 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
                     onClick={handleCopyMagnet}
                   >
                     <Icon name={copiedMagnet ? 'check' : 'copy'} size={16} />
-                    {copiedMagnet ? 'Copied!' : 'Copy Link'}
+                    {copiedMagnet ? t('create.copied') : t('create.copyLink')}
                   </Button>
                 </div>
                 
@@ -1047,14 +1047,14 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
                     onClick={() => setShowQRCode(!showQRCode)}
                   >
                     <Icon name="qr-code" size={14} />
-                    {showQRCode ? 'Hide QR Code' : 'Show QR Code'}
+                    {showQRCode ? t('create.hideQr') : t('create.showQr')}
                   </button>
                 </div>
                 
                 {showQRCode && (
                   <div className="qr-code-wrapper">
                     <QRCode data={result.magnetUri} size={200} />
-                    <p className="qr-hint">Scan to open magnet link on mobile device</p>
+                    <p className="qr-hint">{t('create.qrHint')}</p>
                   </div>
                 )}
               </div>
@@ -1062,11 +1062,11 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
               <div className="success-actions">
                 <Button variant="ghost" onClick={handleShowInFolder}>
                   <Icon name="folder" size={16} />
-                  Open Location
+                  {t('create.openLocation')}
                 </Button>
                 <Button variant="primary" onClick={handleCreateNew}>
                   <Icon name="plus" size={16} />
-                  Create Another
+                  {t('create.createAnother')}
                 </Button>
               </div>
             </div>
@@ -1097,15 +1097,15 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
               <div className="footer-preview">
                 <div className="preview-item">
                   <Icon name="check-circle" size={14} />
-                  <span className="preview-label">Source:</span>
-                  <span className="preview-value">{name || 'Selected'}</span>
+                  <span className="preview-label">{t('create.sourceColon')}</span>
+                  <span className="preview-value">{name || t('create.selected')}</span>
                 </div>
                 {pieceInfo && (
                   <>
                     <div className="preview-divider" />
                     <div className="preview-item">
                       <Icon name="grid" size={14} />
-                      <span className="preview-label">Pieces:</span>
+                      <span className="preview-label">{t('create.piecesColon')}</span>
                       <span className="preview-value">{pieceInfo.pieceCount.toLocaleString()}</span>
                     </div>
                     <div className="preview-divider" />
@@ -1119,14 +1119,14 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
                 <div className="preview-divider" />
                 <div className="preview-item">
                   <Icon name="server" size={14} />
-                  <span className="preview-label">Trackers:</span>
+                  <span className="preview-label">{t('create.trackersColon')}</span>
                   <span className="preview-value">{trackers.split('\n').filter(t => t.trim()).length}</span>
                 </div>
               </div>
             ) : (
               <span className="footer-hint">
                 <Icon name="info" size={14} />
-                Select a folder or files to create a torrent
+                {t('create.footerHint')}
               </span>
             )}
           </div>
@@ -1138,7 +1138,7 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
               disabled={sourcePaths.length === 0}
             >
               <Icon name="eye" size={18} />
-              Preview
+              {t('create.preview')}
             </Button>
             <Button
               variant="primary"
@@ -1148,7 +1148,7 @@ export const CreateTorrentPage: React.FC<CreateTorrentPageProps> = ({ onNavigate
               className="create-btn"
             >
               <Icon name="file-plus" size={18} />
-              Create Torrent
+              {t('create.createTorrent')}
             </Button>
           </div>
         </div>

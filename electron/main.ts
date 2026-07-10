@@ -12,6 +12,7 @@ import { store, seedDefaultsIfNeeded, getWindowBounds, saveWindowBounds } from '
 import { getRSSService } from './services/rss-service';
 import { getIPBlocklistService } from './services/ip-blocklist';
 import { getWatchFolderService } from './torrent/watch-folder';
+import { t, initMainI18n, setMainLanguage } from './i18n';
 
 
 // Load environment variables
@@ -20,6 +21,10 @@ dotenv.config();
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
+
+// Set inside createTray(); lets the language-change IPC re-localize the tray
+// menu + tooltip live, without exposing createTray's internals.
+let refreshTrayLanguage: (() => void) | null = null;
 
 // Torrent/magnet handed to us by the OS (file double-click or magnet: link).
 // On a cold start the renderer isn't listening yet, so we buffer the URI and
@@ -47,6 +52,13 @@ ipcMain.on('app:rendererReady', () => {
     pendingOpenUri = null;
     deliverOpenTorrent(uri);
   }
+});
+
+// Renderer mirrors its selected UI language here so the tray menu, native
+// dialogs, and OS notifications (which React can't reach) localize too.
+ipcMain.on('app:setLanguage', (_event, lang) => {
+  setMainLanguage(lang);
+  refreshTrayLanguage?.();
 });
 
 // === Single Instance Lock ===
@@ -131,11 +143,11 @@ function createTray(): void {
 
   // On Windows a 16x16 tray icon renders crispest; .ico is multi-resolution so resize picks the right frame
   tray = new Tray(trayIcon.isEmpty() ? trayIcon : trayIcon.resize({ width: 16, height: 16 }));
-  tray.setToolTip('Havvn — Running in background');
+  tray.setToolTip(t('tray.tooltip.running'));
 
   const buildContextMenu = () => Menu.buildFromTemplate([
     {
-      label: 'Open Havvn',
+      label: t('tray.open'),
       type: 'normal',
       click: () => {
         if (mainWindow) {
@@ -147,7 +159,7 @@ function createTray(): void {
     },
     { type: 'separator' },
     {
-      label: 'Pause All Downloads',
+      label: t('tray.pauseAll'),
       type: 'normal',
       click: () => {
         // Act on the manager directly — works even with the window hidden/closed
@@ -157,7 +169,7 @@ function createTray(): void {
       },
     },
     {
-      label: 'Resume All Downloads',
+      label: t('tray.resumeAll'),
       type: 'normal',
       click: () => {
         getTorrentManager().resumeAllPaused().catch((e) => {
@@ -166,7 +178,7 @@ function createTray(): void {
       },
     },
     {
-      label: 'Alternative speed limits',
+      label: t('tray.altSpeed'),
       type: 'checkbox',
       checked: getTorrentManager().isAltSpeedEnabled(),
       click: (item) => {
@@ -177,7 +189,7 @@ function createTray(): void {
     },
     { type: 'separator' },
     {
-      label: 'Quit Havvn',
+      label: t('tray.quit'),
       type: 'normal',
       click: () => {
         isQuitting = true;
@@ -192,6 +204,13 @@ function createTray(): void {
   tray.on('right-click', () => {
     tray?.setContextMenu(buildContextMenu());
   });
+
+  // Re-localize live when the renderer changes language.
+  refreshTrayLanguage = () => {
+    if (!tray || tray.isDestroyed()) return;
+    tray.setToolTip(mainWindow?.isVisible() ? t('tray.tooltip') : t('tray.tooltip.running'));
+    tray.setContextMenu(buildContextMenu());
+  };
 
   tray.on('double-click', () => {
     if (mainWindow) {
@@ -379,14 +398,14 @@ async function createWindow(): Promise<void> {
         event.preventDefault();
         mainWindow?.hide();
         // Update tray tooltip to indicate background mode
-        tray?.setToolTip('Havvn — Running in background');
+        tray?.setToolTip(t('tray.tooltip.running'));
         showTrayHintOnce();
       }
     }
   });
 
   mainWindow.on('show', () => {
-    tray?.setToolTip('Havvn');
+    tray?.setToolTip(t('tray.tooltip'));
   });
 
   mainWindow.on('closed', () => {
@@ -476,6 +495,10 @@ async function initializeApp(): Promise<void> {
 
   // Apply CSP before any window loads content
   applyContentSecurityPolicy();
+
+  // Load the persisted UI language so the tray/menu built below is already in
+  // the right language, before the renderer loads and re-announces it.
+  initMainI18n();
 
   // Create the tray and the window FIRST. Restoring torrents re-verifies
   // their on-disk data (sha1 over potentially many GB) and used to run before

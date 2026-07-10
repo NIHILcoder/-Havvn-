@@ -115,7 +115,7 @@ const SearchPage: React.FC = () => {
 
       setAddedIndices(prev => new Set(prev).add(idx));
     } catch (err) {
-      await alert({ title: 'Failed', message: `Failed to add: ${cleanError(err)}` });
+      await alert({ title: t('search.failedTitle'), message: `${t('search.failedToAdd')} ${cleanError(err)}` });
     } finally {
       setDownloading(prev => {
         const next = new Set(prev);
@@ -133,7 +133,7 @@ const SearchPage: React.FC = () => {
       setNewProvider({ name: '', url: '', apiKey: '', username: '', password: '', type: 'jackett', enabled: true });
       await loadProviders();
     } catch (err: any) {
-      await alert({ title: 'Failed', message: `Failed to add provider: ${err?.message}` });
+      await alert({ title: t('search.failedTitle'), message: `${t('search.failedToAddProvider')} ${err?.message}` });
     } finally {
       setSavingProvider(false);
     }
@@ -145,7 +145,7 @@ const SearchPage: React.FC = () => {
       await window.api.search.removeProvider(id);
       await loadProviders();
     } catch (err: any) {
-      await alert({ title: 'Failed', message: `Failed: ${err?.message}` });
+      await alert({ title: t('search.failedTitle'), message: `${t('search.failedPrefix')} ${err?.message}` });
     }
   };
 
@@ -154,7 +154,7 @@ const SearchPage: React.FC = () => {
       await window.api.search.updateProvider(id, { enabled });
       await loadProviders();
     } catch (err: any) {
-      await alert({ title: 'Failed', message: `Failed: ${err?.message}` });
+      await alert({ title: t('search.failedTitle'), message: `${t('search.failedPrefix')} ${err?.message}` });
     }
   };
 
@@ -181,7 +181,7 @@ const SearchPage: React.FC = () => {
       const result = await window.api.search.testProvider(id);
       setTestResult({ id, ...result });
     } catch (err: any) {
-      setTestResult({ id, success: false, message: err?.message || 'Test failed' });
+      setTestResult({ id, success: false, message: err?.message || t('search.testFailed') });
     } finally {
       setTestingId(null);
     }
@@ -402,7 +402,7 @@ const SearchPage: React.FC = () => {
                 >
                   <option value="jackett">Jackett</option>
                   <option value="torznab">Torznab (Prowlarr)</option>
-                  <option value="custom">Custom JSON</option>
+                  <option value="custom">{t('search.type.custom')}</option>
                   <option value="script">{t('search.type.script')}</option>
                 </select>
               </div>
@@ -503,7 +503,7 @@ const SearchPage: React.FC = () => {
               <ul>
                 <li><strong>Jackett:</strong> {t('search.guide.jackett')}</li>
                 <li><strong>Prowlarr:</strong> {t('search.guide.prowlarr')}</li>
-                <li><strong>Custom:</strong> {t('search.guide.custom')}</li>
+                <li><strong>{t('search.guide.customLabel')}:</strong> {t('search.guide.custom')}</li>
                 <li><strong>{t('search.type.script')}:</strong> {t('search.guide.script')}</li>
               </ul>
             </div>

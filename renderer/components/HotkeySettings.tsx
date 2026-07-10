@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Icon } from './Icon';
+import { useTranslation } from '../utils/i18nContext';
 import './HotkeySettings.css';
 
 interface Hotkey {
@@ -48,11 +49,33 @@ export const HotkeySettings: React.FC<HotkeySettingsProps> = ({
   onHotkeyChange,
   onResetHotkeys,
 }) => {
+  const { t } = useTranslation();
   const [editingHotkey, setEditingHotkey] = useState<string | null>(null);
   const [recordedKeys, setRecordedKeys] = useState<string[]>([]);
   const [isRecording, setIsRecording] = useState(false);
 
   const categories = Array.from(new Set(hotkeys.map((h) => h.category)));
+
+  const categoryLabels: Record<string, string> = {
+    Navigation: t('hotkeys.categoryNavigation'),
+    Torrents: t('hotkeys.categoryTorrents'),
+  };
+  const hotkeyLabels: Record<string, string> = {
+    'open-downloads': t('hotkeys.openDownloads'),
+    'open-settings': t('hotkeys.openSettings'),
+    'add-torrent': t('btn.addTorrent'),
+    'create-torrent': t('nav.create'),
+    'pause-all': t('hotkeys.pauseAll'),
+    'resume-all': t('hotkeys.resumeAll'),
+  };
+  const hotkeyDescriptions: Record<string, string> = {
+    'open-downloads': t('hotkeys.openDownloadsDesc'),
+    'open-settings': t('hotkeys.openSettingsDesc'),
+    'add-torrent': t('hotkeys.addTorrentDesc'),
+    'create-torrent': t('hotkeys.createTorrentDesc'),
+    'pause-all': t('hotkeys.pauseAllDesc'),
+    'resume-all': t('hotkeys.resumeAllDesc'),
+  };
 
   const handleStartRecording = (hotkeyId: string) => {
     setEditingHotkey(hotkeyId);
@@ -111,27 +134,27 @@ export const HotkeySettings: React.FC<HotkeySettingsProps> = ({
         <div className="hotkey-header-info">
           <Icon name="keyboard" size={20} />
           <div>
-            <h3>Keyboard Shortcuts</h3>
-            <p>Customize key combinations for quick access to features</p>
+            <h3>{t('hotkeys.title')}</h3>
+            <p>{t('hotkeys.subtitle')}</p>
           </div>
         </div>
         <button className="btn-reset-hotkeys" onClick={onResetHotkeys}>
           <Icon name="rotate-ccw" size={16} />
-          Reset All
+          {t('hotkeys.resetAll')}
         </button>
       </div>
 
       {categories.map((category) => (
         <div key={category} className="hotkey-category">
-          <div className="hotkey-category-title">{category}</div>
+          <div className="hotkey-category-title">{categoryLabels[category] ?? category}</div>
           <div className="hotkey-list">
             {hotkeys
               .filter((h) => h.category === category)
               .map((hotkey) => (
                 <div key={hotkey.id} className="hotkey-item">
                   <div className="hotkey-info">
-                    <div className="hotkey-label">{hotkey.label}</div>
-                    <div className="hotkey-description">{hotkey.description}</div>
+                    <div className="hotkey-label">{hotkeyLabels[hotkey.id] ?? hotkey.label}</div>
+                    <div className="hotkey-description">{hotkeyDescriptions[hotkey.id] ?? hotkey.description}</div>
                   </div>
                   <div className="hotkey-control">
                     {editingHotkey === hotkey.id ? (
@@ -145,7 +168,7 @@ export const HotkeySettings: React.FC<HotkeySettingsProps> = ({
                         <span className="hotkey-recorder-text">
                           {recordedKeys.length > 0
                             ? recordedKeys.map(k => codeToDisplayName(k)).join(' + ')
-                            : 'Press keys...'}
+                            : t('hotkeys.pressKeys')}
                         </span>
                         <button className="btn-cancel-recording" onClick={handleCancel}>
                           <Icon name="x" size={14} />
@@ -166,7 +189,7 @@ export const HotkeySettings: React.FC<HotkeySettingsProps> = ({
                             ))}
                           </span>
                         ) : (
-                          <span className="hotkey-empty">Not Assigned</span>
+                          <span className="hotkey-empty">{t('hotkeys.notAssigned')}</span>
                         )}
                         <Icon name="edit-2" size={14} />
                       </button>

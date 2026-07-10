@@ -8,6 +8,7 @@ import React from 'react';
 import { Icon } from './Icon';
 import { Modal } from './Modal';
 import { Button } from './Button';
+import { useTranslation } from '../utils/i18nContext';
 import './MetadataPreview.css';
 
 const formatBytes = (bytes: number): string => {
@@ -43,55 +44,57 @@ export const MetadataPreview: React.FC<MetadataPreviewProps> = ({
   onConfirm,
   metadata
 }) => {
+  const { t } = useTranslation();
+
   if (!isOpen) return null;
 
   return (
     <Modal
       onClose={onClose}
-      title="Torrent Metadata Preview"
+      title={t('metadata.previewTitle')}
       icon="eye"
       size="xl"
       footer={
         <>
           <Button variant="secondary" onClick={onClose} icon={<Icon name="arrow-left" size={16} />}>
-            Go Back
+            {t('metadata.goBack')}
           </Button>
           <button className="mp-create-btn" onClick={onConfirm}>
             <Icon name="check" size={16} />
-            Looks Good, Create Torrent
+            {t('metadata.looksGoodCreate')}
           </button>
         </>
       }
     >
       <p className="preview-description">
-        Review the final torrent metadata before creation
+        {t('metadata.reviewDescription')}
       </p>
 
       <div className="metadata-section">
         <h4 className="section-title">
           <Icon name="info" size={16} />
-          Basic Information
+          {t('metadata.basicInformation')}
         </h4>
         <div className="metadata-grid">
           <div className="metadata-item">
-            <span className="item-label">Name</span>
+            <span className="item-label">{t('table.name')}</span>
             <span className="item-value">{metadata.name}</span>
           </div>
           {metadata.comment && (
             <div className="metadata-item full-width">
-              <span className="item-label">Description</span>
+              <span className="item-label">{t('metadata.description')}</span>
               <span className="item-value description">{metadata.comment}</span>
             </div>
           )}
           <div className="metadata-item">
-            <span className="item-label">Created By</span>
+            <span className="item-label">{t('metadata.createdBy')}</span>
             <span className="item-value">{metadata.createdBy}</span>
           </div>
           <div className="metadata-item">
-            <span className="item-label">Privacy</span>
+            <span className="item-label">{t('settings.privacy')}</span>
             <span className={`item-value badge ${metadata.isPrivate ? 'private' : 'public'}`}>
               <Icon name={metadata.isPrivate ? 'lock' : 'globe'} size={12} />
-              {metadata.isPrivate ? 'Private' : 'Public'}
+              {metadata.isPrivate ? t('metadata.private') : t('metadata.public')}
             </span>
           </div>
         </div>
@@ -100,27 +103,27 @@ export const MetadataPreview: React.FC<MetadataPreviewProps> = ({
       <div className="metadata-section">
         <h4 className="section-title">
           <Icon name="hard-drive" size={16} />
-          Content Information
+          {t('metadata.contentInformation')}
         </h4>
         <div className="metadata-grid">
           <div className="metadata-item">
-            <span className="item-label">Total Size</span>
+            <span className="item-label">{t('metadata.totalSize')}</span>
             <span className="item-value mono">{formatBytes(metadata.totalSize)}</span>
           </div>
           <div className="metadata-item">
-            <span className="item-label">Files</span>
-            <span className="item-value">{metadata.fileCount} {metadata.fileCount === 1 ? 'file' : 'files'}</span>
+            <span className="item-label">{t('downloads.files')}</span>
+            <span className="item-value">{metadata.fileCount} {metadata.fileCount === 1 ? t('metadata.file') : t('filePicker.files')}</span>
           </div>
           <div className="metadata-item">
-            <span className="item-label">Piece Size</span>
+            <span className="item-label">{t('metadata.pieceSize')}</span>
             <span className="item-value mono">{formatBytes(metadata.pieceSize)}</span>
           </div>
           <div className="metadata-item">
-            <span className="item-label">Pieces</span>
+            <span className="item-label">{t('metadata.pieces')}</span>
             <span className="item-value">{metadata.pieceCount.toLocaleString()}</span>
           </div>
           <div className="metadata-item">
-            <span className="item-label">.torrent Size</span>
+            <span className="item-label">{t('metadata.torrentFileSize')}</span>
             <span className="item-value mono">~{formatBytes(metadata.estimatedTorrentSize)}</span>
           </div>
         </div>
@@ -129,7 +132,7 @@ export const MetadataPreview: React.FC<MetadataPreviewProps> = ({
       <div className="metadata-section">
         <h4 className="section-title">
           <Icon name="server" size={16} />
-          Trackers ({metadata.trackers.length})
+          {t('create.trackers')} ({metadata.trackers.length})
         </h4>
         {metadata.trackers.length > 0 ? (
           <div className="tracker-list">
@@ -141,14 +144,14 @@ export const MetadataPreview: React.FC<MetadataPreviewProps> = ({
             ))}
             {metadata.trackers.length > 5 && (
               <div className="tracker-more">
-                + {metadata.trackers.length - 5} more trackers
+                + {metadata.trackers.length - 5} {t('metadata.moreTrackers')}
               </div>
             )}
           </div>
         ) : (
           <div className="empty-notice">
             <Icon name="alert-circle" size={14} />
-            No trackers configured
+            {t('metadata.noTrackers')}
           </div>
         )}
       </div>
@@ -157,7 +160,7 @@ export const MetadataPreview: React.FC<MetadataPreviewProps> = ({
         <div className="metadata-section">
           <h4 className="section-title">
             <Icon name="external-link" size={16} />
-            Web Seeds ({metadata.webSeeds.length})
+            {t('metadata.webSeeds')} ({metadata.webSeeds.length})
           </h4>
           <div className="tracker-list">
             {metadata.webSeeds.map((seed, idx) => (
@@ -173,8 +176,7 @@ export const MetadataPreview: React.FC<MetadataPreviewProps> = ({
       <div className="info-notice">
         <Icon name="info" size={16} />
         <span>
-          This preview shows the final metadata that will be written to the .torrent file.
-          Make sure everything looks correct before proceeding.
+          {t('metadata.infoNotice')}
         </span>
       </div>
     </Modal>

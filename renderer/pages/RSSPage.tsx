@@ -84,7 +84,7 @@ const RSSPage: React.FC = () => {
       await loadFeeds();
       if (tab === 'items') await loadItems(selectedFeed || undefined);
     } catch (err: any) {
-      await alert({ title: 'Failed', message: `Failed to check feed: ${err?.message}` });
+      await alert({ title: t('rss.error.title'), message: `${t('rss.error.checkFeed')}: ${err?.message}` });
     } finally {
       setCheckingId(null);
     }
@@ -96,7 +96,7 @@ const RSSPage: React.FC = () => {
       await window.api.rss.checkAll();
       await loadFeeds();
     } catch (err: any) {
-      await alert({ title: 'Failed', message: `Failed: ${err?.message}` });
+      await alert({ title: t('rss.error.title'), message: `${t('rss.error.title')}: ${err?.message}` });
     } finally {
       setCheckingAll(false);
     }
@@ -107,7 +107,7 @@ const RSSPage: React.FC = () => {
       await window.api.rss.updateFeed(feed.id, { enabled: !feed.enabled });
       await loadFeeds();
     } catch (err: any) {
-      await alert({ title: 'Failed', message: `Failed: ${err?.message}` });
+      await alert({ title: t('rss.error.title'), message: `${t('rss.error.title')}: ${err?.message}` });
     }
   };
 
@@ -118,7 +118,7 @@ const RSSPage: React.FC = () => {
       await loadFeeds();
       if (selectedFeed === id) setSelectedFeed(null);
     } catch (err: any) {
-      await alert({ title: 'Failed', message: `Failed: ${err?.message}` });
+      await alert({ title: t('rss.error.title'), message: `${t('rss.error.title')}: ${err?.message}` });
     }
   };
 
@@ -143,7 +143,7 @@ const RSSPage: React.FC = () => {
       await loadFeeds();
       setTab('feeds');
     } catch (err: any) {
-      await alert({ title: 'Failed', message: `Failed: ${err?.message}` });
+      await alert({ title: t('rss.error.title'), message: `${t('rss.error.title')}: ${err?.message}` });
     } finally {
       setSavingFeed(false);
     }
@@ -162,7 +162,7 @@ const RSSPage: React.FC = () => {
       await window.api.rss.markDownloaded(item.guid);
       await loadItems(selectedFeed || undefined);
     } catch (err: any) {
-      await alert({ title: 'Failed', message: `Failed: ${err?.message}` });
+      await alert({ title: t('rss.error.title'), message: `${t('rss.error.title')}: ${err?.message}` });
     } finally {
       setDownloadingGuids(prev => {
         const next = new Set(prev);
@@ -182,7 +182,7 @@ const RSSPage: React.FC = () => {
       await window.api.rss.clearItems(selectedFeed || undefined, false);
       await loadItems(selectedFeed || undefined);
     } catch (err: any) {
-      await alert({ title: 'Failed', message: `Failed: ${err?.message}` });
+      await alert({ title: t('rss.error.title'), message: `${t('rss.error.title')}: ${err?.message}` });
     } finally {
       setClearing(false);
     }

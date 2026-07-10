@@ -7,6 +7,7 @@
 import React, { useState } from 'react';
 import { Icon } from './Icon';
 import { Modal } from './Modal';
+import { useTranslation } from '../utils/i18nContext';
 import './TrackerTemplates.css';
 
 export interface TrackerTemplate {
@@ -20,8 +21,8 @@ export interface TrackerTemplate {
 const DEFAULT_TEMPLATES: TrackerTemplate[] = [
   {
     id: 'public',
-    name: 'Public Trackers',
-    description: 'Popular public torrent trackers',
+    name: 'trackerTemplates.public.name',
+    description: 'trackerTemplates.public.desc',
     icon: 'globe',
     trackers: [
       'udp://tracker.opentrackr.org:1337/announce',
@@ -38,8 +39,8 @@ const DEFAULT_TEMPLATES: TrackerTemplate[] = [
   },
   {
     id: 'anime',
-    name: 'Anime Trackers',
-    description: 'Specialized trackers for anime content',
+    name: 'trackerTemplates.anime.name',
+    description: 'trackerTemplates.anime.desc',
     icon: 'tv',
     trackers: [
       'http://nyaa.tracker.wf:7777/announce',
@@ -51,8 +52,8 @@ const DEFAULT_TEMPLATES: TrackerTemplate[] = [
   },
   {
     id: 'games',
-    name: 'Game Trackers',
-    description: 'Trackers for game distributions',
+    name: 'trackerTemplates.games.name',
+    description: 'trackerTemplates.games.desc',
     icon: 'gamepad-2',
     trackers: [
       'udp://tracker.opentrackr.org:1337/announce',
@@ -65,8 +66,8 @@ const DEFAULT_TEMPLATES: TrackerTemplate[] = [
   },
   {
     id: 'software',
-    name: 'Software Trackers',
-    description: 'Trackers for software and tools',
+    name: 'trackerTemplates.software.name',
+    description: 'trackerTemplates.software.desc',
     icon: 'package',
     trackers: [
       'udp://tracker.opentrackr.org:1337/announce',
@@ -78,8 +79,8 @@ const DEFAULT_TEMPLATES: TrackerTemplate[] = [
   },
   {
     id: 'music',
-    name: 'Music Trackers',
-    description: 'Trackers for music sharing',
+    name: 'trackerTemplates.music.name',
+    description: 'trackerTemplates.music.desc',
     icon: 'music',
     trackers: [
       'udp://tracker.opentrackr.org:1337/announce',
@@ -92,8 +93,8 @@ const DEFAULT_TEMPLATES: TrackerTemplate[] = [
   },
   {
     id: 'private',
-    name: 'Private Only',
-    description: 'Empty list for private trackers',
+    name: 'trackerTemplates.private.name',
+    description: 'trackerTemplates.private.desc',
     icon: 'lock',
     trackers: []
   }
@@ -112,6 +113,7 @@ export const TrackerTemplates: React.FC<TrackerTemplatesProps> = ({
   onSelect,
   customTemplates = []
 }) => {
+  const { t } = useTranslation();
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const allTemplates = [...DEFAULT_TEMPLATES, ...customTemplates];
 
@@ -127,9 +129,9 @@ export const TrackerTemplates: React.FC<TrackerTemplatesProps> = ({
   };
 
   return (
-    <Modal onClose={onClose} title="Tracker Templates" icon="server" size="xl">
+    <Modal onClose={onClose} title={t('trackerTemplates.title')} icon="server" size="xl">
       <p className="templates-description">
-        Choose a preset tracker list for your torrent type
+        {t('trackerTemplates.subtitle')}
       </p>
 
       <div className="templates-grid">
@@ -143,10 +145,10 @@ export const TrackerTemplates: React.FC<TrackerTemplatesProps> = ({
               <Icon name={template.icon as any} size={32} />
             </div>
             <div className="template-info">
-              <h4 className="template-name">{template.name}</h4>
-              <p className="template-description">{template.description}</p>
+              <h4 className="template-name">{t(template.name as Parameters<typeof t>[0])}</h4>
+              <p className="template-description">{t(template.description as Parameters<typeof t>[0])}</p>
               <span className="template-count">
-                {template.trackers.length} {template.trackers.length === 1 ? 'tracker' : 'trackers'}
+                {template.trackers.length} {template.trackers.length === 1 ? t('trackerTemplates.trackerSingular') : t('trackerTemplates.trackerPlural')}
               </span>
             </div>
             {selectedTemplate === template.id && (

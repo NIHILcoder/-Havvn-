@@ -8,6 +8,7 @@ import React, { useState, useCallback } from 'react';
 import { Icon } from './Icon';
 import { Button, ProgressBar } from '.';
 import { Modal } from './Modal';
+import { useTranslation } from '../utils/i18nContext';
 import './BatchCreate.css';
 
 interface BatchItem {
@@ -51,6 +52,7 @@ export const BatchCreate: React.FC<BatchCreateProps> = ({
   startSeeding,
   createdBy
 }) => {
+  const { t } = useTranslation();
   const [items, setItems] = useState<BatchItem[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -116,7 +118,7 @@ export const BatchCreate: React.FC<BatchCreateProps> = ({
         // Create output path
         const outputDir = await window.api.selectSaveTorrentPath(`${item.name}`);
         if (!outputDir) {
-          throw new Error('Output path not selected');
+          throw new Error(t('batchCreate.noOutputPath'));
         }
 
         // Listen to progress
@@ -156,7 +158,7 @@ export const BatchCreate: React.FC<BatchCreateProps> = ({
             : it
         ));
       } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : 'Failed to create torrent';
+        const errorMessage = err instanceof Error ? err.message : t('batchCreate.createFailed');
         setItems(prev => prev.map(it => 
           it.id === item.id 
             ? { ...it, status: 'failed' as const, error: errorMessage } 
@@ -177,14 +179,14 @@ export const BatchCreate: React.FC<BatchCreateProps> = ({
   return (
     <Modal
       onClose={onClose}
-      title="Batch Create Torrents"
+      title={t('batchCreate.title')}
       icon="layers"
       size="lg"
       busy={isProcessing}
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={isProcessing}>
-            {isProcessing ? 'Processing...' : 'Cancel'}
+            {isProcessing ? t('batchCreate.processing') : t('common.cancel')}
           </Button>
           <Button
             variant="primary"
@@ -192,7 +194,7 @@ export const BatchCreate: React.FC<BatchCreateProps> = ({
             disabled={items.length === 0 || isProcessing}
           >
             <Icon name={isProcessing ? 'loader' : 'zap'} size={16} className={isProcessing ? 'spinning' : ''} />
-            {isProcessing ? `Creating ${currentIndex + 1}/${items.length}...` : `Create ${items.length} Torrents`}
+            {isProcessing ? `${t('batchCreate.creating')} ${currentIndex + 1}/${items.length}...` : `${t('batchCreate.create')} ${items.length} ${t('batchCreate.torrents')}`}
           </Button>
         </>
       }
@@ -201,21 +203,21 @@ export const BatchCreate: React.FC<BatchCreateProps> = ({
             <div className="stat-card">
               <Icon name="folder" size={16} />
               <div className="stat-info">
-                <span className="stat-label">Folders</span>
+                <span className="stat-label">{t('batchCreate.folders')}</span>
                 <span className="stat-value">{items.length}</span>
               </div>
             </div>
             <div className="stat-card">
               <Icon name="hard-drive" size={16} />
               <div className="stat-info">
-                <span className="stat-label">Total Size</span>
+                <span className="stat-label">{t('batchCreate.totalSize')}</span>
                 <span className="stat-value">{formatBytes(totalSize)}</span>
               </div>
             </div>
             <div className="stat-card success">
               <Icon name="check-circle" size={16} />
               <div className="stat-info">
-                <span className="stat-label">Completed</span>
+                <span className="stat-label">{t('status.completed')}</span>
                 <span className="stat-value">{completedCount}</span>
               </div>
             </div>
@@ -223,7 +225,7 @@ export const BatchCreate: React.FC<BatchCreateProps> = ({
               <div className="stat-card error">
                 <Icon name="x-circle" size={16} />
                 <div className="stat-info">
-                  <span className="stat-label">Failed</span>
+                  <span className="stat-label">{t('batchCreate.failed')}</span>
                   <span className="stat-value">{failedCount}</span>
                 </div>
               </div>
@@ -238,7 +240,7 @@ export const BatchCreate: React.FC<BatchCreateProps> = ({
               disabled={isProcessing}
             >
               <Icon name="folder-plus" size={14} />
-              Add Folders
+              {t('batchCreate.addFolders')}
             </Button>
             {items.length > 0 && (
               <Button
@@ -248,7 +250,7 @@ export const BatchCreate: React.FC<BatchCreateProps> = ({
                 disabled={isProcessing}
               >
                 <Icon name="trash" size={14} />
-                Clear All
+                {t('downloads.clearAll')}
               </Button>
             )}
           </div>
@@ -256,8 +258,8 @@ export const BatchCreate: React.FC<BatchCreateProps> = ({
           {items.length === 0 ? (
             <div className="batch-empty">
               <Icon name="folder-open" size={48} />
-              <h4>No folders added</h4>
-              <p>Click "Add Folders" to select multiple folders to create torrents from</p>
+              <h4>{t('batchCreate.emptyTitle')}</h4>
+              <p>{t('batchCreate.emptyHint')}</p>
             </div>
           ) : (
             <div className="batch-list">
@@ -296,7 +298,7 @@ export const BatchCreate: React.FC<BatchCreateProps> = ({
                     {item.status === 'completed' && item.result && (
                       <div className="item-success">
                         <Icon name="check" size={12} />
-                        Created successfully
+                        {t('batchCreate.createdSuccess')}
                       </div>
                     )}
                   </div>
@@ -305,7 +307,7 @@ export const BatchCreate: React.FC<BatchCreateProps> = ({
                     <button
                       className="item-remove"
                       onClick={() => handleRemoveItem(item.id)}
-                      title="Remove"
+                      title={t('downloads.remove')}
                     >
                       <Icon name="x" size={16} />
                     </button>

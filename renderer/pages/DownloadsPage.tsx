@@ -190,7 +190,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
           setSelectedFile(file);
         }
       } else {
-        addToast('Please drop a .torrent file', 'error');
+        addToast(t('downloads.dropTorrentOnly'), 'error');
       }
     }
   };
@@ -294,7 +294,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
             .then(() => {
               setDownloads((prev) => prev.filter((d) => !selectedIds.has(d.id)));
               setSelectedIds(new Set());
-              addToast(`Removed ${selectedIds.size} download(s)`, 'success');
+              addToast(`${t('downloads.removedPrefix')} ${selectedIds.size} ${t('downloads.downloadsWord')}`, 'success');
             })
             .catch((error) => {
               console.error('Failed to remove some downloads:', error);
@@ -359,7 +359,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
         if (text && text.startsWith('magnet:?') && text !== lastDetectedMagnet) {
           lastDetectedMagnet = text;
           addToast(
-            `Magnet link detected in clipboard`,
+            t('downloads.magnetDetected'),
             'info',
             10000
           );
@@ -416,7 +416,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
-    addToast(`Exported ${data.length} downloads as ${format.toUpperCase()}`, 'success');
+    addToast(`${t('downloads.exportedPrefix')} ${data.length} ${t('downloads.downloadsAs')} ${format.toUpperCase()}`, 'success');
     setShowExportMenu(false);
   }, [downloads, addToast]);
 
@@ -437,7 +437,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
     } catch (error) {
       console.error('Failed to load downloads:', error);
       addToast(
-        `Failed to load downloads: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        `${t('downloads.failLoad')}: ${error instanceof Error ? error.message : t('downloads.unknownError')}`,
         'error'
       );
     } finally {
@@ -473,7 +473,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
       setShowFileSelector(true);
     } catch (error) {
       addToast(
-        `Failed to add: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        `${t('downloads.failAdd')}: ${error instanceof Error ? error.message : t('downloads.unknownError')}`,
         'error'
       );
     } finally {
@@ -486,20 +486,20 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
   const handlePauseAll = async () => {
     try {
       const { paused } = await window.api.pauseAll();
-      addToast(paused > 0 ? `Paused ${paused} torrent(s)` : 'Nothing to pause', paused > 0 ? 'success' : 'info');
+      addToast(paused > 0 ? `${t('downloads.pausedPrefix')} ${paused} ${t('downloads.torrentsWord')}` : t('downloads.nothingToPause'), paused > 0 ? 'success' : 'info');
       loadDownloads();
     } catch (error) {
-      addToast(`Failed to pause all: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+      addToast(`${t('downloads.failPauseAll')}: ${error instanceof Error ? error.message : t('downloads.unknownError')}`, 'error');
     }
   };
 
   const handleResumeAll = async () => {
     try {
       const { resumed } = await window.api.resumeAll();
-      addToast(resumed > 0 ? `Resumed ${resumed} torrent(s)` : 'Nothing to resume', resumed > 0 ? 'success' : 'info');
+      addToast(resumed > 0 ? `${t('downloads.resumedPrefix')} ${resumed} ${t('downloads.torrentsWord')}` : t('downloads.nothingToResume'), resumed > 0 ? 'success' : 'info');
       loadDownloads();
     } catch (error) {
-      addToast(`Failed to resume all: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+      addToast(`${t('downloads.failResumeAll')}: ${error instanceof Error ? error.message : t('downloads.unknownError')}`, 'error');
     }
   };
 
@@ -507,9 +507,9 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
     try {
       const { altSpeedEnabled } = await window.api.setAltSpeed(!altSpeed);
       setAltSpeed(altSpeedEnabled);
-      addToast(altSpeedEnabled ? 'Alternative speed limits ON' : 'Alternative speed limits OFF', 'info');
+      addToast(altSpeedEnabled ? t('downloads.altSpeedOn') : t('downloads.altSpeedOff'), 'info');
     } catch (error) {
-      addToast(`Failed to toggle speed mode: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+      addToast(`${t('downloads.failToggleSpeed')}: ${error instanceof Error ? error.message : t('downloads.unknownError')}`, 'error');
     }
   };
 
@@ -539,11 +539,11 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
       setDownloads((prev) => [download, ...prev.filter((d) => d.id !== download.id)]);
 
       addToast(
-        `Download added with ${selectedIndices.length} file${selectedIndices.length > 1 ? 's' : ''}`,
+        `${t('downloads.downloadAddedWith')} ${selectedIndices.length} ${selectedIndices.length > 1 ? t('downloads.filesWord') : t('downloads.fileWord')}`,
         'success'
       );
     } catch (error) {
-      addToast(`Failed to add torrent: ${cleanError(error)}`, 'error');
+      addToast(`${t('downloads.failAddTorrent')}: ${cleanError(error)}`, 'error');
     } finally {
       setIsAddingTorrent(false);
     }
@@ -565,7 +565,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
       await loadDownloads();
     } catch (error) {
       addToast(
-        `Failed to pause: ${error instanceof Error ? error.message : String(error)}`,
+        `${t('downloads.failPause')}: ${error instanceof Error ? error.message : String(error)}`,
         'error'
       );
     }
@@ -577,7 +577,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
       await loadDownloads(); // Reload immediately
     } catch (error) {
       addToast(
-        `Failed to resume: ${error instanceof Error ? error.message : String(error)}`,
+        `${t('downloads.failResume')}: ${error instanceof Error ? error.message : String(error)}`,
         'error'
       );
     }
@@ -588,12 +588,12 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
       await window.api.removeDownload(id, deleteFiles);
       setDownloads((prev) => prev.filter((d) => d.id !== id));
       addToast(
-        deleteFiles ? 'Download and files removed' : 'Download removed (files kept)',
+        deleteFiles ? t('downloads.removedWithFiles') : t('downloads.removedKeepFiles'),
         'success'
       );
     } catch (error) {
       addToast(
-        `Failed to remove: ${error instanceof Error ? error.message : String(error)}`,
+        `${t('downloads.failRemove')}: ${error instanceof Error ? error.message : String(error)}`,
         'error'
       );
     }
@@ -605,7 +605,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
       await loadDownloads(); // Reflect the new 'completed' status immediately
     } catch (error) {
       addToast(
-        `Failed to stop seeding: ${error instanceof Error ? error.message : String(error)}`,
+        `${t('downloads.failStopSeeding')}: ${error instanceof Error ? error.message : String(error)}`,
         'error'
       );
     }
@@ -614,11 +614,11 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
   const handleRetry = useCallback(async (id: string) => {
     try {
       await window.api.retryDownload(id);
-      addToast('Retrying download...', 'success');
+      addToast(t('downloads.retrying'), 'success');
       await loadDownloads(); // Reflect the re-queued status immediately
     } catch (error) {
       addToast(
-        `Failed to retry: ${error instanceof Error ? error.message : String(error)}`,
+        `${t('downloads.failRetry')}: ${error instanceof Error ? error.message : String(error)}`,
         'error'
       );
     }
@@ -627,11 +627,11 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
   const handleRecheck = useCallback(async (id: string) => {
     try {
       await window.api.recheckDownload(id);
-      addToast('Rechecking data on disk…', 'success');
+      addToast(t('downloads.rechecking'), 'success');
       loadDownloads();
     } catch (error) {
       addToast(
-        `Failed to recheck: ${error instanceof Error ? error.message : String(error)}`,
+        `${t('downloads.failRecheck')}: ${error instanceof Error ? error.message : String(error)}`,
         'error'
       );
     }
@@ -642,7 +642,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
       await window.api.openPath(path);
     } catch (error) {
       console.error('Failed to open folder:', error);
-      addToast('Failed to open folder', 'error');
+      addToast(t('downloads.failOpenFolder'), 'error');
     }
   }, [addToast]);
 
@@ -757,7 +757,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
     return (
       <div className="page-loading">
         <span className="spinner spinner-lg" />
-        <p>Loading downloads...</p>
+        <p>{t('downloads.loadingDownloads')}</p>
       </div>
     );
   }

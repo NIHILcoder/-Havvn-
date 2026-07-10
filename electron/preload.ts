@@ -379,6 +379,12 @@ const api: IpcApi = {
     ipcRenderer.send('app:rendererReady');
   },
 
+  // Mirror the renderer's UI language to main so the tray, native dialogs, and
+  // OS notifications localize too (renderer owns the setting via localStorage).
+  setLanguage: (lang: string): void => {
+    ipcRenderer.send('app:setLanguage', lang);
+  },
+
   // Resolve the absolute filesystem path of a dropped/selected File.
   // Electron >=30 exposes webUtils.getPathForFile; older versions still carry the
   // legacy File.path. Use whichever exists so drag & drop works across versions.

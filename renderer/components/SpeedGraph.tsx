@@ -5,6 +5,7 @@
  */
 
 import React, { useEffect, useRef, useState } from 'react';
+import { useTranslation } from '../utils/i18nContext';
 import './SpeedGraph.css';
 
 interface SpeedDataPoint {
@@ -36,6 +37,7 @@ export const SpeedGraph: React.FC<SpeedGraphProps> = ({
     updateInterval = 1000,
     height = 120,
 }) => {
+    const { t } = useTranslation();
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [history, setHistory] = useState<SpeedDataPoint[]>([]);
     const speedRef = useRef({ download: downloadSpeed, upload: uploadSpeed });
@@ -175,7 +177,7 @@ export const SpeedGraph: React.FC<SpeedGraphProps> = ({
             ctx.fillStyle = labelColor;
             ctx.font = '12px system-ui';
             ctx.textAlign = 'center';
-            ctx.fillText('Collecting data...', width / 2, graphHeight / 2);
+            ctx.fillText(t('speedGraph.collectingData'), width / 2, graphHeight / 2);
             return;
         }
 
@@ -185,7 +187,7 @@ export const SpeedGraph: React.FC<SpeedGraphProps> = ({
             ctx.fillStyle = labelColor;
             ctx.font = '12px system-ui';
             ctx.textAlign = 'center';
-            ctx.fillText('No activity', width / 2, graphHeight / 2);
+            ctx.fillText(t('speedGraph.noActivity'), width / 2, graphHeight / 2);
         }
 
         const drawLine = (data: number[], color: string, fillOpacity: number = 0.15) => {
@@ -300,10 +302,10 @@ export const SpeedGraph: React.FC<SpeedGraphProps> = ({
                 </div>
                 <div className="speed-graph-legend-inline">
                     <span className="legend-item download">
-                        <span className="legend-dot" /> Download
+                        <span className="legend-dot" /> {t('speedGraph.download')}
                     </span>
                     <span className="legend-item upload">
-                        <span className="legend-dot" /> Upload
+                        <span className="legend-dot" /> {t('speedGraph.upload')}
                     </span>
                 </div>
             </div>
@@ -326,11 +328,11 @@ export const SpeedGraph: React.FC<SpeedGraphProps> = ({
                         }}
                     >
                         <div className="tooltip-row download">
-                            <span className="tooltip-label">↓ Download:</span>
+                            <span className="tooltip-label">↓ {t('speedGraph.download')}:</span>
                             <span className="tooltip-value">{formatSpeed(hoveredPoint.data.download)}</span>
                         </div>
                         <div className="tooltip-row upload">
-                            <span className="tooltip-label">↑ Upload:</span>
+                            <span className="tooltip-label">↑ {t('speedGraph.upload')}:</span>
                             <span className="tooltip-value">{formatSpeed(hoveredPoint.data.upload)}</span>
                         </div>
                     </div>

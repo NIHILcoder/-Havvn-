@@ -18,6 +18,7 @@ import { getSearchService } from '../services/search-service';
 import { getPythonStatus } from '../services/python-detector';
 import { getIPBlocklistService } from '../services/ip-blocklist';
 import { getWatchFolderService } from '../torrent/watch-folder';
+import { t } from '../i18n';
 
 const log = logger.child('IPC');
 
@@ -374,7 +375,7 @@ export function setupIpcHandlers(window: BrowserWindow): void {
   ipcMain.handle('rooms:pickAndAddFiles', wrapHandler('rooms:pickAndAddFiles',
     async (_event, roomId: string) => {
       const result = await dialog.showOpenDialog(mainWindow, {
-        title: 'Add files to room',
+        title: t('dialog.addFilesToRoom'),
         properties: ['openFile', 'multiSelections'],
       });
       if (result.canceled || !result.filePaths.length) return null;
@@ -625,7 +626,7 @@ export function setupIpcHandlers(window: BrowserWindow): void {
     async () => {
       const result = await dialog.showOpenDialog(mainWindow, {
         properties: ['openFile'],
-        filters: [{ name: 'Torrent Files', extensions: ['torrent'] }],
+        filters: [{ name: t('dialog.filter.torrent'), extensions: ['torrent'] }],
       });
 
       if (result.canceled || result.filePaths.length === 0) {
@@ -713,8 +714,8 @@ export function setupIpcHandlers(window: BrowserWindow): void {
     if (Notification.isSupported()) {
       const iconPath = getAppIconPath();
       const notification = new Notification({
-        title: 'Download Complete',
-        body: `${name} has finished downloading`,
+        title: t('notify.downloadComplete.title'),
+        body: t('notify.downloadComplete.body', { name }),
         ...(iconPath ? { icon: iconPath } : {}),
       });
       notification.show();
@@ -808,7 +809,7 @@ export function setupIpcHandlers(window: BrowserWindow): void {
     async () => {
       const result = await dialog.showOpenDialog(mainWindow, {
         properties: ['openFile', 'multiSelections'],
-        title: 'Select Files for Torrent',
+        title: t('dialog.selectFilesForTorrent'),
       });
 
       if (result.canceled || result.filePaths.length === 0) {
@@ -824,7 +825,7 @@ export function setupIpcHandlers(window: BrowserWindow): void {
     async () => {
       const result = await dialog.showOpenDialog(mainWindow, {
         properties: ['openDirectory'],
-        title: 'Select Folder for Torrent',
+        title: t('dialog.selectFolderForTorrent'),
       });
 
       if (result.canceled || result.filePaths.length === 0) {
@@ -839,9 +840,9 @@ export function setupIpcHandlers(window: BrowserWindow): void {
   ipcMain.handle('dialog:selectSaveTorrentPath', wrapHandler('dialog:selectSaveTorrentPath',
     async (_event, defaultName: string) => {
       const result = await dialog.showSaveDialog(mainWindow, {
-        title: 'Save Torrent File',
+        title: t('dialog.saveTorrentFile'),
         defaultPath: defaultName.endsWith('.torrent') ? defaultName : `${defaultName}.torrent`,
-        filters: [{ name: 'Torrent Files', extensions: ['torrent'] }],
+        filters: [{ name: t('dialog.filter.torrent'), extensions: ['torrent'] }],
       });
 
       if (result.canceled || !result.filePath) {
@@ -1167,9 +1168,9 @@ export function setupIpcHandlers(window: BrowserWindow): void {
   ipcMain.handle('settings:export', wrapHandler('settings:export',
     async () => {
       const result = await dialog.showSaveDialog(mainWindow, {
-        title: 'Export Settings',
+        title: t('dialog.exportSettings'),
         defaultPath: 'havvn-settings.json',
-        filters: [{ name: 'JSON Files', extensions: ['json'] }],
+        filters: [{ name: t('dialog.filter.json'), extensions: ['json'] }],
       });
 
       if (result.canceled || !result.filePath) {
@@ -1204,9 +1205,9 @@ export function setupIpcHandlers(window: BrowserWindow): void {
   ipcMain.handle('settings:import', wrapHandler('settings:import',
     async () => {
       const result = await dialog.showOpenDialog(mainWindow, {
-        title: 'Import Settings',
+        title: t('dialog.importSettings'),
         properties: ['openFile'],
-        filters: [{ name: 'JSON Files', extensions: ['json'] }],
+        filters: [{ name: t('dialog.filter.json'), extensions: ['json'] }],
       });
 
       if (result.canceled || result.filePaths.length === 0) {

@@ -3,6 +3,7 @@ import { TorrentFile } from '../../shared/types';
 import { Icon, IconName } from './Icon';
 import { Modal } from './Modal';
 import { Button } from './Button';
+import { useTranslation } from '../utils/i18nContext';
 import './FilePreview.css';
 
 interface FilePreviewProps {
@@ -11,6 +12,7 @@ interface FilePreviewProps {
 }
 
 export const FilePreview: React.FC<FilePreviewProps> = ({ downloadId, onClose }) => {
+  const { t } = useTranslation();
   const [files, setFiles] = useState<TorrentFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -21,7 +23,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({ downloadId, onClose })
         const fileList = await window.api.getTorrentFiles(downloadId);
         setFiles(fileList);
       } catch (err) {
-        setError('Failed to load files');
+        setError(t('filePreview.loadFailed'));
         console.error(err);
       } finally {
         setLoading(false);
@@ -76,10 +78,10 @@ export const FilePreview: React.FC<FilePreviewProps> = ({ downloadId, onClose })
 
   if (loading) {
     return (
-      <Modal onClose={onClose} size="xl" ariaLabel="Loading files">
+      <Modal onClose={onClose} size="xl" ariaLabel={t('filePreview.loadingAria')}>
         <div className="file-preview-loading">
           <div className="fp-spinner"></div>
-          <p>Loading files...</p>
+          <p>{t('filePreview.loading')}</p>
         </div>
       </Modal>
     );
@@ -91,7 +93,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({ downloadId, onClose })
         onClose={onClose}
         size="xl"
         ariaLabel={error}
-        footer={<Button variant="secondary" onClick={onClose}>Close</Button>}
+        footer={<Button variant="secondary" onClick={onClose}>{t('common.close')}</Button>}
       >
         <div className="file-preview-error">
           <div className="fp-state-icon fp-state-icon--error">
@@ -105,12 +107,12 @@ export const FilePreview: React.FC<FilePreviewProps> = ({ downloadId, onClose })
 
   if (files.length === 0) {
     return (
-      <Modal onClose={onClose} size="xl" ariaLabel="Files">
+      <Modal onClose={onClose} size="xl" ariaLabel={t('downloads.files')}>
         <div className="file-preview-empty">
           <div className="fp-state-icon">
             <Icon name="inbox" size={32} />
           </div>
-          <p>No files information available</p>
+          <p>{t('filePreview.noInfo')}</p>
         </div>
       </Modal>
     );
@@ -123,7 +125,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({ downloadId, onClose })
 
   const headerTitle = (
     <span className="fp-header-text">
-      <span className="fp-title">Files ({files.length})</span>
+      <span className="fp-title">{t('downloads.files')} ({files.length})</span>
       <span className="fp-subtitle">
         <span className="fp-chip">
           <Icon name="hard-drive" size={12} />
@@ -132,18 +134,18 @@ export const FilePreview: React.FC<FilePreviewProps> = ({ downloadId, onClose })
         <span className="fp-chip-sep">·</span>
         <span className="fp-chip">
           <Icon name="download" size={12} />
-          {formatBytes(downloadedSize)} downloaded
+          {formatBytes(downloadedSize)} {t('filePreview.downloaded')}
         </span>
         <span className="fp-chip-sep">·</span>
         <span className="fp-chip fp-chip--progress">
-          {(totalProgress * 100).toFixed(1)}% complete
+          {(totalProgress * 100).toFixed(1)}% {t('filePreview.complete')}
         </span>
         {completedCount > 0 && (
           <>
             <span className="fp-chip-sep">·</span>
             <span className="fp-chip fp-chip--done">
               <Icon name="check-circle" size={12} />
-              {completedCount} done
+              {completedCount} {t('filePreview.done')}
             </span>
           </>
         )}
@@ -157,7 +159,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({ downloadId, onClose })
       size="xl"
       icon="layers"
       title={headerTitle}
-      ariaLabel={`Files (${files.length})`}
+      ariaLabel={`${t('downloads.files')} (${files.length})`}
       bodyClassName="fp-body"
     >
       {/* ── Overall progress bar (sticky) ── */}
@@ -215,7 +217,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({ downloadId, onClose })
                   {isDone ? (
                     <span className="fp-item-status fp-item-status--done">
                       <Icon name="check-circle" size={12} />
-                      Completed
+                      {t('status.completed')}
                     </span>
                   ) : (
                     <span className="fp-item-status">

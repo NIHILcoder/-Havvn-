@@ -355,7 +355,7 @@ const AppContent: React.FC = () => {
                 {vpnAlert.publicIP ? ` ${t('app.banner.currentIp')} ${vpnAlert.publicIP}.` : ''}
                 {' '}{t('app.banner.vpnReconnect')}
               </div>
-              <button className="vpn-alert-close" onClick={() => setVpnAlert(null)} aria-label="Dismiss">×</button>
+              <button className="vpn-alert-close" onClick={() => setVpnAlert(null)} aria-label={t('app.banner.dismiss')}>×</button>
             </div>
           )}
           {diskAlert && (
@@ -369,7 +369,7 @@ const AppContent: React.FC = () => {
                   : ''}
                 {' '}{t('app.banner.diskResume')}
               </div>
-              <button className="vpn-alert-close" onClick={() => setDiskAlert(null)} aria-label="Dismiss">×</button>
+              <button className="vpn-alert-close" onClick={() => setDiskAlert(null)} aria-label={t('app.banner.dismiss')}>×</button>
             </div>
           )}
           <Suspense fallback={<div className="page-loading" />}>

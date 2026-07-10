@@ -15,6 +15,7 @@ import { logger } from './logger';
 import { getAppIconPath } from './index';
 import * as db from '../db/store';
 import { getTorrentManager } from '../torrent';
+import { t } from '../i18n';
 
 const log = logger.child('VPNGuard');
 
@@ -102,10 +103,10 @@ function notifyDropped(count: number): void {
     if (!Notification.isSupported()) return;
     const iconPath = getAppIconPath();
     const n = new Notification({
-      title: 'VPN connection lost — torrents paused',
+      title: t('notify.vpnLost.title'),
       body: count > 0
-        ? `Paused ${count} torrent${count === 1 ? '' : 's'} to protect your IP. Reconnect your VPN, then resume manually.`
-        : 'Your VPN appears to be down. Reconnect it before resuming torrents.',
+        ? t(count === 1 ? 'notify.vpnLost.bodyOne' : 'notify.vpnLost.bodyMany', { count })
+        : t('notify.vpnLost.bodyNone'),
       ...(iconPath ? { icon: iconPath } : {}),
       urgency: 'critical',
     });

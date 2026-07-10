@@ -47,6 +47,16 @@ export const I18nProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => { alive = false; };
   }, [language]);
 
+  // Mirror the language to the main process so the tray menu, native dialogs,
+  // and OS notifications (which React can't reach) localize too. Fires on mount
+  // for the persisted language, and again on every switch. Guarded for contexts
+  // without the preload bridge (e.g. tests).
+  useEffect(() => {
+    try {
+      (window as unknown as { api?: { setLanguage?: (l: string) => void } }).api?.setLanguage?.(language);
+    } catch { /* no preload bridge — ignore */ }
+  }, [language]);
+
   const setLanguage = (lang: Language) => {
     setLanguageState(lang);
     localStorage.setItem('language', lang);

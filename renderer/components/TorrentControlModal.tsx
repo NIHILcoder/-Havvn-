@@ -20,19 +20,7 @@ interface TorrentControlModalProps {
 
 type Tab = 'download' | 'seeding' | 'files' | 'peers' | 'trackers';
 
-const CONN_TYPE_LABEL: Record<PeerInfo['connType'], string> = {
-  'tcp-in': 'TCP ↓', 'tcp-out': 'TCP ↑', 'utp-in': 'µTP ↓', 'utp-out': 'µTP ↑',
-  'webrtc': 'WebRTC', 'web-seed': 'Web seed', 'other': '—',
-};
-
 const formatSpeed = (bps: number): string => (bps > 0 ? formatBytes(bps) + '/s' : '—');
-
-const FILE_PRIORITY_LABELS: Record<FilePriority, string> = {
-  skip: 'Skip',
-  low: 'Low',
-  normal: 'Normal',
-  high: 'High',
-};
 
 const FILE_PRIORITY_COLORS: Record<FilePriority, string> = {
   skip: '#6b7280',
@@ -66,6 +54,14 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
     if (m < 60) return `${m}${t('time.min')} ${t('time.ago')}`;
     return `${Math.round(m / 60)}${t('time.hour')} ${t('time.ago')}`;
   };
+
+  // Peer connection-type labels (mostly protocol tokens; only "Web seed" is text).
+  const CONN_LABELS: Record<PeerInfo['connType'], string> = {
+    'tcp-in': 'TCP ↓', 'tcp-out': 'TCP ↑', 'utp-in': 'µTP ↓', 'utp-out': 'µTP ↑',
+    'webrtc': 'WebRTC', 'web-seed': t('tcm.webSeed'), 'other': '—',
+  };
+  const priorityLabel = (p: FilePriority): string =>
+    t(`tcm.priority.${p}` as Parameters<typeof t>[0]);
 
   // Download tab state
   const [sequential, setSequential] = useState(download.sequentialDownload ?? false);
@@ -142,7 +138,7 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
       await window.api.setSequentialDownload(download.id, sequential);
       onUpdate?.();
     } catch (err: any) {
-      await alert({ message: `Failed: ${err?.message}` });
+      await alert({ message: `${t('tcm.failed')}: ${err?.message}` });
     } finally {
       setSavingDownload(false);
     }
@@ -156,7 +152,7 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
       await window.api.setSeedTimeLimit(download.id, seedTime);
       onUpdate?.();
     } catch (err: any) {
-      await alert({ message: `Failed: ${err?.message}` });
+      await alert({ message: `${t('tcm.failed')}: ${err?.message}` });
     } finally {
       setSavingSeeding(false);
     }
@@ -171,7 +167,7 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
         prev.map((f, i) => i === fileIndex ? { ...f, priority } : f)
       );
     } catch (err: any) {
-      await alert({ message: `Failed: ${err?.message}` });
+      await alert({ message: `${t('tcm.failed')}: ${err?.message}` });
     } finally {
       setSavingPriority(null);
     }
@@ -186,7 +182,7 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
       setNewTrackerUrl('');
       await loadTrackers();
     } catch (err: any) {
-      await alert({ message: `Failed: ${err?.message}` });
+      await alert({ message: `${t('tcm.failed')}: ${err?.message}` });
     } finally {
       setAddingTracker(false);
     }
@@ -198,15 +194,15 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
       await window.api.removeTracker(download.id, url);
       setTrackers(prev => prev.filter(t => t.url !== url));
     } catch (err: any) {
-      await alert({ message: `Failed: ${err?.message}` });
+      await alert({ message: `${t('tcm.failed')}: ${err?.message}` });
     }
   };
 
   const tabs: { id: Tab; label: string; icon: string }[] = [
-    { id: 'download', label: 'Download', icon: 'download' },
-    { id: 'seeding', label: 'Seeding', icon: 'upload' },
-    { id: 'files', label: 'Files', icon: 'file' },
-    { id: 'peers', label: 'Peers', icon: 'users' },
+    { id: 'download', label: t('tcm.tabDownload'), icon: 'download' },
+    { id: 'seeding', label: t('status.seeding'), icon: 'upload' },
+    { id: 'files', label: t('downloads.files'), icon: 'file' },
+    { id: 'peers', label: t('table.peers'), icon: 'users' },
     { id: 'trackers', label: t('trackers.tab'), icon: 'server' },
   ];
 
@@ -216,11 +212,11 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
       icon="settings"
       title={
         <span className="tcm-title-block">
-          <span>Torrent Controls</span>
+          <span>{t('tcm.title')}</span>
           <span className="tcm-subtitle" title={download.name}>{download.name}</span>
         </span>
       }
-      ariaLabel="Torrent Controls"
+      ariaLabel={t('tcm.title')}
       size="lg"
       bodyClassName="tcm-modal-body"
     >
@@ -247,10 +243,9 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
               {/* Sequential Download */}
               <div className="tcm-field">
                 <div className="tcm-field-info">
-                  <span className="tcm-field-label">Sequential Download</span>
+                  <span className="tcm-field-label">{t('tcm.sequential')}</span>
                   <span className="tcm-field-desc">
-                    Download pieces in order — good for media files you want to preview.
-                    May reduce overall speed.
+                    {t('tcm.sequentialDesc')}
                   </span>
                 </div>
                 <button
@@ -270,7 +265,7 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
               <div className="tcm-actions">
                 <Button variant="primary" loading={savingDownload} onClick={handleSaveDownload}
                   icon={<Icon name="check" size={15} />}>
-                  Apply
+                  {t('tcm.apply')}
                 </Button>
               </div>
             </div>
@@ -282,8 +277,9 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
               <div className="tcm-info-box">
                 <Icon name="info" size={14} />
                 <span>
-                  These override the global defaults for this torrent only.
-                  Set to <strong>0</strong> to use global defaults.
+                  {t('tcm.seedOverridePre')}{' '}
+                  <strong>0</strong>{' '}
+                  {t('tcm.seedOverridePost')}
                 </span>
               </div>
 
@@ -291,9 +287,9 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
                 <div className="tcm-field-info">
                   <span className="tcm-field-label">
                     <Icon name="percent" size={13} />
-                    Seed Ratio Limit
+                    {t('tcm.seedRatioLimit')}
                   </span>
-                  <span className="tcm-field-desc">Stop seeding when upload/download ratio reaches this value</span>
+                  <span className="tcm-field-desc">{t('tcm.seedRatioDesc')}</span>
                 </div>
                 <div className="tcm-speed-input">
                   <input
@@ -304,7 +300,7 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
                     value={seedRatio}
                     onChange={e => setSeedRatio(parseFloat(e.target.value) || 0)}
                   />
-                  <span className="tcm-unit">ratio</span>
+                  <span className="tcm-unit">{t('settings.unit.ratio')}</span>
                 </div>
               </div>
 
@@ -312,9 +308,9 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
                 <div className="tcm-field-info">
                   <span className="tcm-field-label">
                     <Icon name="clock" size={13} />
-                    Seed Time Limit
+                    {t('tcm.seedTimeLimit')}
                   </span>
-                  <span className="tcm-field-desc">Stop seeding after this many minutes of seeding</span>
+                  <span className="tcm-field-desc">{t('tcm.seedTimeDesc')}</span>
                 </div>
                 <div className="tcm-speed-input">
                   <input
@@ -325,7 +321,7 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
                     value={seedTime}
                     onChange={e => setSeedTime(parseInt(e.target.value) || 0)}
                   />
-                  <span className="tcm-unit">min</span>
+                  <span className="tcm-unit">{t('settings.unit.min')}</span>
                 </div>
               </div>
 
@@ -333,10 +329,10 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
                 <div className="tcm-preview-box">
                   <Icon name="zap" size={13} />
                   <span>
-                    Seeding will stop when{' '}
-                    {seedRatio > 0 && <strong>ratio ≥ {seedRatio}</strong>}
-                    {seedRatio > 0 && seedTime > 0 && ' or '}
-                    {seedTime > 0 && <strong>{seedTime} min elapsed</strong>}
+                    {t('tcm.seedingStopWhen')}{' '}
+                    {seedRatio > 0 && <strong>{t('settings.unit.ratio')} ≥ {seedRatio}</strong>}
+                    {seedRatio > 0 && seedTime > 0 && <>{' '}{t('settings.or')}{' '}</>}
+                    {seedTime > 0 && <strong>{seedTime} {t('tcm.minElapsed')}</strong>}
                   </span>
                 </div>
               )}
@@ -344,7 +340,7 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
               <div className="tcm-actions">
                 <Button variant="primary" loading={savingSeeding} onClick={handleSaveSeeding}
                   icon={<Icon name="check" size={15} />}>
-                  Apply
+                  {t('tcm.apply')}
                 </Button>
               </div>
             </div>
@@ -356,18 +352,18 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
               {loadingFiles ? (
                 <div className="tcm-loading">
                   <span className="spinner" />
-                  <span>Loading files...</span>
+                  <span>{t('tcm.loadingFiles')}</span>
                 </div>
               ) : files.length === 0 ? (
                 <div className="tcm-empty">
                   <Icon name="file" size={32} />
-                  <p>No files found for this torrent.</p>
-                  <span>File list is only available while the torrent is active.</span>
+                  <p>{t('tcm.noFiles')}</p>
+                  <span>{t('tcm.noFilesHint')}</span>
                 </div>
               ) : (
                 <>
                   <div className="tcm-files-hint">
-                    Set priority for each file. <strong>Skip</strong> prevents the file from downloading.
+                    {t('tcm.filesHintPre')} <strong>{t('tcm.priority.skip')}</strong> {t('tcm.filesHintPost')}
                   </div>
                   <div className="tcm-files-list">
                     {files.map((file, idx) => {
@@ -389,12 +385,12 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
                                 style={priority === p ? { borderColor: FILE_PRIORITY_COLORS[p], color: FILE_PRIORITY_COLORS[p] } : {}}
                                 disabled={savingPriority === idx}
                                 onClick={() => handleFilePriority(idx, p)}
-                                title={FILE_PRIORITY_LABELS[p]}
+                                title={priorityLabel(p)}
                               >
                                 {savingPriority === idx && priority !== p ? (
                                   <span className="spinner spinner-xs" />
                                 ) : (
-                                  FILE_PRIORITY_LABELS[p]
+                                  priorityLabel(p)
                                 )}
                               </button>
                             ))}
@@ -414,26 +410,26 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
               {!peersLoaded ? (
                 <div className="tcm-loading">
                   <span className="spinner" />
-                  <span>Loading peers...</span>
+                  <span>{t('tcm.loadingPeers')}</span>
                 </div>
               ) : peers.length === 0 ? (
                 <div className="tcm-empty">
                   <Icon name="users" size={32} />
-                  <p>No connected peers.</p>
-                  <span>Peers appear here while the torrent is active and connecting.</span>
+                  <p>{t('tcm.noPeers')}</p>
+                  <span>{t('tcm.noPeersHint')}</span>
                 </div>
               ) : (
                 <>
                   <div className="tcm-peers-summary">
-                    <span><strong>{peers.length}</strong> connected</span>
-                    <span className="tcm-peers-live"><span className="tcm-live-dot" /> live</span>
+                    <span><strong>{peers.length}</strong> {t('share.peers')}</span>
+                    <span className="tcm-peers-live"><span className="tcm-live-dot" /> {t('tcm.live')}</span>
                   </div>
                   <div className="tcm-peers-table">
                     <div className="tcm-peers-head">
-                      <span className="pc-addr">Address</span>
-                      <span className="pc-client">Client</span>
-                      <span className="pc-type">Conn</span>
-                      <span className="pc-prog">Done</span>
+                      <span className="pc-addr">{t('tcm.colAddress')}</span>
+                      <span className="pc-client">{t('tcm.colClient')}</span>
+                      <span className="pc-type">{t('tcm.colConn')}</span>
+                      <span className="pc-prog">{t('common.done')}</span>
                       <span className="pc-spd">↓</span>
                       <span className="pc-spd">↑</span>
                     </div>
@@ -441,8 +437,8 @@ export const TorrentControlModal: React.FC<TorrentControlModalProps> = ({
                       {peers.map((p) => (
                         <div key={p.address} className="tcm-peer-row">
                           <span className="pc-addr mono" title={p.address}>{p.address}</span>
-                          <span className="pc-client" title={p.client || 'Unknown'}>{p.client || '—'}</span>
-                          <span className="pc-type">{CONN_TYPE_LABEL[p.connType]}</span>
+                          <span className="pc-client" title={p.client || t('tcm.unknown')}>{p.client || '—'}</span>
+                          <span className="pc-type">{CONN_LABELS[p.connType]}</span>
                           <span className="pc-prog">
                             <span className="pc-prog-bar"><span className="pc-prog-fill" style={{ width: `${Math.round(p.progress * 100)}%` }} /></span>
                             <span className="pc-prog-txt">{Math.round(p.progress * 100)}%</span>
