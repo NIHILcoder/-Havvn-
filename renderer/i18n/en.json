@@ -1282,5 +1282,9 @@
   "rooms.fileSearch": "Filter files…",
   "rooms.fileSearchEmpty": "Nothing found",
   "rooms.presenceOnline": "is online",
-  "rooms.presenceShared": "is sharing"
+  "rooms.presenceShared": "is sharing",
+  "settings.updateChannel": "Update channel",
+  "settings.updateChannel.desc": "Beta receives prereleases earlier",
+  "settings.updateChannel.stable": "Stable",
+  "settings.updateChannel.beta": "Beta"
 }

@@ -141,6 +141,7 @@ const configStore = new Store<ConfigSchema>({
       closeToTray: true,
       autoLaunch: false,
       autoUpdate: false,
+      updateChannel: 'stable',
       // Advanced
       enableDHT: true,
       enablePEX: true,

@@ -1282,5 +1282,9 @@
   "rooms.fileSearch": "Поиск по файлам…",
   "rooms.fileSearchEmpty": "Ничего не найдено",
   "rooms.presenceOnline": "в сети",
-  "rooms.presenceShared": "делится файлом"
+  "rooms.presenceShared": "делится файлом",
+  "settings.updateChannel": "Канал обновлений",
+  "settings.updateChannel.desc": "Бета получает предварительные версии раньше",
+  "settings.updateChannel.stable": "Стабильный",
+  "settings.updateChannel.beta": "Бета"
 }

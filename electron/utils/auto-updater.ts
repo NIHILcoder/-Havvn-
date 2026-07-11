@@ -39,6 +39,23 @@ function send(kind: UpdateStatusKind, payload: Record<string, unknown> = {}): vo
  * generates (e.g. the installer was uploaded by hand). Without latest.yml the
  * updater has no way to know the version or download URL.
  */
+/**
+ * Refresh allowPrerelease from the CURRENT settings right before a check, so a
+ * channel change in Settings takes effect on the very next check without a
+ * restart. Beta/alpha/rc builds always see prereleases (otherwise a beta user
+ * could be "updated" sideways or stranded); stable builds only when the user
+ * explicitly picked the beta channel.
+ */
+async function applyChannelPref(): Promise<void> {
+  const isPrereleaseBuild = /-(?:alpha|beta|rc)/i.test(app.getVersion());
+  try {
+    const settings = await db.getSettings();
+    autoUpdater.allowPrerelease = settings.updateChannel === 'beta' || isPrereleaseBuild;
+  } catch {
+    autoUpdater.allowPrerelease = isPrereleaseBuild;
+  }
+}
+
 function friendlyUpdateError(err: unknown): string {
   const raw = err == null ? 'unknown' : String((err as Error).message || err);
   if (/latest\.yml/i.test(raw) && /404/.test(raw)) {
@@ -69,6 +86,7 @@ export async function initAutoUpdater(mainWindow: BrowserWindow): Promise<void> 
       try {
         manualCheck = true;
         send('checking');
+        await applyChannelPref();
         await autoUpdater.checkForUpdates();
         return { ok: true };
       } catch (e) {
@@ -99,9 +117,8 @@ export async function initAutoUpdater(mainWindow: BrowserWindow): Promise<void> 
   // Don't auto-download; we decide based on the setting.
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
-  // Pick up prerelease (beta/alpha/rc) GitHub releases when the installed
-  // build is itself a prerelease. A stable build won't be offered betas.
-  autoUpdater.allowPrerelease = /-(?:alpha|beta|rc)/i.test(app.getVersion());
+  // Channel selection (allowPrerelease) is refreshed from settings right
+  // before every check — see applyChannelPref().
   autoUpdater.logger = {
     info: (m: unknown) => log.info(String(m)),
     warn: (m: unknown) => log.warn(String(m)),
@@ -145,9 +162,11 @@ export async function initAutoUpdater(mainWindow: BrowserWindow): Promise<void> 
     const settings = await db.getSettings();
     if (settings.autoUpdate) {
       setTimeout(() => {
-        autoUpdater.checkForUpdates().catch((e) => {
-          log.warn('Startup update check failed', { error: e instanceof Error ? e.message : String(e) });
-        });
+        applyChannelPref()
+          .then(() => autoUpdater.checkForUpdates())
+          .catch((e) => {
+            log.warn('Startup update check failed', { error: e instanceof Error ? e.message : String(e) });
+          });
       }, 8000);
     }
   } catch {

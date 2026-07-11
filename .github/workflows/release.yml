@@ -1,0 +1,75 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# Re-pushing the same tag cancels the in-flight run instead of racing it.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Guard: the tag must match package.json, otherwise the artifacts
+      # (named from package.json) would not match the tagged version.
+      - name: Verify tag matches package.json version
+        shell: bash
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "Tag $GITHUB_REF_NAME (version $TAG_VERSION) does not match package.json version $PKG_VERSION." >&2
+            echo "Bump package.json (and CHANGELOG.md) first, then re-tag." >&2
+            exit 1
+          fi
+          echo "APP_VERSION=$PKG_VERSION" >> "$GITHUB_ENV"
+
+      # Sanity gates — same as CI, must pass before we bother packaging
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Package (electron-builder)
+        run: npx electron-builder --win --publish never
+        env:
+          # Runners have no signing certificate — don't try to discover one
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Extract release notes from CHANGELOG.md
+        shell: bash
+        run: node scripts/changelog-section.js > release-notes.md
+
+      # DRAFT release — a human reviews it and presses Publish on GitHub
+      - name: Create draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          prerelease: false
+          name: Havvn ${{ env.APP_VERSION }}
+          body_path: release-notes.md
+          files: |
+            release/Havvn-Setup-*.exe
+            release/Havvn-Setup-*.exe.blockmap
+            release/latest.yml
+            release/Havvn-*-win-portable.zip

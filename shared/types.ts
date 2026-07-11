@@ -327,6 +327,8 @@ export interface AppSettings {
   closeToTray: boolean;
   autoLaunch: boolean;
   autoUpdate: boolean;
+  /** Update feed channel: 'beta' opts into GitHub prereleases; default 'stable'. */
+  updateChannel?: 'stable' | 'beta';
   // Advanced network settings
   enableDHT: boolean;
   enablePEX: boolean;

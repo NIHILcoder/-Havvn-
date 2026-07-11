@@ -10,7 +10,7 @@
 import React from 'react';
 import { useSettings } from '../SettingsContext';
 import { SettingsCard, SettingRow, StatusPill } from '../controls';
-import { Button, Icon } from '../../../components';
+import { Button, Icon, Select } from '../../../components';
 import { useTranslation } from '../../../utils/i18nContext';
 
 export const SystemSection: React.FC = () => {
@@ -20,7 +20,18 @@ export const SystemSection: React.FC = () => {
     updateReady, handleCheckForUpdates,
     handleClearCache, clearingCache,
     handleExportSettings, handleImportSettings,
+    settings, setSettings,
   } = useSettings();
+
+  const updateChannel = settings?.updateChannel ?? 'stable';
+
+  // Instant-apply, optimistic — mirrors selectDohTemplate in SettingsContext.
+  const selectUpdateChannel = async (next: 'stable' | 'beta') => {
+    if (next === updateChannel) return;
+    setSettings(prev => (prev ? { ...prev, updateChannel: next } : prev));
+    try { await window.api.updateSettings({ updateChannel: next }); }
+    catch (err) { console.error('Failed to set update channel:', err); }
+  };
 
   return (
     <>
@@ -44,6 +55,22 @@ export const SystemSection: React.FC = () => {
       </SettingsCard>
 
       <SettingsCard title={t('settings.grp.updates')} icon="refresh-cw">
+        <SettingRow
+          label={t('settings.updateChannel')}
+          description={t('settings.updateChannel.desc')}
+          control={
+            <div style={{ width: 150 }}>
+              <Select
+                options={[
+                  { value: 'stable', label: t('settings.updateChannel.stable') },
+                  { value: 'beta', label: t('settings.updateChannel.beta') },
+                ]}
+                value={updateChannel}
+                onChange={(v) => selectUpdateChannel(v as 'stable' | 'beta')}
+              />
+            </div>
+          }
+        />
         <SettingRow
           label={updateReady ? t('settings.updateReady') : t('settings.checkUpdates')}
           description={
