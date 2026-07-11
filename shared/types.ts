@@ -866,6 +866,9 @@ export interface IpcApi {
   };
   onVpnDropped: (callback: (info: { paused: number; publicIP?: string }) => void) => () => void;
   onVpnRestored: (callback: () => void) => () => void;
+  // Startup "VPN not detected" advisory + its "Don't show again" opt-out
+  onVpnWarning: (callback: (info: { publicIP?: string }) => void) => () => void;
+  vpnWarningDismissed: () => void;
   onDiskLow: (callback: (info: { paused: number; freeBytes: number; thresholdBytes: number }) => void) => () => void;
   onDiskRecovered: (callback: () => void) => () => void;
 

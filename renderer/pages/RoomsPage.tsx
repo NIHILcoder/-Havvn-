@@ -79,6 +79,12 @@ const RoomsPage: React.FC<RoomsPageProps> = ({ focusRoomId, onFocusHandled, onRo
   const selectedRef = useRef<string | null>(null);
   selectedRef.current = selectedId;
 
+  // Presence/share toasts: previous snapshot of the OPEN room (per roomId) so
+  // successive updates can be diffed; a switch or initial load only seeds it.
+  const presenceSnapRef = useRef<{ roomId: string; online: Map<string, boolean>; fileIds: Set<string> } | null>(null);
+  // Dedupe: same member/file toast at most once per 30s.
+  const presenceToastAtRef = useRef<Map<string, number>>(new Map());
+
   const refreshList = useCallback(async () => {
     try { setRooms(await window.api.rooms.list()); } catch (e) { console.error(e); }
   }, []);
@@ -127,6 +133,41 @@ const RoomsPage: React.FC<RoomsPageProps> = ({ focusRoomId, onFocusHandled, onRo
       .catch(() => { if (alive) setSelectedId((prev) => (prev === selectedId ? null : prev)); });
     return () => { alive = false; };
   }, [selectedId]);
+
+  // Quiet presence toasts for the OPEN room: a member coming back online, or a
+  // new file appearing from someone else. Derived by diffing successive room
+  // states; the first state after load/switch only seeds the snapshot, so
+  // nothing fires on join — only on transitions observed while watching.
+  useEffect(() => {
+    if (!room) { presenceSnapRef.current = null; return; }
+    const prev = presenceSnapRef.current;
+    presenceSnapRef.current = {
+      roomId: room.roomId,
+      online: new Map(room.members.map((m) => [m.memberId, m.online])),
+      fileIds: new Set(room.files.map((f) => f.fileId)),
+    };
+    if (!prev || prev.roomId !== room.roomId) return; // initial load / room switch — seed only
+    const now = Date.now();
+    const fire = (key: string, msg: string) => {
+      const seen = presenceToastAtRef.current;
+      for (const [k, at] of seen) if (now - at > 30_000) seen.delete(k);
+      if (seen.has(key)) return;
+      seen.set(key, now);
+      toast(msg);
+    };
+    for (const m of room.members) {
+      if (m.isSelf || !m.online) continue;
+      if (prev.online.get(m.memberId) === false) {
+        fire(`online:${m.memberId}`, `${m.name || '?'} ${t('rooms.presenceOnline')}`);
+      }
+    }
+    const selfId = room.members.find((m) => m.isSelf)?.memberId;
+    for (const f of room.files) {
+      if (prev.fileIds.has(f.fileId) || f.addedBy === selfId) continue;
+      const who = room.members.find((m) => m.memberId === f.addedBy)?.name || f.addedByName || '?';
+      fire(`file:${f.fileId}`, `${who} ${t('rooms.presenceShared')} ${f.name}`);
+    }
+  }, [room, t]);
 
   // A room requested from outside (sidebar rail / status-bar Join) wins over
   // the default selection. Consumed once, then cleared by the parent.
@@ -199,6 +240,19 @@ const RoomsPage: React.FC<RoomsPageProps> = ({ focusRoomId, onFocusHandled, onRo
     try {
       const state = await window.api.rooms.pickAndAddFiles(roomId);
       if (state) { setRoom(state); await refreshList(); }
+    } catch (e) { toast.error(String(e instanceof Error ? e.message : e)); }
+    finally { setBusy(false); }
+  };
+
+  // Files dropped onto the open room (paths already resolved by the caller).
+  const handleDropPaths = async (roomId: string, paths: string[]) => {
+    setBusy(true);
+    try {
+      const state = await window.api.rooms.addFiles(roomId, paths);
+      // The drop can outlive a room switch — same guard as the live listener.
+      if (state.roomId === selectedRef.current) setRoom(state);
+      await refreshList();
+      toast.success(t('rooms.dropShared'));
     } catch (e) { toast.error(String(e instanceof Error ? e.message : e)); }
     finally { setBusy(false); }
   };
@@ -287,6 +341,7 @@ const RoomsPage: React.FC<RoomsPageProps> = ({ focusRoomId, onFocusHandled, onRo
               <RoomDetail
                 room={room}
                 onAddFiles={() => handleAddFiles(room.roomId)}
+                onDropFiles={(paths) => handleDropPaths(room.roomId, paths)}
                 onOpenFolder={() => window.api.rooms.openFolder(room.roomId)}
                 onInvite={() => setDialog('invite')}
                 onLeave={() => requestLeave(room.roomId)}
@@ -442,6 +497,8 @@ const RoomsPage: React.FC<RoomsPageProps> = ({ focusRoomId, onFocusHandled, onRo
 interface DetailProps {
   room: RoomState;
   onAddFiles: () => void;
+  /** Files were dropped onto the room — absolute paths, already resolved. */
+  onDropFiles: (paths: string[]) => void;
   onOpenFolder: () => void;
   onInvite: () => void;
   onLeave: () => void;
@@ -456,11 +513,38 @@ interface DetailProps {
   busy: boolean;
 }
 
-const RoomDetail: React.FC<DetailProps> = ({ room, onAddFiles, onOpenFolder, onInvite, onLeave, onCopyCode, onWatch, onShared, onToggleAutoFetch, onSetLimits, busy }) => {
+const RoomDetail: React.FC<DetailProps> = ({ room, onAddFiles, onDropFiles, onOpenFolder, onInvite, onLeave, onCopyCode, onWatch, onShared, onToggleAutoFetch, onSetLimits, busy }) => {
   const { t } = useTranslation();
   const { confirm } = useConfirm();
   // "Bring a file from Transfers" — pick a finished download to share here
   const [pickTransfer, setPickTransfer] = useState(false);
+  // Drag & drop files into the room. The depth counter survives child
+  // enter/leave churn; internalDrag suppresses drags that started on this page
+  // (text selections etc.) so only OS file drags light the overlay.
+  const [dropping, setDropping] = useState(false);
+  const dragDepth = useRef(0);
+  const internalDrag = useRef(false);
+  const isFileDrag = (e: React.DragEvent) =>
+    !internalDrag.current && !room.kicked && Array.from(e.dataTransfer?.types || []).includes('Files');
+  const handleDrop = (e: React.DragEvent) => {
+    internalDrag.current = false;
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    dragDepth.current = 0;
+    setDropping(false);
+    const paths = Array.from(e.dataTransfer.files)
+      .map((f) => { try { return window.api.getPathForFile(f); } catch { return ''; } })
+      .filter(Boolean);
+    if (paths.length === 0) { toast.error(t('create.dropReadError')); return; }
+    onDropFiles(paths);
+  };
+  // Client-side file filter (rendered only when the room has >5 files).
+  const [fileQuery, setFileQuery] = useState('');
+  const visibleFiles = useMemo(() => {
+    const q = fileQuery.trim().toLowerCase();
+    if (!q) return room.files;
+    return room.files.filter((f) => f.name.toLowerCase().includes(q));
+  }, [room.files, fileQuery]);
   // Activity log lives in its own modal now (opened from the title bar) so it
   // doesn't crowd the files column.
   const [showActivity, setShowActivity] = useState(false);
@@ -471,6 +555,7 @@ const RoomDetail: React.FC<DetailProps> = ({ room, onAddFiles, onOpenFolder, onI
   useEffect(() => {
     setUpDraft(String(room.upKbps || ''));
     setDownDraft(String(room.downKbps || ''));
+    setFileQuery(''); // the filter belongs to one room's list, not the next
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [room.roomId]);
   const commitLimits = () => {
@@ -489,7 +574,21 @@ const RoomDetail: React.FC<DetailProps> = ({ room, onAddFiles, onOpenFolder, onI
         ? `${t('rooms.connected')} · ${room.peerCount}`
         : t('rooms.alone');
   return (
-    <div className="room-detail-inner">
+    <div
+      className="room-detail-inner"
+      onDragStartCapture={() => { internalDrag.current = true; }}
+      onDragEndCapture={() => { internalDrag.current = false; }}
+      onDragEnter={(e) => { if (!isFileDrag(e)) return; e.preventDefault(); dragDepth.current += 1; setDropping(true); }}
+      onDragOver={(e) => { if (!isFileDrag(e)) return; e.preventDefault(); }}
+      onDragLeave={(e) => { if (!isFileDrag(e)) return; dragDepth.current = Math.max(0, dragDepth.current - 1); if (dragDepth.current === 0) setDropping(false); }}
+      onDrop={handleDrop}
+    >
+      {dropping && (
+        <div className="room-drop-overlay" aria-hidden="true">
+          <Icon name="file-plus" size={28} />
+          <span>{t('rooms.dropHint')}</span>
+        </div>
+      )}
       {/* Title bar */}
       <div className="room-detail-head">
         <div className="room-detail-title">
@@ -534,11 +633,26 @@ const RoomDetail: React.FC<DetailProps> = ({ room, onAddFiles, onOpenFolder, onI
               </div>
             </div>
 
+            {room.files.length > 5 && (
+              <div className="room-file-search">
+                <Icon name="search" size={13} />
+                <input
+                  type="text"
+                  placeholder={t('rooms.fileSearch')}
+                  value={fileQuery}
+                  onChange={(e) => setFileQuery(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Escape') setFileQuery(''); }}
+                />
+              </div>
+            )}
+
             {room.files.length === 0 ? (
               <div className="room-files-empty">{t('rooms.noFiles')}</div>
+            ) : visibleFiles.length === 0 ? (
+              <div className="room-files-empty">{t('rooms.fileSearchEmpty')}</div>
             ) : (
               <div className="room-files">
-                {room.files.map((f) => (
+                {visibleFiles.map((f) => (
                   <RoomFileRow key={f.fileId} file={f} room={room} onWatch={onWatch} />
                 ))}
               </div>

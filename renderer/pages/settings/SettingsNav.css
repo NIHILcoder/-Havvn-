@@ -76,7 +76,12 @@
   margin: 0;
 }
 
-.stg-nav-grp { padding-top: 8px; }
+.stg-nav-grp {
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px; /* breathing room between tabs */
+}
 .stg-nav-grp-h {
   font-size: 10.5px;
   font-weight: var(--font-weight-bold);

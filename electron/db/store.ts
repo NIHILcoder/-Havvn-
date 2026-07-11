@@ -38,6 +38,7 @@ interface ConfigSchema {
   suggestedFeedSeeded: boolean;          // One-time seeding/migration of the working FOSS Torrents feed
   collaborativeSeedingEnabled: boolean;  // Collaborative Seeding Network opt-in (persisted)
   trayHintShown?: boolean;               // One-time "running in tray" hint (set from main.ts)
+  vpnWarningDismissed?: boolean;         // "Don't show again" on the startup VPN warning dialog
   splitStoresMigrated?: boolean;         // One-time migration marker (see migrateToSplitStores)
   utpDefaultOnMigrated?: boolean;        // One-time flip of µTP on for existing installs (see migrateUtpDefaultOn)
   networkProfiles?: NetworkProfile[];    // Smart per-network settings overlays
@@ -532,6 +533,16 @@ export function getUiLanguage(): 'en' | 'ru' {
 
 export function setUiLanguage(lang: 'en' | 'ru'): void {
   configStore.set('uiLanguage', lang === 'ru' ? 'ru' : 'en');
+}
+
+// === Startup VPN warning ("Don't show again") ===
+
+export function getVpnWarningDismissed(): boolean {
+  return !!configStore.get('vpnWarningDismissed');
+}
+
+export function setVpnWarningDismissed(): void {
+  configStore.set('vpnWarningDismissed', true);
 }
 
 // === Window bounds ===

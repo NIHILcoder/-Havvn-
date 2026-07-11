@@ -9,12 +9,10 @@
  */
 
 import os from 'os';
-import { dialog } from 'electron';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import https from 'https';
 import { logger } from './logger';
-import { t } from '../i18n';
 
 const execAsync = promisify(exec);
 
@@ -407,33 +405,4 @@ export async function getIpInfo(): Promise<{
     exposedIsp,
     fetchedAt: Date.now(),
   };
-}
-
-/**
- * Show VPN warning dialog
- * Note: Translation keys are passed to renderer for i18n support
- */
-export function showVPNWarning(result: VPNDetectionResult): void {
-
-  const message = t('vpnWarn.message');
-  let detail = t('vpnWarn.detailIntro') + '\n\n';
-
-  if (result.details.publicIP) {
-    detail += t('vpnWarn.yourIp', { ip: result.details.publicIP }) + '\n';
-  }
-
-  detail += '\n' + t('vpnWarn.recommended') + '\n';
-  detail += t('vpnWarn.mullvad') + '\n';
-  detail += t('vpnWarn.proton') + '\n';
-  detail += t('vpnWarn.ivpn') + '\n';
-
-  dialog.showMessageBox({
-    type: 'warning',
-    title: t('vpnWarn.title'),
-    message,
-    detail,
-    buttons: [t('common.ok'), t('vpnWarn.dontShowAgain')],
-    defaultId: 0,
-    cancelId: 1,
-  });
 }

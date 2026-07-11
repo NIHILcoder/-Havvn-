@@ -18,12 +18,13 @@ const RoomsPage = lazy(() => import('./pages/RoomsPage'));
 const SwarmPage = lazy(() => import('./pages/SwarmPage'));
 import { formatBytes } from './utils/format-helpers';
 import { I18nProvider, useTranslation } from './utils/i18nContext';
-import { ConfirmProvider } from './components/ConfirmDialog';
+import { ConfirmProvider, useConfirm } from './components/ConfirmDialog';
 import { dismissSplash } from './utils/splash';
 
 
 const AppContent: React.FC = () => {
   const { t } = useTranslation();
+  const { confirm } = useConfirm();
   // Start page honors the Settings → Interface preference (downloads is the default).
   const [currentPage, setCurrentPage] = useState<PageId>(() => {
     try { return localStorage.getItem('startPage') === 'rooms' ? 'rooms' : 'downloads'; }
@@ -160,6 +161,33 @@ const AppContent: React.FC = () => {
     const offRestored = window.api.onVpnRestored(() => setVpnAlert(null));
     return () => { offDropped(); offRestored(); };
   }, []);
+
+  // Startup VPN advisory: main sends this when no VPN is detected at boot.
+  // Shown as a themed dialog at most once per session; "Don't show again"
+  // persists the opt-out in main's config store.
+  const vpnWarningShown = useRef(false);
+  useEffect(() => {
+    const off = window.api.onVpnWarning((info) => {
+      if (vpnWarningShown.current) return;
+      vpnWarningShown.current = true;
+      // "Don't show again" is the CONFIRM action on purpose: confirm() can't
+      // tell the cancel button from Escape/X, and an accidental Escape must
+      // never permanently silence a security warning — only an explicit click
+      // on the primary button persists the opt-out.
+      void confirm({
+        title: t('app.vpnWarn.title'),
+        message: info.publicIP
+          ? `${t('app.vpnWarn.body')} ${t('app.vpnWarn.yourIp')} ${info.publicIP}`
+          : t('app.vpnWarn.body'),
+        confirmLabel: t('app.vpnWarn.dontShowAgain'),
+        cancelLabel: t('common.ok'),
+        icon: 'alert-triangle',
+      }).then((dontShowAgain) => {
+        if (dontShowAgain) window.api.vpnWarningDismissed();
+      });
+    });
+    return () => off();
+  }, [confirm, t]);
 
   // Disk-space guard: warning banner when free space is low
   useEffect(() => {
@@ -342,7 +370,7 @@ const AppContent: React.FC = () => {
   return (
     <>
       <Toaster
-        position="top-right"
+        position="bottom-right"
         toastOptions={{
           duration: 4000,
           style: {

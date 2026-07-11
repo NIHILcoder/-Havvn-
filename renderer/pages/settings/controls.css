@@ -43,6 +43,15 @@
 }
 .stg-card-b { padding: 2px 18px; }
 
+/* Custom blocks inside a card (engine selector, DoH list, profile panel,
+   web-remote panel, schedule list, …) get consistent vertical breathing room —
+   plain SettingRows manage their own padding and are excluded. */
+.stg-card-b > :not(.stg-row):not(.stg-sub) {
+  margin-top: 14px;
+  margin-bottom: 14px;
+}
+.stg-card-b > .stg-row + :not(.stg-row):not(.stg-sub) { margin-top: 12px; }
+
 /* === Setting row === */
 .stg-row {
   display: flex;

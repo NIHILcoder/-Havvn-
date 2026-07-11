@@ -441,6 +441,18 @@ const api: IpcApi = {
     return () => { ipcRenderer.removeListener('app:vpnRestored', handler); };
   },
 
+  // Startup "VPN not detected" advisory (main → renderer, at most once per boot)
+  onVpnWarning: (callback: (info: { publicIP?: string }) => void): (() => void) => {
+    const handler = (_e: IpcRendererEvent, info: { publicIP?: string }) => callback(info);
+    ipcRenderer.on('app:vpnWarning', handler);
+    return () => { ipcRenderer.removeListener('app:vpnWarning', handler); };
+  },
+
+  // "Don't show again" on the startup VPN warning — persisted in main's config
+  vpnWarningDismissed: (): void => {
+    ipcRenderer.send('app:vpnWarningDismissed');
+  },
+
   onDiskLow: (callback: (info: { paused: number; freeBytes: number; thresholdBytes: number }) => void): (() => void) => {
     const handler = (_e: IpcRendererEvent, info: { paused: number; freeBytes: number; thresholdBytes: number }) => callback(info);
     ipcRenderer.on('app:diskLow', handler);

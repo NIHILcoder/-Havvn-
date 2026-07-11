@@ -1272,5 +1272,15 @@
   "settings.about.licenseDesc": "Open source under the MIT license",
   "settings.about.sourceCode": "Source code",
   "settings.about.sourceCodeDesc": "Report issues and follow development on GitHub",
-  "settings.about.statsTitle": "Statistics"
+  "settings.about.statsTitle": "Statistics",
+  "app.vpnWarn.title": "VPN not detected",
+  "app.vpnWarn.body": "No active VPN connection was detected. Your real IP address may be visible to other peers while torrents are running.",
+  "app.vpnWarn.yourIp": "Your public IP:",
+  "app.vpnWarn.dontShowAgain": "Don't show again",
+  "rooms.dropHint": "Drop to share into the room",
+  "rooms.dropShared": "Files shared into the room",
+  "rooms.fileSearch": "Filter files…",
+  "rooms.fileSearchEmpty": "Nothing found",
+  "rooms.presenceOnline": "is online",
+  "rooms.presenceShared": "is sharing"
 }

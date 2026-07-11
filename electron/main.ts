@@ -7,8 +7,8 @@ import dotenv from 'dotenv';
 import { getTorrentManager } from './torrent';
 import { getSchedulerEngine } from './scheduler/scheduler-engine';
 import { setupIpcHandlers } from './ipc';
-import { logger, detectVPN, showVPNWarning, getAppIconPath } from './utils';
-import { store, seedDefaultsIfNeeded, getWindowBounds, saveWindowBounds } from './db/store';
+import { logger, detectVPN, getAppIconPath } from './utils';
+import { store, seedDefaultsIfNeeded, getWindowBounds, saveWindowBounds, getVpnWarningDismissed, setVpnWarningDismissed } from './db/store';
 import { getRSSService } from './services/rss-service';
 import { getIPBlocklistService } from './services/ip-blocklist';
 import { getWatchFolderService } from './torrent/watch-folder';
@@ -21,6 +21,10 @@ dotenv.config();
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
+
+// Refreshes the tray tooltip with live speeds while the tray exists;
+// cleared in cleanup() alongside tray.destroy().
+let trayStatsInterval: NodeJS.Timeout | null = null;
 
 // Set inside createTray(); lets the language-change IPC re-localize the tray
 // menu + tooltip live, without exposing createTray's internals.
@@ -52,6 +56,12 @@ ipcMain.on('app:rendererReady', () => {
     pendingOpenUri = null;
     deliverOpenTorrent(uri);
   }
+});
+
+// "Don't show again" on the startup VPN warning dialog — persist the opt-out
+// so the check stops nagging on every launch.
+ipcMain.on('app:vpnWarningDismissed', () => {
+  setVpnWarningDismissed();
 });
 
 // Renderer mirrors its selected UI language here so the tray menu, native
@@ -198,6 +208,31 @@ function buildAppMenu(): Menu {
   return Menu.buildFromTemplate(template);
 }
 
+// Compact speed formatter for the tray tooltip/menu header (KB/s below 1 MB/s).
+function formatTraySpeed(bps: number): string {
+  if (bps >= 1024 * 1024) return `${(bps / (1024 * 1024)).toFixed(1)} MB/s`;
+  return `${Math.round(bps / 1024)} KB/s`;
+}
+
+// Sum the per-torrent stats into the three numbers the tray shows. getStats()
+// is synchronous (a cached snapshot in the manager proxy), so this is cheap.
+function readTrayStats(): { down: number; up: number; active: number } {
+  try {
+    const stats = getTorrentManager().getStats();
+    let down = 0;
+    let up = 0;
+    let active = 0;
+    for (const s of stats) {
+      down += s.downSpeedBps || 0;
+      up += s.upSpeedBps || 0;
+      if (s.status === 'downloading') active++;
+    }
+    return { down, up, active };
+  } catch {
+    return { down: 0, up: 0, active: 0 };
+  }
+}
+
 // === Tray Icon ===
 function createTray(): void {
   let trayIcon: Electron.NativeImage;
@@ -217,7 +252,30 @@ function createTray(): void {
   tray = new Tray(trayIcon.isEmpty() ? trayIcon : trayIcon.resize({ width: 16, height: 16 }));
   tray.setToolTip(t('tray.tooltip.running'));
 
-  const buildContextMenu = () => Menu.buildFromTemplate([
+  // Live tooltip: keeps the existing show/hide base string (tray.tooltip vs
+  // tray.tooltip.running) and appends a speeds line while anything transfers.
+  const updateTrayTooltip = (): void => {
+    if (!tray || tray.isDestroyed()) return;
+    const base = mainWindow?.isVisible() ? t('tray.tooltip') : t('tray.tooltip.running');
+    const { down, up } = readTrayStats();
+    tray.setToolTip(
+      down > 0 || up > 0
+        ? `${base}\n↓ ${formatTraySpeed(down)} · ↑ ${formatTraySpeed(up)}`
+        : base
+    );
+  };
+
+  trayStatsInterval = setInterval(updateTrayTooltip, 3000);
+
+  const buildContextMenu = () => {
+    const { down, up, active } = readTrayStats();
+    return Menu.buildFromTemplate([
+    {
+      label: `↓ ${formatTraySpeed(down)} · ↑ ${formatTraySpeed(up)} · ${active} ${t('tray.active')}`,
+      type: 'normal',
+      enabled: false,
+    },
+    { type: 'separator' },
     {
       label: t('tray.open'),
       type: 'normal',
@@ -226,6 +284,19 @@ function createTray(): void {
           mainWindow.show();
           mainWindow.focus();
           if (mainWindow.isMinimized()) mainWindow.restore();
+        }
+      },
+    },
+    {
+      label: t('tray.openDownloads'),
+      type: 'normal',
+      click: () => {
+        const settings = store.get('settings') as any;
+        const dir = settings?.defaultDownloadDir;
+        if (dir) {
+          shell.openPath(dir).catch((e) => {
+            logger.error('App', 'Tray open-downloads failed', { error: String(e) });
+          });
         }
       },
     },
@@ -268,7 +339,8 @@ function createTray(): void {
         app.quit();
       },
     },
-  ]);
+    ]);
+  };
 
   tray.setContextMenu(buildContextMenu());
 
@@ -280,7 +352,7 @@ function createTray(): void {
   // Re-localize live when the renderer changes language.
   refreshTrayLanguage = () => {
     if (!tray || tray.isDestroyed()) return;
-    tray.setToolTip(mainWindow?.isVisible() ? t('tray.tooltip') : t('tray.tooltip.running'));
+    updateTrayTooltip();
     tray.setContextMenu(buildContextMenu());
   };
 
@@ -726,6 +798,13 @@ async function initializeApp(): Promise<void> {
   // Check VPN status on startup
   setTimeout(async () => {
     try {
+      // Settings → Privacy → "VPN Detection" gates this startup check; it used
+      // to be ignored and the warning fired even with the toggle off.
+      const privacy = store.get('privacyConfig') as { vpnCheck?: boolean } | undefined;
+      if (privacy && privacy.vpnCheck === false) {
+        logger.info('App', 'VPN startup check disabled in privacy settings.');
+        return;
+      }
       logger.info('App', 'Checking VPN status...');
       const vpnResult = await detectVPN();
 
@@ -733,8 +812,27 @@ async function initializeApp(): Promise<void> {
         logger.warn('App', 'VPN not detected!', {
           confidence: vpnResult.confidence,
         });
-        // Show warning dialog
-        showVPNWarning(vpnResult);
+        if (!getVpnWarningDismissed()) {
+          // In-app warning dialog (replaces the old native message box). This
+          // check runs 2s after boot, but on a slow cold start the renderer's
+          // IPC listeners may not be attached yet (same race as
+          // deliverOpenTorrent) — retry once instead of silently dropping it.
+          const payload = { publicIP: vpnResult.details.publicIP };
+          const sendWarning = (): boolean => {
+            if (mainWindow && !mainWindow.isDestroyed() && rendererReady) {
+              mainWindow.webContents.send('app:vpnWarning', payload);
+              return true;
+            }
+            return false;
+          };
+          if (!sendWarning()) {
+            setTimeout(() => {
+              if (!sendWarning()) {
+                logger.warn('App', 'Renderer not ready — VPN warning not shown this session');
+              }
+            }, 5000);
+          }
+        }
       } else {
         logger.info('App', 'VPN detected', {
           provider: vpnResult.details.vpnProvider,
@@ -911,7 +1009,11 @@ async function cleanup(): Promise<void> {
     await stopPortForwarding();
   } catch { /* ignore */ }
 
-  // Destroy tray
+  // Destroy tray (and stop the tooltip stats ticker with it)
+  if (trayStatsInterval) {
+    clearInterval(trayStatsInterval);
+    trayStatsInterval = null;
+  }
   if (tray) {
     tray.destroy();
     tray = null;

@@ -15,7 +15,8 @@ interface AppStatisticsProps {
 // Split a formatted stat ("14.9 GB", "7", "0 B") into an animatable number and
 // a trailing suffix. Non-numeric values ("-", "0h 0m") are returned as-is and
 // shown statically.
-function parseStat(value: string | number): { num: number; suffix: string; decimals: number } | null {
+function parseStat(value: string | number | undefined): { num: number; suffix: string; decimals: number } | null {
+  if (value === undefined || value === null) return null;
   const s = String(value).trim();
   const m = s.match(/^(-?\d+(?:\.\d+)?)(.*)$/);
   if (!m) return null;
@@ -28,7 +29,7 @@ function parseStat(value: string | number): { num: number; suffix: string; decim
 const easeOutCubic = (t: number): number => 1 - Math.pow(1 - t, 3);
 
 /** Count a number up from 0 → target with eased rAF animation. */
-function useCountUp(target: number, decimals: number, durationMs = 1100, enabled = true): number {
+function useCountUp(target: number, decimals: number, durationMs = 900, enabled = true): number {
   const [val, setVal] = useState(enabled ? 0 : target);
   const rafRef = useRef<number>();
   useEffect(() => {
@@ -47,10 +48,14 @@ function useCountUp(target: number, decimals: number, durationMs = 1100, enabled
   return val;
 }
 
-const StatValue: React.FC<{ value: string | number }> = ({ value }) => {
+const StatValue: React.FC<{ value: string | number | undefined }> = ({ value }) => {
   const parsed = parseStat(value);
-  const animated = useCountUp(parsed?.num ?? 0, parsed?.decimals ?? 0, 1100, !!parsed);
-  if (!parsed) return <>{value}</>;
+  const animated = useCountUp(parsed?.num ?? 0, parsed?.decimals ?? 0, 900, !!parsed);
+  if (!parsed) {
+    // Non-numeric or missing value — render as-is, or an em dash placeholder.
+    const s = value === undefined || value === null || String(value).trim() === '' ? '—' : String(value);
+    return <>{s}</>;
+  }
   return <>{animated.toFixed(parsed.decimals)}{parsed.suffix}</>;
 };
 
@@ -58,7 +63,7 @@ interface StatDef {
   key: string;
   icon: IconName;
   label: string;
-  value: string | number;
+  value: string | number | undefined;
 }
 
 export const AppStatistics: React.FC<AppStatisticsProps> = ({
@@ -72,7 +77,7 @@ export const AppStatistics: React.FC<AppStatisticsProps> = ({
   const { t } = useTranslation();
 
   const stats: StatDef[] = [
-    { key: 'total', icon: 'download', label: t('stats.totalDownloads'), value: totalDownloads },
+    { key: 'total', icon: 'download', label: t('stats.totalDownloads'), value: totalDownloads ?? 0 },
     { key: 'down', icon: 'arrow-down', label: t('stats.downloaded'), value: totalDownloaded },
     { key: 'up', icon: 'arrow-up', label: t('stats.uploaded'), value: totalUploaded },
     { key: 'cache', icon: 'database', label: t('stats.cache'), value: cacheSize },
@@ -82,22 +87,17 @@ export const AppStatistics: React.FC<AppStatisticsProps> = ({
 
   return (
     <div className="app-statistics">
-      <div className="stats-grid">
-        {stats.map((s, i) => (
-          <div
-            key={s.key}
-            className="stat-card"
-            style={{ animationDelay: `${i * 70}ms` }}
-          >
-            <div className="stat-sheen" />
-            <div className="stat-icon"><Icon name={s.icon} size={20} /></div>
-            <div className="stat-info">
-              <div className="stat-label">{s.label}</div>
-              <div className="stat-value"><StatValue value={s.value} /></div>
-            </div>
+      {stats.map((s) => (
+        <div key={s.key} className="app-stat-tile">
+          <div className="app-stat-head">
+            <Icon name={s.icon} size={13} />
+            <span className="app-stat-label" title={s.label}>{s.label}</span>
           </div>
-        ))}
-      </div>
+          <div className="app-stat-value" title={s.value !== undefined ? String(s.value) : undefined}>
+            <StatValue value={s.value} />
+          </div>
+        </div>
+      ))}
     </div>
   );
 };

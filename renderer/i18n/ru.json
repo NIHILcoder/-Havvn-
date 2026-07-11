@@ -1272,5 +1272,15 @@
   "settings.about.licenseDesc": "Открытый исходный код под лицензией MIT",
   "settings.about.sourceCode": "Исходный код",
   "settings.about.sourceCodeDesc": "Сообщайте об ошибках и следите за разработкой на GitHub",
-  "settings.about.statsTitle": "Статистика"
+  "settings.about.statsTitle": "Статистика",
+  "app.vpnWarn.title": "VPN не обнаружен",
+  "app.vpnWarn.body": "Активное VPN-соединение не обнаружено. Ваш реальный IP-адрес может быть виден другим пирам во время работы торрентов.",
+  "app.vpnWarn.yourIp": "Ваш публичный IP:",
+  "app.vpnWarn.dontShowAgain": "Больше не показывать",
+  "rooms.dropHint": "Отпустите, чтобы поделиться",
+  "rooms.dropShared": "Файлы добавлены в комнату",
+  "rooms.fileSearch": "Поиск по файлам…",
+  "rooms.fileSearchEmpty": "Ничего не найдено",
+  "rooms.presenceOnline": "в сети",
+  "rooms.presenceShared": "делится файлом"
 }

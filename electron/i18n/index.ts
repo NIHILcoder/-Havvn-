@@ -29,6 +29,8 @@ const en: Dict = {
   'tray.tooltip.running': 'Havvn — Running in background',
   'tray.tooltip': 'Havvn',
   'tray.open': 'Open Havvn',
+  'tray.openDownloads': 'Open downloads folder',
+  'tray.active': 'active',
   'tray.pauseAll': 'Pause All Downloads',
   'tray.resumeAll': 'Resume All Downloads',
   'tray.altSpeed': 'Alternative speed limits',
@@ -56,16 +58,7 @@ const en: Dict = {
   'notify.vpnLost.bodyMany': 'Paused {count} torrents to protect your IP. Reconnect your VPN, then resume manually.',
   'notify.vpnLost.bodyNone': 'Your VPN appears to be down. Reconnect it before resuming torrents.',
 
-  // VPN warning message box
-  'vpnWarn.title': 'Privacy Warning',
-  'vpnWarn.message': 'VPN not detected! Your real IP address may be visible to peers.',
-  'vpnWarn.detailIntro': 'Consider using a VPN for better privacy when using BitTorrent.',
-  'vpnWarn.yourIp': 'Your public IP: {ip}',
-  'vpnWarn.recommended': 'Recommended VPN providers:',
-  'vpnWarn.mullvad': '• Mullvad VPN (anonymous, no logs)',
-  'vpnWarn.proton': '• ProtonVPN (secure, privacy-focused)',
-  'vpnWarn.ivpn': '• IVPN (privacy-first)',
-  'vpnWarn.dontShowAgain': "Don't show again",
+  // Shared
   'common.ok': 'OK',
 
   // Search-provider test (main → renderer, shown as test result)
@@ -102,6 +95,8 @@ const ru: Dict = {
   'tray.tooltip.running': 'Havvn — работает в фоне',
   'tray.tooltip': 'Havvn',
   'tray.open': 'Открыть Havvn',
+  'tray.openDownloads': 'Открыть папку загрузок',
+  'tray.active': 'активных',
   'tray.pauseAll': 'Приостановить все загрузки',
   'tray.resumeAll': 'Возобновить все загрузки',
   'tray.altSpeed': 'Альтернативные лимиты скорости',
@@ -129,16 +124,7 @@ const ru: Dict = {
   'notify.vpnLost.bodyMany': 'Приостановлено торрентов: {count} для защиты вашего IP. Переподключите VPN и возобновите вручную.',
   'notify.vpnLost.bodyNone': 'Похоже, ваш VPN отключён. Переподключите его перед возобновлением торрентов.',
 
-  // VPN warning message box
-  'vpnWarn.title': 'Предупреждение о приватности',
-  'vpnWarn.message': 'VPN не обнаружен! Ваш реальный IP-адрес может быть виден пирам.',
-  'vpnWarn.detailIntro': 'Рекомендуем использовать VPN для большей приватности при работе с BitTorrent.',
-  'vpnWarn.yourIp': 'Ваш публичный IP: {ip}',
-  'vpnWarn.recommended': 'Рекомендуемые VPN-провайдеры:',
-  'vpnWarn.mullvad': '• Mullvad VPN (анонимно, без логов)',
-  'vpnWarn.proton': '• ProtonVPN (безопасно, ориентирован на приватность)',
-  'vpnWarn.ivpn': '• IVPN (приватность прежде всего)',
-  'vpnWarn.dontShowAgain': 'Больше не показывать',
+  // Shared
   'common.ok': 'OK',
 
   // Search-provider test (main → renderer, shown as test result)

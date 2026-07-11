@@ -9,7 +9,7 @@ import fsSync from 'fs';
 import path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { logger, detectVPN, showVPNWarning, getAppIconPath } from '../utils';
+import { logger, detectVPN, getAppIconPath } from '../utils';
 import { getRSSService } from '../services/rss-service';
 import { getShareManager, downloadContentPath } from '../sharing/share-manager';
 import { customTurnToIce } from '../sharing/ice-servers';
@@ -984,16 +984,6 @@ export function setupIpcHandlers(window: BrowserWindow): void {
     async (_event, id: string) => {
       const { deleteProfile } = await import('../services/network-profiles');
       return deleteProfile(id);
-    }
-  ));
-
-  ipcMain.handle('privacy:showVPNWarning', wrapHandler('privacy:showVPNWarning',
-    async () => {
-      const result = await detectVPN();
-      if (!result.isVPNActive) {
-        showVPNWarning(result);
-      }
-      return result;
     }
   ));
 

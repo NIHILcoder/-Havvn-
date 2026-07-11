@@ -58,7 +58,26 @@
 }
 
 .room-detail { flex: 1; overflow-y: auto; min-height: 0; }
-.room-detail-inner { padding: var(--space-5) var(--space-6); display: flex; flex-direction: column; gap: var(--space-4); }
+.room-detail-inner { position: relative; padding: var(--space-5) var(--space-6); display: flex; flex-direction: column; gap: var(--space-4); }
+
+/* Drop-files-here overlay (shown while an OS file drag hovers the room) */
+.room-drop-overlay {
+  position: absolute;
+  inset: var(--space-3);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  background: rgba(var(--color-accent-rgb), 0.08);
+  border: 2px dashed var(--color-accent-primary);
+  border-radius: var(--radius-lg);
+  color: var(--color-accent-primary);
+  font-size: 14px;
+  font-weight: 600;
+  pointer-events: none; /* drag events must keep hitting the container below */
+}
 
 .room-detail-head {
   display: flex;
@@ -107,6 +126,36 @@
   flex-direction: column;
   gap: var(--space-4);
   min-width: 0;
+}
+
+/* The side column (members + chat) pins to the viewport while the main column
+   scrolls, so on long sessions the chat and its composer never sink below the
+   fold. Members scroll internally; the chat card takes the remaining height. */
+.room-col-side {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  max-height: calc(100vh - var(--topbar-height, 80px) - var(--footer-height, 36px) - 2 * var(--space-5));
+  min-height: 0;
+}
+.room-col-side .room-section { min-height: 0; }
+.room-col-side .room-members {
+  overflow-y: auto;
+  min-height: 0;
+  max-height: 34vh;
+}
+/* :has() is supported by Electron's Chromium — the chat card flexes to fill. */
+.room-col-side .room-section:has(.room-chat) { flex: 1 1 auto; }
+.room-col-side .room-chat { flex: 1; min-height: 0; }
+.room-col-side .room-chat-log { flex: 1; max-height: none; }
+
+@media (max-width: 980px) {
+  /* Single-column layout: sticky off, restore the compact capped chat. */
+  .room-col-side { position: static; max-height: none; }
+  .room-col-side .room-members { max-height: none; }
+  .room-col-side .room-section:has(.room-chat) { flex: initial; }
+  .room-col-side .room-chat { flex: initial; }
+  .room-col-side .room-chat-log { flex: initial; max-height: 320px; }
 }
 
 /* Sections are flat cards (concept .roomcard) */
@@ -328,6 +377,32 @@
 .room-chat-compose .rooms-input { flex: 1; }
 
 /* ── Files (concept .frow: flat hairline rows inside the card) ─────────── */
+/* Quick client-side filter over the room's file list (shown for >5 files) */
+.room-file-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px var(--space-3);
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  color: var(--color-text-tertiary);
+  transition: border-color var(--transition-fast);
+}
+.room-file-search:focus-within { border-color: var(--color-border-focus); color: var(--color-text-secondary); }
+.room-file-search input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 0;
+  outline: none;
+  padding: 0;
+  color: var(--color-text-primary);
+  font-size: 12.5px;
+  font-family: var(--font-family);
+}
+.room-file-search input::placeholder { color: var(--color-text-tertiary); }
+
 .room-files { display: flex; flex-direction: column; }
 .room-files-empty {
   padding: var(--space-6);
