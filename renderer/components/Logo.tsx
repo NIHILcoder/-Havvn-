@@ -14,7 +14,7 @@ interface LogoMarkProps {
 }
 
 export const LogoMark: React.FC<LogoMarkProps> = ({ size = 22, mono = false, className }) => {
-  // Below ~18px the node muddies the mark — thicken the stroke and drop it.
+  // Below ~18px the thin stroke muddies — thicken it.
   const tiny = size <= 18;
   const stroke = mono ? 'currentColor' : 'var(--color-accent-primary)';
   return (
@@ -27,16 +27,16 @@ export const LogoMark: React.FC<LogoMarkProps> = ({ size = 22, mono = false, cla
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden="true"
     >
+      {/* The node dot was dropped from the mark everywhere (it never made it
+          into the .ico, so the brand read inconsistently). Bare Double-V only. */}
       <path
+        className="logo-mark-path"
         d="M4 9 L10.5 21 L16 12 L21.5 21 L28 9"
         stroke={stroke}
         strokeWidth={tiny ? 3.2 : 2.3}
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-      {!tiny && (
-        <circle cx="16" cy="9.4" r="2.3" fill={mono ? 'currentColor' : 'var(--color-accent-primary-hover)'} />
-      )}
     </svg>
   );
 };

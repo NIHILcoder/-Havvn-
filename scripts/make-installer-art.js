@@ -71,12 +71,12 @@ function fillCircle(c, cx, cy, radius, rgb) {
   }
 }
 
-/** The Double-V at a given scale, centered at (cx, cy). Design box: 24x12 units. */
-function drawMark(c, cx, cy, scale, stroke, node) {
+/** The Double-V at a given scale, centered at (cx, cy). Design box: 24x12 units.
+    Bare stroke only — the node dot was dropped from the brand. */
+function drawMark(c, cx, cy, scale, stroke) {
   const P = [[4, 9], [10.5, 21], [16, 12], [21.5, 21], [28, 9]]
     .map(([x, y]) => [cx + (x - 16) * scale, cy + (y - 15) * scale]);
   strokePolyline(c, P, 2.3 * scale, stroke);
-  fillCircle(c, cx + (16 - 16) * scale, cy + (9.4 - 15) * scale, 2.3 * scale, node);
 }
 
 // ── BMP writer (24-bit, BITMAPINFOHEADER, bottom-up) ────────────────────────
@@ -130,7 +130,7 @@ const out = path.join(__dirname, '..', 'build');
       for (let k = 0; k < 3; k++) c.px[i + k] = GRAPHITE[k] + (GRAPHITE2[k] - GRAPHITE[k]) * t;
     }
   }
-  drawMark(c, 82, 120, 3.4, EMBER, EMBER2);
+  drawMark(c, 82, 120, 3.4, EMBER);
   // ember baseline accent at the bottom
   for (let y = 306; y < 309; y++) for (let x = 30; x < 134; x++) blend(c, x, y, EMBER, 0.9);
   writeBmp(path.join(out, 'installerSidebar.bmp'), c);
@@ -139,13 +139,13 @@ const out = path.join(__dirname, '..', 'build');
 // Uninstaller sidebar — same geometry, muted mark (leaving, not arriving).
 {
   const c = makeCanvas(164, 314, GRAPHITE);
-  drawMark(c, 82, 120, 3.4, MUTED, MUTED);
+  drawMark(c, 82, 120, 3.4, MUTED);
   writeBmp(path.join(out, 'uninstallerSidebar.bmp'), c);
 }
 
 // Header 150x57 — light chrome background, compact ember mark on the right.
 {
   const c = makeCanvas(150, 57, LIGHT);
-  drawMark(c, 116, 28, 1.5, EMBER, EMBER2);
+  drawMark(c, 116, 28, 1.5, EMBER);
   writeBmp(path.join(out, 'installerHeader.bmp'), c);
 }

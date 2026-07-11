@@ -6,9 +6,9 @@ repeating-conic-gradient(#444 0 25%,#3a3a3a 0 50%) 0 0/20px 20px}</style></head>
 <script>
 const EMBER='#F2913F', EMBER2='#E0673A', TEXT='#ECEBE6', BG='#141519', BG2='#17181d', MUTED='#98958D';
 
-// The brand Double-V: path M4 9 L10.5 21 L16 12 L21.5 21 L28 9 + node (16,9.4) r2.3
+// The brand Double-V: path M4 9 L10.5 21 L16 12 L21.5 21 L28 9 (bare stroke — node dot dropped from the brand)
 // Design box 32x32 (mark spans x4..28, y9..21).
-function drawMark(ctx, cx, cy, scale, stroke = EMBER, node = EMBER2) {
+function drawMark(ctx, cx, cy, scale, stroke = EMBER) {
   const P = [[4,9],[10.5,21],[16,12],[21.5,21],[28,9]].map(([x,y]) => [cx+(x-16)*scale, cy+(y-15)*scale]);
   ctx.lineWidth = 2.3*scale;
   ctx.lineCap = 'round';
@@ -18,10 +18,6 @@ function drawMark(ctx, cx, cy, scale, stroke = EMBER, node = EMBER2) {
   ctx.moveTo(P[0][0], P[0][1]);
   for (let i=1;i<P.length;i++) ctx.lineTo(P[i][0], P[i][1]);
   ctx.stroke();
-  ctx.fillStyle = node;
-  ctx.beginPath();
-  ctx.arc(cx+(16-16)*scale, cy+(9.4-15)*scale, 2.3*scale, 0, Math.PI*2);
-  ctx.fill();
 }
 
 function drawWordmark(ctx, x, y, px) {

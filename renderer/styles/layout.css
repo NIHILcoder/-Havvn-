@@ -29,10 +29,11 @@
 }
 
 /* Sidebar Header — fixed to --topbar-height so its bottom hairline lines up
-   with every page header's hairline across the divider. */
+   with every page header's hairline across the divider. Brand lockup centered. */
 .sidebar-header {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: var(--space-3);
   height: var(--topbar-height);
   box-sizing: border-box;
@@ -56,6 +57,27 @@
 
 .sidebar-logo:hover {
   transform: translateY(-1px);
+}
+
+/* The Double-V draws itself in on app start, and re-draws on hover. Two
+   identical keyframe sets so the hover animation restarts cleanly. Both are
+   killed by the "reduce animations" interface preference automatically
+   ([data-reduce-motion] in base.css zeroes all animation durations, leaving
+   the mark fully drawn via fill-mode: both). Path length ≈ 49 units. */
+.sidebar-logo .logo-mark-path {
+  stroke-dasharray: 50;
+  animation: logoDraw 0.9s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+.sidebar-logo:hover .logo-mark-path {
+  animation: logoDrawHover 0.7s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+@keyframes logoDraw {
+  from { stroke-dashoffset: 50; }
+  to { stroke-dashoffset: 0; }
+}
+@keyframes logoDrawHover {
+  from { stroke-dashoffset: 50; }
+  to { stroke-dashoffset: 0; }
 }
 
 .sidebar-title {
