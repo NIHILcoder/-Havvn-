@@ -5,7 +5,7 @@
   "main": "dist/electron/electron/main.js",
   "scripts": {
     "dev": "concurrently \"npm run dev:electron\" \"npm run dev:renderer\"",
-    "dev:electron": "tsc -p tsconfig.electron.json && electron .",
+    "dev:electron": "tsc -p tsconfig.electron.json && cross-env NODE_ENV=development electron .",
     "dev:renderer": "webpack serve --config webpack.renderer.config.js --mode development",
     "build": "npm run build:electron && npm run build:renderer",
     "build:electron": "tsc -p tsconfig.electron.json",
@@ -58,6 +58,7 @@
     "@typescript-eslint/eslint-plugin": "^6.13.1",
     "@typescript-eslint/parser": "^6.13.1",
     "concurrently": "^8.2.2",
+    "cross-env": "^10.1.0",
     "css-loader": "^6.8.1",
     "electron": "^42.4.0",
     "electron-builder": "^26.0.16",

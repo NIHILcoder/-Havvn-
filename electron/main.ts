@@ -497,7 +497,9 @@ async function createWindow(): Promise<void> {
   
   if (isDev) {
     await mainWindow.loadURL('http://localhost:3000');
-    mainWindow.webContents.openDevTools();
+    // DevTools no longer auto-open — use View → Toggle Developer Tools, or set
+    // HAVVN_DEVTOOLS=1 when you want them from the start.
+    if (process.env.HAVVN_DEVTOOLS === '1') mainWindow.webContents.openDevTools();
   } else {
     // __dirname is dist/electron/electron/ due to tsconfig rootDir
     await mainWindow.loadFile(path.join(__dirname, '../../renderer/index.html'));
