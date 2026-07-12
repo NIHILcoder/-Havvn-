@@ -42,6 +42,15 @@ export class RoomManager {
   private ipcWired = false;
   private cache = new Map<string, RoomState>();
 
+  constructor() {
+    // Renderer-facing liveness channels live HERE (not ipc/handlers.ts): they
+    // are room-stack plumbing end to end, and the singleton constructor makes
+    // the ipcMain.handle registration run exactly once.
+    ipcMain.handle('rooms:typing', async (_e, roomId: string) => { this.typing(String(roomId || '')); return { ok: true }; });
+    ipcMain.handle('rooms:reactFile', async (_e, roomId: string, fileId: string, emoji: string) =>
+      this.reactFile(String(roomId || ''), String(fileId || ''), String(emoji || '')));
+  }
+
   setMainWindow(win: BrowserWindow): void { this.mainWindow = win; }
 
   private wireIpc(): void {
@@ -96,6 +105,11 @@ export class RoomManager {
     // A chat message (sent or received) — persist it (capped, deduped by id).
     ipcMain.on('room-chat-add', (_e, payload: { roomId: string; message: import('../../shared/types').RoomChatMessage }) => {
       try { if (payload?.roomId && payload?.message?.id) db.appendRoomChats(payload.roomId, [payload.message]); } catch { /* ignore */ }
+    });
+    // A file reaction toggled (ours or a peer's) — persist the room's whole
+    // reaction map (toggles don't append well) so it survives restart.
+    ipcMain.on('room-reacts', (_e, payload: { roomId: string; reacts: Record<string, Record<string, string[]>> }) => {
+      try { if (payload?.roomId && payload?.reacts) db.setRoomReacts(payload.roomId, payload.reacts); } catch { /* ignore */ }
     });
     // The engine TOFU-bound a member's public key — persist so the binding (and
     // thus anti-impersonation) survives restarts.
@@ -238,6 +252,7 @@ export class RoomManager {
         mutes: db.getRoomMutes(roomId),
         history: db.getRoomHistory(roomId),
         chat: db.getRoomChats(roomId),
+        reacts: db.getRoomReacts(roomId),
         identities: db.getRoomIdentities(roomId),
         e2e: e2e ?? false,
         secret: secret ?? '',
@@ -327,6 +342,7 @@ export class RoomManager {
     db.clearRoomHistory(roomId);
     db.clearRoomMutes(roomId);
     db.clearRoomChats(roomId);
+    db.clearRoomReacts(roomId);
     db.clearRoomIdentities(roomId);
     try { fs.rmSync(this.encCacheDir(roomId), { recursive: true, force: true }); } catch { /* ignore */ }
     // The engine's 'leave' above destroys the room's WebTorrent client, so the
@@ -482,6 +498,21 @@ export class RoomManager {
       this.win.webContents.send('room-cmd', { type: 'chat', reqId: ++this.reqSeq, roomId, payload: { text: body } });
     }
     return { ok: true };
+  }
+
+  /** Fire-and-forget: tell a room's peers we're composing a chat message.
+   *  The engine rate-limits the broadcast, so keystroke-driven calls are fine. */
+  typing(roomId: string): void {
+    if (!roomId) return;
+    if (this.win && !this.win.isDestroyed() && this.ready) {
+      this.win.webContents.send('room-cmd', { type: 'typing', reqId: ++this.reqSeq, roomId });
+    }
+  }
+
+  /** Toggle our emoji reaction on a shared file (whitelisted emoji only;
+   *  the engine flips on/off from its current state and gossips the change). */
+  async reactFile(roomId: string, fileId: string, emoji: string): Promise<{ ok: boolean }> {
+    return this.call<{ ok: boolean }>('reactFile', { roomId, fileId, emoji }, 8000);
   }
 
   /** Re-join all persisted rooms on startup so swarms reconnect automatically. */

@@ -181,6 +181,9 @@ export interface RoomState {
   downKbps: number;      // per-room download ceiling, KB/s (0 = unlimited)
   kicked?: boolean;      // the owner removed us from this room (session-only)
   kickedBy?: string;     // display name of who removed us
+  typingMemberIds?: string[]; // members composing a chat message right now (self excluded, ~4s TTL)
+  fileReacts?: Record<string, Record<string, string[]>>; // fileId → emoji → reacting memberIds
+  memberProg?: Record<string, Record<string, number>>;   // memberId → fileId → coarse download % (0-100; a member's 'have' implies 100)
 }
 
 /** Lightweight room listing entry. */
@@ -942,6 +945,10 @@ export interface IpcApi {
     setLimits: (roomId: string, upKbps: number, downKbps: number) => Promise<{ ok: boolean }>;
     kick: (roomId: string, memberId: string) => Promise<{ ok: boolean }>;
     sendChat: (roomId: string, text: string) => Promise<{ ok: boolean }>;
+    typing: (roomId: string) => void;
+    reactFile: (roomId: string, fileId: string, emoji: string) => Promise<void>;
+    exportIdentity: () => Promise<{ success: boolean; path?: string }>;
+    importIdentity: () => Promise<{ success: boolean; rooms?: number }>;
   };
   onRoomUpdate: (callback: (state: RoomState) => void) => () => void;
   onRoomSync: (callback: (msg: { roomId: string; fileId: string; action: string; position: number; rate: number; at: number; memberId: string; name: string; avatarSeed?: string; playing?: boolean; together?: boolean; emoji?: string }) => void) => () => void;

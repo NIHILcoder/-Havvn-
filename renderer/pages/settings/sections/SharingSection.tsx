@@ -27,7 +27,40 @@ export const SharingSection: React.FC = () => {
     netEnabled, setNetEnabled, netProfiles, netCurrent, netActiveId,
     netDraft, setNetDraft, saveCurrentAsProfile, saveNetDraft,
     removeNetProfile, toggleOverride, setOverrideValue,
+    setMessage,
   } = ctx;
+
+  // ── Room identity backup (reinstall insurance) ────────────────────────────
+  const [identityBusy, setIdentityBusy] = React.useState<'export' | 'import' | null>(null);
+
+  const exportRoomIdentity = async () => {
+    setIdentityBusy('export');
+    try {
+      const res = await window.api.rooms.exportIdentity();
+      if (res.success) setMessage({ type: 'success', text: t('settings.roomIdentity.exported') });
+    } catch {
+      setMessage({ type: 'error', text: t('settings.msg.exportFailed') });
+    } finally {
+      setIdentityBusy(null);
+    }
+  };
+
+  const importRoomIdentity = async () => {
+    setIdentityBusy('import');
+    try {
+      const res = await window.api.rooms.importIdentity();
+      if (res.success) {
+        setMessage({
+          type: 'success',
+          text: `${t('settings.roomIdentity.imported')}: ${res.rooms ?? 0}. ${t('settings.roomIdentity.restartHint')}`,
+        });
+      }
+    } catch {
+      setMessage({ type: 'error', text: t('settings.msg.importFailed') });
+    } finally {
+      setIdentityBusy(null);
+    }
+  };
 
   // ── Network-profile helpers (ported verbatim from the old monolith) ───────
   const overrideSummary = (p: NetworkProfile): string => {
@@ -184,6 +217,34 @@ export const SharingSection: React.FC = () => {
               {t('common.save')}
             </Button>
           </div>
+        </div>
+      </SettingsCard>
+
+      {/* ── Room identity backup ─────────────────────────────────────────── */}
+      <SettingsCard title={t('settings.card.roomIdentity')} icon="shield">
+        <SettingRow
+          label={t('settings.roomIdentity.export')}
+          description={t('settings.roomIdentity.export.desc')}
+          control={
+            <Button variant="secondary" size="sm" loading={identityBusy === 'export'}
+              icon={<Icon name="upload" size={14} />} onClick={exportRoomIdentity}>
+              {t('settings.roomIdentity.exportBtn')}
+            </Button>
+          }
+        />
+        <SettingRow
+          label={t('settings.roomIdentity.import')}
+          description={t('settings.roomIdentity.import.desc')}
+          control={
+            <Button variant="secondary" size="sm" loading={identityBusy === 'import'}
+              icon={<Icon name="download" size={14} />} onClick={importRoomIdentity}>
+              {t('settings.roomIdentity.importBtn')}
+            </Button>
+          }
+        />
+        <div className="settings-notice-compact web-remote-warn">
+          <Icon name="alert-triangle" size={14} />
+          <span>{t('settings.roomIdentity.warn')}</span>
         </div>
       </SettingsCard>
 

@@ -10,7 +10,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Hls from 'hls.js';
 import toast from 'react-hot-toast';
-import { RoomState, RoomSummary, RoomProfile, RoomFile } from '../../shared/types';
+import { RoomState, RoomSummary, RoomProfile, RoomFile, RoomMember } from '../../shared/types';
 import { Button, Icon, EmptyState, Identicon, QRCode, TransferPickerModal, Toggle, PlayerControls, Modal, useConfirm } from '../components';
 import { avatarCandidates } from '../components/Identicon';
 import { classifyMediaKind } from '../../shared/media';
@@ -19,6 +19,9 @@ import { useTranslation } from '../utils/i18nContext';
 import './RoomsPage.css';
 
 const isPlayable = (name: string): boolean => classifyMediaKind(name) !== 'other';
+
+/** The compact per-file reaction set (mirrors the engine's allow-list). */
+const FILE_REACT_EMOJIS = ['🔥', '👍', '❤️', '😂'] as const;
 
 function membersWithFile(room: RoomState, fileId: string): number {
   return room.members.filter((m) => m.have.includes(fileId)).length;
@@ -563,7 +566,6 @@ const RoomDetail: React.FC<DetailProps> = ({ room, onAddFiles, onDropFiles, onOp
     const down = Math.max(0, Math.floor(Number(downDraft) || 0));
     if (up !== room.upKbps || down !== room.downKbps) onSetLimits(up, down);
   };
-  const totalMembers = room.members.length;
   // Connection indicator: removed → connecting → online (peers) → alone (no peers).
   const connState = room.kicked ? 'removed' : !room.connected ? 'connecting' : room.peerCount > 0 ? 'online' : 'alone';
   const connLabel = room.kicked
@@ -716,58 +718,8 @@ const RoomDetail: React.FC<DetailProps> = ({ room, onAddFiles, onDropFiles, onOp
         </div>
 
         <div className="room-col-side">
-          {/* Members */}
-          <div className="room-section">
-            <div className="room-section-title">{t('rooms.members')} · {totalMembers}</div>
-            <div className="room-members">
-              {room.members.map((m) => (
-                <div key={m.memberId} className={`room-member ${m.online ? '' : 'offline'} ${m.muted ? 'muted' : ''}`} title={m.isSelf ? t('rooms.you') : m.relayed ? t('rooms.relayed') : m.online ? t('rooms.direct') : t('rooms.offline')}>
-                  <Identicon seed={m.avatarSeed} size={30} online={m.online} ring={m.isSelf} />
-                  <span className="room-member-name">
-                    {m.role === 'owner' && <Icon name="star" size={11} className="room-member-owner" />}
-                    {m.isSelf ? (m.name && m.name !== 'You' ? m.name : t('rooms.you')) : m.name}
-                    {m.relayed && <Icon name="network" size={11} className="room-member-relay" />}
-                  </span>
-                  <span className="room-member-have">
-                    {m.muted ? t('rooms.muted') : `${m.have.length}/${room.files.length}`}
-                  </span>
-                  {!m.isSelf && (
-                    <button
-                      className="room-member-mute"
-                      title={m.muted ? t('rooms.unmute') : t('rooms.mute')}
-                      onClick={async () => {
-                        if (m.muted) {
-                          window.api.rooms.setMuted(room.roomId, m.memberId, false).catch((e) => toast.error(String(e instanceof Error ? e.message : e)));
-                        } else if (await confirm({ message: t('rooms.muteConfirm') })) {
-                          window.api.rooms.setMuted(room.roomId, m.memberId, true).catch((e) => toast.error(String(e instanceof Error ? e.message : e)));
-                        }
-                      }}
-                    >
-                      <Icon name={m.muted ? 'eye' : 'eye-off'} size={13} />
-                    </button>
-                  )}
-                  {room.canManage && !m.isSelf && m.role !== 'owner' && (
-                    <button
-                      className="room-member-kick"
-                      title={t('rooms.kick')}
-                      onClick={async () => {
-                        if (await confirm({ message: t('rooms.kickConfirm'), danger: true })) {
-                          window.api.rooms.kick(room.roomId, m.memberId)
-                            .then(() => toast.success(t('rooms.kicked')))
-                            .catch((e) => toast.error(String(e instanceof Error ? e.message : e)));
-                        }
-                      }}
-                    >
-                      <Icon name="x-circle" size={13} />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Chat */}
-          <RoomChat room={room} />
+          {/* Chat card — the members list lives in a collapsible strip in its header */}
+          <RoomChat room={room} withMembers />
         </div>
       </div>
 
@@ -800,11 +752,71 @@ const RoomDetail: React.FC<DetailProps> = ({ room, onAddFiles, onDropFiles, onOp
   );
 };
 
+// ── Members list (rows with mute/kick controls) ───────────────────────────
+// Extracted from the old side-column card; now rendered inside the chat
+// card's collapsible panel. Markup and handlers are unchanged.
+const RoomMembersList: React.FC<{ room: RoomState }> = ({ room }) => {
+  const { t } = useTranslation();
+  const { confirm } = useConfirm();
+  return (
+    <div className="room-members">
+      {room.members.map((m) => (
+        <div key={m.memberId} className={`room-member ${m.online ? '' : 'offline'} ${m.muted ? 'muted' : ''}`} title={m.isSelf ? t('rooms.you') : m.relayed ? t('rooms.relayed') : m.online ? t('rooms.direct') : t('rooms.offline')}>
+          <Identicon seed={m.avatarSeed} size={30} online={m.online} ring={m.isSelf} />
+          <span className="room-member-name">
+            {m.role === 'owner' && <Icon name="star" size={11} className="room-member-owner" />}
+            {m.isSelf ? (m.name && m.name !== 'You' ? m.name : t('rooms.you')) : m.name}
+            {m.relayed && <Icon name="network" size={11} className="room-member-relay" />}
+          </span>
+          <span className="room-member-have">
+            {m.muted ? t('rooms.muted') : `${m.have.length}/${room.files.length}`}
+          </span>
+          {!m.isSelf && (
+            <button
+              className="room-member-mute"
+              title={m.muted ? t('rooms.unmute') : t('rooms.mute')}
+              onClick={async () => {
+                if (m.muted) {
+                  window.api.rooms.setMuted(room.roomId, m.memberId, false).catch((e) => toast.error(String(e instanceof Error ? e.message : e)));
+                } else if (await confirm({ message: t('rooms.muteConfirm') })) {
+                  window.api.rooms.setMuted(room.roomId, m.memberId, true).catch((e) => toast.error(String(e instanceof Error ? e.message : e)));
+                }
+              }}
+            >
+              <Icon name={m.muted ? 'eye' : 'eye-off'} size={13} />
+            </button>
+          )}
+          {room.canManage && !m.isSelf && m.role !== 'owner' && (
+            <button
+              className="room-member-kick"
+              title={t('rooms.kick')}
+              onClick={async () => {
+                if (await confirm({ message: t('rooms.kickConfirm'), danger: true })) {
+                  window.api.rooms.kick(room.roomId, m.memberId)
+                    .then(() => toast.success(t('rooms.kicked')))
+                    .catch((e) => toast.error(String(e instanceof Error ? e.message : e)));
+                }
+              }}
+            >
+              <Icon name="x-circle" size={13} />
+            </button>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+};
+
 // ── Room chat panel ───────────────────────────────────────────────────────
-const RoomChat: React.FC<{ room: RoomState }> = ({ room }) => {
+// `withMembers` (detail page) turns the card into the dominant side-column
+// element: header with an overlapping-avatar member strip that toggles a
+// collapsible members panel, then the log filling the remaining height.
+// Without it (floating player) the compact title-only layout is preserved.
+const RoomChat: React.FC<{ room: RoomState; withMembers?: boolean }> = ({ room, withMembers }) => {
   const { t } = useTranslation();
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  const [membersOpen, setMembersOpen] = useState(false);
   const selfId = room.members.find((m) => m.isSelf)?.memberId;
   const messages = room.chat || [];
   const listRef = useRef<HTMLDivElement>(null);
@@ -814,6 +826,32 @@ const RoomChat: React.FC<{ room: RoomState }> = ({ room }) => {
     const el = listRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages.length]);
+
+  // Typing liveness. Outbound: at most one ping per 2.5s while composing (the
+  // engine rate-limits the broadcast further). Inbound: mirror the engine's
+  // typingMemberIds, restarting a 4s local TTL on every state push that still
+  // carries ids — the engine drops stale typists itself, so the TTL only has
+  // to cover the case where pushes stop arriving entirely.
+  const typingSentAtRef = useRef(0);
+  const [typingIds, setTypingIds] = useState<string[]>([]);
+  useEffect(() => {
+    const ids = room.typingMemberIds || [];
+    setTypingIds(ids);
+    if (ids.length === 0) return;
+    const timer = window.setTimeout(() => setTypingIds([]), 4000);
+    return () => window.clearTimeout(timer);
+  }, [room]);
+  const typingNames = typingIds
+    .map((id) => room.members.find((m) => m.memberId === id))
+    .filter((m): m is RoomMember => !!m && !m.isSelf && !m.muted)
+    .map((m) => m.name || '?');
+  const pingTyping = (value: string) => {
+    if (!value.trim()) return;
+    const now = Date.now();
+    if (now - typingSentAtRef.current < 2500) return;
+    typingSentAtRef.current = now;
+    window.api.rooms.typing(room.roomId);
+  };
 
   const send = async () => {
     const body = text.trim();
@@ -825,9 +863,45 @@ const RoomChat: React.FC<{ room: RoomState }> = ({ room }) => {
     finally { setSending(false); }
   };
 
+  // Member strip: online members first (max 6 avatars + "+N" spillover).
+  const online = room.members.filter((m) => m.online);
+  const strip = online.slice(0, 6);
+  const stripExtra = online.length - strip.length;
+
   return (
-    <div className="room-section">
-      <div className="room-section-title">{t('rooms.chat')}</div>
+    <div className={`room-section${withMembers ? ' room-chat-section' : ''}`}>
+      {withMembers ? (
+        <>
+          <div className="room-chat-head">
+            <div className="room-section-title">{t('rooms.chat')}</div>
+            <button
+              type="button"
+              className={`room-chat-members-toggle${membersOpen ? ' open' : ''}`}
+              aria-expanded={membersOpen}
+              title={membersOpen ? t('rooms.hideMembers') : t('rooms.showMembers')}
+              onClick={() => setMembersOpen((v) => !v)}
+            >
+              <span className="room-avatar-strip">
+                {strip.map((m) => (
+                  <span key={m.memberId} className="room-avatar-strip-item">
+                    <Identicon seed={m.avatarSeed} size={22} />
+                  </span>
+                ))}
+                {stripExtra > 0 && <span className="room-avatar-strip-item room-avatar-more">+{stripExtra}</span>}
+              </span>
+              <span className="room-chat-online">{online.length}/{room.members.length}</span>
+              <Icon name="chevron-down" size={14} className="room-chat-members-chevron" />
+            </button>
+          </div>
+          <div className={`room-members-collapse${membersOpen ? ' open' : ''}`} aria-hidden={!membersOpen}>
+            <div className="room-members-collapse-inner">
+              <RoomMembersList room={room} />
+            </div>
+          </div>
+        </>
+      ) : (
+        <div className="room-section-title">{t('rooms.chat')}</div>
+      )}
       <div className="room-chat">
         <div className="room-chat-log" ref={listRef}>
           {messages.length === 0 ? (
@@ -848,13 +922,25 @@ const RoomChat: React.FC<{ room: RoomState }> = ({ room }) => {
             })
           )}
         </div>
+        <div className={`room-chat-typing${typingNames.length > 0 ? ' on' : ''}`} aria-live="polite">
+          {typingNames.length > 0 && (
+            <>
+              <span className="room-chat-typing-text">
+                {typingNames.length === 1
+                  ? `${typingNames[0]} ${t('rooms.typingOne')}`
+                  : `${typingNames[0]} ${t('rooms.typingAnd')} ${typingNames.length - 1} ${t('rooms.typingMany')}`}
+              </span>
+              <span className="room-chat-typing-dots" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span>
+            </>
+          )}
+        </div>
         <div className="room-chat-compose">
           <input
             className="rooms-input"
             placeholder={t('rooms.chatPlaceholder')}
             value={text}
             maxLength={2000}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => { setText(e.target.value); pingTyping(e.target.value); }}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
           />
           <Button variant="primary" size="sm" onClick={send} loading={sending} disabled={!text.trim()} icon={<Icon name="send" size={14} />}>
@@ -878,6 +964,23 @@ const RoomFileRow: React.FC<{ file: RoomFile; room: RoomState; onWatch: (file: R
   // Manual mode: the file is listed but nothing has fetched it yet.
   const awaitingFetch = !room.autoFetch && !haveLocally && !downloading;
 
+  // Reactions: fileId → emoji → memberIds from the engine; a click toggles ours.
+  const selfId = room.members.find((m) => m.isSelf)?.memberId;
+  const reacts = room.fileReacts?.[file.fileId];
+  const toggleReact = (emoji: string) => {
+    window.api.rooms.reactFile(room.roomId, file.fileId, emoji)
+      .catch((e) => toast.error(String(e instanceof Error ? e.message : e)));
+  };
+
+  // Who (besides us) holds the file complete, and who is mid-download (1-99%).
+  const holders = room.members.filter((m) => !m.isSelf && m.have.includes(file.fileId));
+  const fetching = room.members
+    .map((m) => ({ m, pct: Math.round(room.memberProg?.[m.memberId]?.[file.fileId] ?? 0) }))
+    .filter(({ m, pct }) => !m.isSelf && !m.have.includes(file.fileId) && pct >= 1 && pct <= 99);
+  const holdersShown = holders.slice(0, 4);
+  const holdersExtra = holders.length - holdersShown.length;
+  const holderNames = holders.map((m) => m.name || '?').join(', ');
+
   return (
     <div className="room-file">
       <div className="room-file-owner" title={`${t('rooms.addedBy')}: ${owner?.name || file.addedByName}`}>
@@ -891,12 +994,55 @@ const RoomFileRow: React.FC<{ file: RoomFile; room: RoomState; onWatch: (file: R
           <span className="room-file-have">
             <Icon name="users" size={12} /> {haveCount}/{room.members.length}
           </span>
+          {(holdersShown.length > 0 || fetching.length > 0) && (
+            <span className="room-file-peers">
+              {holdersShown.length > 0 && (
+                <span className="room-file-peers-group" title={`${t('rooms.haveBy')} ${holderNames}`}>
+                  {holdersShown.map((m) => (
+                    <span key={m.memberId} className="room-file-peer">
+                      <Identicon seed={m.avatarSeed} size={16} />
+                    </span>
+                  ))}
+                  {holdersExtra > 0 && <span className="room-file-peer room-file-peer-more">+{holdersExtra}</span>}
+                </span>
+              )}
+              {fetching.map(({ m, pct }) => (
+                <span
+                  key={m.memberId}
+                  className="room-file-peer room-file-peer-prog"
+                  style={{ background: `conic-gradient(var(--color-accent-primary) ${pct}%, var(--color-border-default) 0)` }}
+                  title={`${m.name || '?'} · ${pct}%`}
+                >
+                  <Identicon seed={m.avatarSeed} size={12} />
+                </span>
+              ))}
+            </span>
+          )}
           {downloading && (
             <>
               <span className="room-file-dot">·</span>
               <span className="room-file-speed">{formatSpeed(tr.downSpeed)}</span>
             </>
           )}
+          <span className="room-file-reacts">
+            {FILE_REACT_EMOJIS.map((emoji) => {
+              const ids = reacts?.[emoji] || [];
+              const mine = !!selfId && ids.includes(selfId);
+              return (
+                <button
+                  key={emoji}
+                  type="button"
+                  className={`room-file-react${ids.length > 0 ? ' active' : ''}${mine ? ' mine' : ''}`}
+                  aria-pressed={mine}
+                  title={t('rooms.reactToggle')}
+                  onClick={() => toggleReact(emoji)}
+                >
+                  {emoji}
+                  {ids.length > 0 && <span className="room-file-react-n">{ids.length}</span>}
+                </button>
+              );
+            })}
+          </span>
         </div>
         {downloading && (
           <div className="room-file-progress">

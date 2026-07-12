@@ -57,8 +57,19 @@
   flex-direction: column;
 }
 
-.room-detail { flex: 1; overflow-y: auto; min-height: 0; }
-.room-detail-inner { position: relative; padding: var(--space-5) var(--space-6); display: flex; flex-direction: column; gap: var(--space-4); }
+/* Two-pane app layout: the page itself never scrolls — the LEFT column has its
+   own scrollbar and the chat column simply fills the remaining height. No
+   sticky viewport math (it broke as soon as anything sat above the grid). */
+.room-detail { flex: 1; overflow: hidden; min-height: 0; }
+.room-detail-inner {
+  position: relative;
+  height: 100%;
+  box-sizing: border-box;
+  padding: var(--space-5) var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
 
 /* Drop-files-here overlay (shown while an OS file drag hovers the room) */
 .room-drop-overlay {
@@ -111,13 +122,11 @@
 /* ── Two-column concept layout ─────────────────────────────────────────── */
 .room-detail-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-columns: minmax(0, 1fr) 360px;
   gap: var(--space-4);
-  align-items: start;
-}
-
-@media (max-width: 980px) {
-  .room-detail-grid { grid-template-columns: 1fr; }
+  align-items: stretch;   /* both columns take the full remaining height */
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .room-col-main,
@@ -126,36 +135,117 @@
   flex-direction: column;
   gap: var(--space-4);
   min-width: 0;
+  min-height: 0;
 }
 
-/* The side column (members + chat) pins to the viewport while the main column
-   scrolls, so on long sessions the chat and its composer never sink below the
-   fold. Members scroll internally; the chat card takes the remaining height. */
-.room-col-side {
-  position: sticky;
-  top: 0;
-  align-self: start;
-  max-height: calc(100vh - var(--topbar-height, 80px) - var(--footer-height, 36px) - 2 * var(--space-5));
-  min-height: 0;
-}
-.room-col-side .room-section { min-height: 0; }
-.room-col-side .room-members {
+/* Left column scrolls on its own; the chat column just fills its grid cell,
+   so the composer can never leave the viewport. */
+.room-col-main {
   overflow-y: auto;
-  min-height: 0;
-  max-height: 34vh;
+  padding-right: 2px; /* keep the scrollbar off the card edge */
 }
-/* :has() is supported by Electron's Chromium — the chat card flexes to fill. */
-.room-col-side .room-section:has(.room-chat) { flex: 1 1 auto; }
-.room-col-side .room-chat { flex: 1; min-height: 0; }
-.room-col-side .room-chat-log { flex: 1; max-height: none; }
+
+/* Chat card layout (detail page): header → collapsible members → log → composer.
+   Gap is managed per-element so the zero-height collapsed panel doesn't leave a
+   double gap between the header and the log. */
+.room-chat-section {
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 0;
+}
+.room-chat-section .room-chat-head { margin-bottom: var(--space-3); }
+.room-chat-section .room-chat { flex: 1; min-height: 0; }
+.room-chat-section .room-chat-log { flex: 1; max-height: none; }
 
 @media (max-width: 980px) {
-  /* Single-column layout: sticky off, restore the compact capped chat. */
-  .room-col-side { position: static; max-height: none; }
-  .room-col-side .room-members { max-height: none; }
-  .room-col-side .room-section:has(.room-chat) { flex: initial; }
-  .room-col-side .room-chat { flex: initial; }
-  .room-col-side .room-chat-log { flex: initial; max-height: 320px; }
+  /* Single column: the page scrolls as one flow again, chat gets a capped log. */
+  .room-detail { overflow-y: auto; }
+  .room-detail-inner { height: auto; }
+  .room-detail-grid { grid-template-columns: 1fr; flex: initial; }
+  .room-col-main { overflow-y: visible; padding-right: 0; }
+  .room-chat-section { flex: initial; }
+  .room-chat-section .room-chat { flex: initial; }
+  .room-chat-section .room-chat-log { flex: initial; max-height: 360px; min-height: 160px; }
+}
+
+/* ── Chat header: title + member strip toggle ──────────────────────────── */
+.room-chat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.room-chat-members-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 3px 8px 3px 4px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  color: var(--color-text-tertiary);
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+.room-chat-members-toggle:hover,
+.room-chat-members-toggle.open {
+  background: var(--color-bg-hover);
+  border-color: var(--color-border-subtle);
+  color: var(--color-text-secondary);
+}
+.room-avatar-strip { display: inline-flex; align-items: center; }
+/* The separation ring is an in-flow border (an outline paints OUTSIDE the box
+   and bled over the chip edge), and the radius matches the identicon's
+   rounded-square shape so no corner pokes out of the ring. */
+.room-avatar-strip-item {
+  display: inline-flex;
+  border-radius: 7px;
+  border: 2px solid var(--color-bg-secondary);
+  overflow: hidden;
+  background: var(--color-bg-secondary);
+}
+.room-avatar-strip-item + .room-avatar-strip-item { margin-left: -7px; }
+.room-avatar-more {
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border-subtle);
+}
+.room-chat-online { font-size: 11px; font-variant-numeric: tabular-nums; }
+.room-chat-members-chevron { transition: transform var(--transition-fast); flex-shrink: 0; }
+.room-chat-members-toggle.open .room-chat-members-chevron { transform: rotate(180deg); }
+
+/* ── Collapsible members panel (0fr→1fr grid trick) ────────────────────────
+   [data-reduce-motion] in base.css zeroes all transition durations, so the
+   height animation collapses to an instant there for free. `visibility`
+   removes the hidden rows from the tab order while collapsed. */
+.room-members-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.room-members-collapse.open { grid-template-rows: 1fr; }
+.room-members-collapse-inner {
+  overflow: hidden;
+  min-height: 0;
+  visibility: hidden;
+  transition: visibility 220ms;
+}
+.room-members-collapse.open .room-members-collapse-inner { visibility: visible; }
+.room-members-collapse .room-members {
+  overflow-y: auto;
+  max-height: 240px;
+  /* 5px side gutters: the avatar's accent ring is a box-shadow painted 4px
+     OUTSIDE the box, and the collapse wrapper clips with overflow:hidden —
+     without the gutter the ring gets cut at the panel's left edge. */
+  padding: 0 5px var(--space-2);
+  margin-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-border-subtle);
 }
 
 /* Sections are flat cards (concept .roomcard) */
@@ -368,6 +458,38 @@
   border-bottom-right-radius: 4px;
 }
 .room-chat-time { font-size: 10px; color: var(--color-text-tertiary); padding: 0 var(--space-1); font-variant-numeric: tabular-nums; }
+
+/* Typing liveness line, pinned above the composer. The row is always in the
+   layout (fixed min-height) so appearing/disappearing never shifts the log. */
+.room-chat-typing {
+  display: flex;
+  align-items: baseline;
+  gap: 1px;
+  min-height: 16px;
+  padding: 0 var(--space-3);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+.room-chat-typing-text {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.room-chat-typing-dots { display: inline-flex; letter-spacing: 1px; font-weight: 700; }
+.room-chat-typing-dots span { animation: room-typing-dot 1.2s ease-in-out infinite; }
+.room-chat-typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.room-chat-typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes room-typing-dot {
+  0%, 60%, 100% { opacity: 0.25; }
+  30% { opacity: 1; }
+}
+/* Reduced motion: pin the ellipsis instead of blinking it. */
+[data-reduce-motion] .room-chat-typing-dots span { animation: none; opacity: 0.7; }
+@media (prefers-reduced-motion: reduce) {
+  .room-chat-typing-dots span { animation: none; opacity: 0.7; }
+}
+
 .room-chat-compose {
   display: flex;
   gap: var(--space-2);
@@ -424,10 +546,82 @@
 .room-file-owner { flex-shrink: 0; display: flex; }
 .room-file-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .room-file-name { font-size: 13px; font-weight: 600; color: var(--color-text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.room-file-sub { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--color-text-tertiary); }
+.room-file-sub { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--color-text-tertiary); flex-wrap: wrap; min-height: 20px; }
 .room-file-have { display: inline-flex; align-items: center; gap: 3px; font-variant-numeric: tabular-nums; }
 .room-file-dot { opacity: 0.5; }
 .room-file-speed { color: var(--color-accent-primary); font-variant-numeric: tabular-nums; }
+
+/* Who holds / is fetching the file: tiny overlapping avatars in the meta line */
+/* Holder avatars + progress rings sit as a right-aligned cluster next to the
+   reactions instead of hugging the size text on the left. */
+.room-file-peers { display: inline-flex; align-items: center; margin-left: auto; }
+.room-file-peers-group { display: inline-flex; align-items: center; }
+.room-file-peer {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  overflow: hidden;
+  outline: 2px solid var(--color-bg-secondary);
+}
+.room-file-peer + .room-file-peer,
+.room-file-peers-group + .room-file-peer { margin-left: -5px; }
+.room-file-peer-more {
+  width: 16px;
+  height: 16px;
+  font-size: 8.5px;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border-subtle);
+}
+/* Mid-download member: thin ember progress ring (conic-gradient inline per %) */
+.room-file-peer-prog {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+.room-file-peer-prog .identicon {
+  border-radius: 50%;
+  overflow: hidden;
+  outline: 1px solid var(--color-bg-secondary);
+}
+
+/* Per-file reactions: 4-emoji bar revealed on row hover; nonzero counters stay
+   visible. Buttons always occupy their slot (opacity-only reveal) so hovering
+   never shifts the row. */
+/* When the peers cluster is present it owns margin-left:auto; the reactions
+   then just trail it. Standalone (no peers) they still push right themselves. */
+.room-file-reacts { display: inline-flex; align-items: center; gap: 2px; margin-left: auto; }
+.room-file-peers ~ .room-file-reacts { margin-left: var(--space-2); }
+.room-file-react {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 5px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  background: transparent;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast), transform var(--transition-fast);
+}
+.room-file:hover .room-file-react,
+.room-file:focus-within .room-file-react,
+.room-file-react.active { opacity: 1; }
+@media (hover: none) { .room-file-react { opacity: 1; } }
+.room-file-react:hover { background: var(--color-bg-hover); transform: scale(1.08); }
+.room-file-react:active { transform: scale(0.95); }
+.room-file-react.active { border-color: var(--color-border-subtle); background: var(--color-bg-tertiary); color: var(--color-text-secondary); }
+.room-file-react.mine {
+  border-color: rgba(var(--color-accent-rgb), 0.55);
+  background: var(--color-accent-bg);
+  color: var(--color-accent-primary);
+}
+.room-file-react-n { font-size: 10.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
 
 .room-file-progress { height: 4px; border-radius: var(--radius-full); background: var(--color-border-default); overflow: hidden; margin-top: 2px; }
 .room-file-progress-bar { height: 100%; background: var(--color-accent-primary); border-radius: var(--radius-full); transition: width var(--transition-normal); }

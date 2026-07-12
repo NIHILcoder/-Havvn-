@@ -71,6 +71,7 @@ interface RoomsSchema {
   roomHistory: Record<string, RoomEvent[]>;  // roomId → activity log (capped)
   roomMutes: Record<string, string[]>;       // roomId → locally-muted memberIds
   roomChats: Record<string, RoomChatMessage[]>; // roomId → chat log (capped, text encrypted at rest)
+  roomReacts: Record<string, Record<string, Record<string, string[]>>>; // roomId → fileId → emoji → memberIds (capped)
   roomIdentity: { pub: string; priv: string } | null; // this install's Ed25519 signing keypair (priv encrypted)
   roomIdentities: Record<string, Record<string, string>>; // roomId → (memberId → pubKey), TOFU binding
 }
@@ -240,7 +241,7 @@ const searchStore = new Store<SearchSchema>({
 
 const roomsStore = new Store<RoomsSchema>({
   name: 'rooms',
-  defaults: { rooms: {}, roomProfile: null, roomTombstones: {}, roomManifests: {}, roomHistory: {}, roomMutes: {}, roomChats: {}, roomIdentity: null, roomIdentities: {} },
+  defaults: { rooms: {}, roomProfile: null, roomTombstones: {}, roomManifests: {}, roomHistory: {}, roomMutes: {}, roomChats: {}, roomReacts: {}, roomIdentity: null, roomIdentities: {} },
 });
 
 const reputationStore = new Store<ReputationSchema>({
@@ -447,6 +448,29 @@ export function clearRoomChats(roomId: string): void {
   roomsStore.set('roomChats', all);
 }
 
+// === Room file reactions (gossiped emoji toggles, persisted locally + capped) ===
+
+const MAX_REACT_FILES = 200; // per room — matches the engine's hello-summary cap
+
+export function getRoomReacts(roomId: string): Record<string, Record<string, string[]>> {
+  return (roomsStore.get('roomReacts') ?? {})[roomId] ?? {};
+}
+
+/** Replace a room's reaction map (toggles don't append well, so it's set-style). */
+export function setRoomReacts(roomId: string, reacts: Record<string, Record<string, string[]>>): void {
+  const all = roomsStore.get('roomReacts') ?? {};
+  const capped: Record<string, Record<string, string[]>> = {};
+  for (const [fileId, byEmoji] of Object.entries(reacts ?? {}).slice(0, MAX_REACT_FILES)) capped[fileId] = byEmoji;
+  all[roomId] = capped;
+  roomsStore.set('roomReacts', all);
+}
+
+export function clearRoomReacts(roomId: string): void {
+  const all = roomsStore.get('roomReacts') ?? {};
+  delete all[roomId];
+  roomsStore.set('roomReacts', all);
+}
+
 // === Room identity (Ed25519 signing keypair + per-room TOFU pubkey roster) ===
 
 /**
@@ -465,6 +489,75 @@ export function getRoomIdentity(): { pub: string; priv: string } {
     roomsStore.set('roomIdentity', id);
   }
   return { pub: id.pub, priv: decryptSecret(id.priv) };
+}
+
+/**
+ * Portable backup of everything that makes this install "you" in rooms:
+ * the Ed25519 signing keypair, the room profile, and the joined-rooms list.
+ * The private key is DECRYPTED here — the bundle leaves the machine, so the
+ * UI must warn the user to store the file safely.
+ */
+export interface RoomIdentityBundle {
+  version: 1;
+  exportedAt: string;
+  profile: RoomProfile;
+  identity: { pub: string; priv: string }; // priv in plaintext PEM (see above)
+  rooms: PersistedRoom[];
+}
+
+export function exportRoomIdentityBundle(): RoomIdentityBundle {
+  return {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    profile: getRoomProfile(),
+    identity: getRoomIdentity(), // priv already decrypted
+    rooms: getPersistedRooms(),
+  };
+}
+
+/** Loose PEM shape check — enough to reject non-key garbage early. */
+function looksLikePem(s: unknown, label: string): s is string {
+  return typeof s === 'string' && s.includes(`-----BEGIN ${label}-----`) && s.includes(`-----END ${label}-----`);
+}
+
+/**
+ * Restore a bundle produced by exportRoomIdentityBundle(). Overwrites the
+ * identity keypair (re-encrypting the private key at rest, mirroring
+ * getRoomIdentity) and the profile; MERGES rooms by roomId with imported
+ * entries winning. Rooms rejoin on next launch — no live rejoin here.
+ */
+export function importRoomIdentityBundle(bundle: unknown): { rooms: number } {
+  const b = bundle as Partial<RoomIdentityBundle> | null;
+  if (!b || typeof b !== 'object' || b.version !== 1) {
+    throw new Error('Invalid room identity file format');
+  }
+  const id = b.identity;
+  if (!id || !looksLikePem(id.pub, 'PUBLIC KEY') || !looksLikePem(id.priv, 'PRIVATE KEY')) {
+    throw new Error('Room identity file has no valid keypair');
+  }
+  const profile = b.profile;
+  if (!profile || typeof profile.memberId !== 'string' || !profile.memberId) {
+    throw new Error('Room identity file has no valid profile');
+  }
+
+  roomsStore.set('roomIdentity', { pub: id.pub, priv: encryptSecret(id.priv) });
+  roomsStore.set('roomProfile', {
+    memberId: profile.memberId,
+    name: typeof profile.name === 'string' ? profile.name : '',
+    avatarSeed: typeof profile.avatarSeed === 'string' && profile.avatarSeed ? profile.avatarSeed : profile.memberId,
+  });
+
+  const existing = roomsStore.get('rooms') ?? {};
+  let count = 0;
+  for (const room of Array.isArray(b.rooms) ? b.rooms : []) {
+    if (!room || typeof room !== 'object') continue;
+    if (typeof room.roomId !== 'string' || !room.roomId) continue;
+    if (typeof room.code !== 'string' || !room.code) continue;
+    existing[room.roomId] = room;
+    count++;
+  }
+  roomsStore.set('rooms', existing);
+  return { rooms: count };
 }
 
 /** Known (TOFU-bound) memberId → public key map for a room. */

@@ -43,6 +43,8 @@ const en: Dict = {
   'dialog.saveTorrentFile': 'Save Torrent File',
   'dialog.exportSettings': 'Export Settings',
   'dialog.importSettings': 'Import Settings',
+  'dialog.exportRoomIdentity': 'Export Room Identity',
+  'dialog.importRoomIdentity': 'Import Room Identity',
   'dialog.filter.torrent': 'Torrent Files',
   'dialog.filter.json': 'JSON Files',
 
@@ -109,6 +111,8 @@ const ru: Dict = {
   'dialog.saveTorrentFile': 'Сохранить торрент-файл',
   'dialog.exportSettings': 'Экспорт настроек',
   'dialog.importSettings': 'Импорт настроек',
+  'dialog.exportRoomIdentity': 'Экспорт identity комнат',
+  'dialog.importRoomIdentity': 'Импорт identity комнат',
   'dialog.filter.torrent': 'Торрент-файлы',
   'dialog.filter.json': 'Файлы JSON',
 

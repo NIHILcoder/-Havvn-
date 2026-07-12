@@ -48,6 +48,14 @@ const PING_INTERVAL = 15000;   // heartbeat to peers
 const OFFLINE_AFTER = 45000;   // mark a member offline after this silence
 const SNAPSHOT_THROTTLE = 700; // min ms between pushed state snapshots per room
 
+// ── Liveness (typing / file reactions / coarse progress) ─────────────────────
+const TYPING_TTL = 4000;          // a member's typing indicator counts as live this long
+const TYPING_MIN_INTERVAL = 2000; // min ms between OUR outgoing typing broadcasts per room
+const PROG_STEP = 10;             // coarse progress granularity (%) — gossip only on crossing a step
+const REACTION_EMOJI = ['🔥', '👍', '❤️', '😂']; // the only file reactions accepted (whitelist)
+const REACTION_SET = new Set(REACTION_EMOJI);
+const MAX_REACT_FILES = 200;      // reaction map ceiling per room (kept + helloed)
+
 // ── Peer-relay (gossip flooding) ──────────────────────────────────────────────
 // Two members who can't form a direct WebRTC wire (NAT) still converge if some
 // reachable member is connected to both: every node re-broadcasts gossip it hasn't
@@ -56,7 +64,7 @@ const SNAPSHOT_THROTTLE = 700; // min ms between pushed state snapshots per room
 // just another member. Targeted/keyed messages (rekey, kicked) are NOT flooded.
 const RELAY_TTL = 4;                 // max hops a gossip message travels
 const SEEN_GID_CAP = 4096;           // dedup memory per room (FIFO)
-const RELAYABLE = new Set(['hello', 'ping', 'add', 'have', 'del', 'chat', 'sync', 'bye']);
+const RELAYABLE = new Set(['hello', 'ping', 'add', 'have', 'del', 'chat', 'sync', 'bye', 'typing', 'react-file', 'prog']);
 
 // ── Gossip input hardening ────────────────────────────────────────────────────
 // Decryption already proves a peer holds the room code, but a *malicious member*
@@ -81,7 +89,9 @@ type Msg =
   // `cfg` is the room owner's SIGNED E2E config (see E2ECfg) — the authenticated
   // way to learn the flag+secret; the bare e2e/secret fields remain for rooms
   // whose owner runs an older build that doesn't sign.
-  | { t: 'hello'; memberId: string; name: string; avatarSeed: string; have: string[]; files: RoomFile[]; tombs: string[]; tombsAt?: Record<string, number>; roomName: string; ownerId: string; e2e: boolean; secret: string; cfg?: E2ECfg }
+  // `fileReacts` is a clamped summary of this member's reaction view (fileId →
+  // emoji → memberIds) so late joiners converge by unioning member sets.
+  | { t: 'hello'; memberId: string; name: string; avatarSeed: string; have: string[]; files: RoomFile[]; tombs: string[]; tombsAt?: Record<string, number>; roomName: string; ownerId: string; e2e: boolean; secret: string; cfg?: E2ECfg; fileReacts?: Record<string, Record<string, string[]>> }
   | { t: 'add'; file: RoomFile }
   | { t: 'have'; memberId: string; fileId: string }
   | { t: 'ping'; memberId: string; name: string; avatarSeed: string; have: string[]; roomName: string; ownerId: string }
@@ -106,7 +116,15 @@ type Msg =
   // `pub` is the sender's Ed25519 public key (PEM) and `sig` an Ed25519 signature
   // over the immutable fields — proves authorship, so no keyholder can post under
   // another member's id (anti-spoofing on top of the room-key confidentiality).
-  | { t: 'chat'; id: string; memberId: string; name: string; avatarSeed: string; text: string; at: number; pub: string; sig: string };
+  | { t: 'chat'; id: string; memberId: string; name: string; avatarSeed: string; text: string; at: number; pub: string; sig: string }
+  // Liveness: the sender is composing a chat message. Renderer-triggered, never
+  // persisted; receivers stamp it and let a ~4s TTL fade it out on their own.
+  | { t: 'typing'; memberId: string }
+  // Toggle an emoji reaction on a shared file (REACTION_EMOJI whitelist only).
+  | { t: 'react-file'; memberId: string; fileId: string; emoji: string; on: boolean }
+  // Coarse download progress (0-100, PROG_STEP granularity) so peers see a
+  // member's transfer move; completion is signalled by the normal 'have'.
+  | { t: 'prog'; memberId: string; fileId: string; pct: number };
 
 interface Wire { id: number; peer: any; memberId?: string; }
 
@@ -149,6 +167,11 @@ interface Room {
   mutes: Set<string>;                    // locally-muted memberIds (per install)
   history: RoomEvent[];                  // activity log, newest last (capped)
   chat: RoomChatMessage[];               // chat messages, newest last (capped)
+  typing: Record<string, number>;        // memberId → last 'typing' gossip stamp (session-only)
+  lastTypingSent: number;                // rate-limit for OUR outgoing typing broadcasts
+  fileReacts: Map<string, Map<string, Set<string>>>; // fileId → emoji → reacting memberIds (persisted)
+  memberProg: Map<string, Map<string, number>>;      // memberId → fileId → coarse download % (session-only)
+  progSent: Map<string, number>;         // fileId → last PROG_STEP % WE gossiped (throttle)
   identities: Map<string, string>;       // memberId → Ed25519 public key (PEM), TOFU-bound
   seenGids: Set<string>;                 // relay dedup — gossip ids already processed
   seenGidOrder: string[];                // FIFO order for capping seenGids
@@ -191,6 +214,111 @@ function ensureClient(room: Room): any {
   return c;
 }
 
+// ── Liveness: typing / file reactions / coarse progress ─────────────────────
+
+/** Serialize the reaction map (capped, whitelist order) for buildState, HELLOs
+ *  and persistence. */
+function reactsToRecord(room: Room): Record<string, Record<string, string[]>> {
+  const out: Record<string, Record<string, string[]>> = {};
+  let files = 0;
+  for (const [fileId, byEmoji] of room.fileReacts) {
+    if (files >= MAX_REACT_FILES) break;
+    const rec: Record<string, string[]> = {};
+    for (const emoji of REACTION_EMOJI) {
+      const set = byEmoji.get(emoji);
+      if (set && set.size) rec[emoji] = Array.from(set);
+    }
+    if (Object.keys(rec).length) { out[fileId] = rec; files++; }
+  }
+  return out;
+}
+
+/** Bound a reaction summary (peer-supplied or persisted): ≤MAX_REACT_FILES
+ *  files, whitelisted emoji only, member lists deduped + capped. */
+function clampReactsRecord(rec: any): Record<string, Record<string, string[]>> {
+  const out: Record<string, Record<string, string[]>> = {};
+  if (!rec || typeof rec !== 'object' || Array.isArray(rec)) return out;
+  for (const [rawId, byEmoji] of Object.entries(rec).slice(0, MAX_REACT_FILES)) {
+    const fileId = clampStr(rawId, MAX_STR);
+    if (!fileId || !byEmoji || typeof byEmoji !== 'object' || Array.isArray(byEmoji)) continue;
+    const inner: Record<string, string[]> = {};
+    for (const emoji of REACTION_EMOJI) {
+      const members = (byEmoji as any)[emoji];
+      if (!Array.isArray(members)) continue;
+      const list = Array.from(new Set(members.slice(0, MAX_ARRAY).map((m: any) => clampStr(m, MAX_STR)).filter(Boolean))) as string[];
+      if (list.length) inner[emoji] = list;
+    }
+    if (Object.keys(inner).length) out[fileId] = inner;
+  }
+  return out;
+}
+
+/** Rehydrate a persisted (or clamped inbound) reaction record into live maps. */
+function reactsFromRecord(rec?: Record<string, Record<string, string[]>>): Map<string, Map<string, Set<string>>> {
+  const map = new Map<string, Map<string, Set<string>>>();
+  for (const [fileId, byEmoji] of Object.entries(clampReactsRecord(rec))) {
+    const inner = new Map<string, Set<string>>();
+    for (const [emoji, members] of Object.entries(byEmoji)) inner.set(emoji, new Set(members));
+    map.set(fileId, inner);
+  }
+  return map;
+}
+
+/** Persist the room's reaction map via the main process (mirrors history/chat). */
+function persistReacts(room: Room): void {
+  try { ipcRenderer.send('room-reacts', { roomId: room.roomId, reacts: reactsToRecord(room) }); } catch { /* ignore */ }
+}
+
+/** Toggle one member's emoji reaction on a file. Non-whitelisted emoji and
+ *  over-cap growth are ignored. Returns true when anything actually changed —
+ *  callers persist + push state on change. */
+function applyFileReact(room: Room, fileId: string, emoji: string, memberId: string, on: boolean): boolean {
+  if (!fileId || !memberId || !REACTION_SET.has(emoji)) return false;
+  let byEmoji = room.fileReacts.get(fileId);
+  if (on) {
+    if (!byEmoji) {
+      if (room.fileReacts.size >= MAX_REACT_FILES) return false; // cap: no new files past the ceiling
+      byEmoji = new Map();
+      room.fileReacts.set(fileId, byEmoji);
+    }
+    let set = byEmoji.get(emoji);
+    if (!set) { set = new Set(); byEmoji.set(emoji, set); }
+    if (set.has(memberId) || set.size >= MAX_ARRAY) return false;
+    set.add(memberId);
+  } else {
+    const set = byEmoji?.get(emoji);
+    if (!set || !set.delete(memberId)) return false;
+    if (set.size === 0) byEmoji!.delete(emoji);
+    if (byEmoji && byEmoji.size === 0) room.fileReacts.delete(fileId);
+  }
+  return true;
+}
+
+/** Union a peer's HELLO reaction summary into ours (late-join convergence).
+ *  Union-only: an un-react while we were apart still converges via the live
+ *  'react-file' toggle, not the HELLO. Returns true when anything changed. */
+function mergeReacts(room: Room, rec?: Record<string, Record<string, string[]>>): boolean {
+  let changed = false;
+  for (const [fileId, byEmoji] of Object.entries(clampReactsRecord(rec))) {
+    for (const [emoji, members] of Object.entries(byEmoji)) {
+      for (const m of members) if (applyFileReact(room, fileId, emoji, m, true)) changed = true;
+    }
+  }
+  return changed;
+}
+
+/** Gossip OUR coarse download progress: only while downloading, and only when a
+ *  new PROG_STEP boundary is crossed per file (completion rides 'have'). */
+function maybeBroadcastProg(room: Room, fileId: string, progress: number, done: boolean): void {
+  if (done) { room.progSent.delete(fileId); return; }
+  const pct = Math.max(0, Math.min(100, Math.floor((Number(progress) || 0) * 100)));
+  const step = pct - (pct % PROG_STEP);
+  const last = room.progSent.get(fileId) ?? 0; // 0% is where every download starts — not news
+  if (step <= last) return;
+  room.progSent.set(fileId, step);
+  broadcast(room, { t: 'prog', memberId: room.self.memberId, fileId, pct: step });
+}
+
 // ── Snapshot / state push ──────────────────────────────────────────────────
 function buildState(room: Room): RoomState {
   const now = Date.now();
@@ -223,6 +351,24 @@ function buildState(room: Room): RoomState {
   // Count distinct *members* that are online, not raw WebRTC wires — multiple
   // trackers each broker a wire to the same peer, so wires.size over-counts.
   const onlinePeers = members.filter((m) => !m.isSelf && m.online).length;
+  // Liveness extras. Typing: known members with a fresh stamp (never self —
+  // the renderer applies its own TTL fade, we just report who's live now).
+  const typingMemberIds = Object.entries(room.typing)
+    .filter(([id, at]) => id !== room.self.memberId && now - at < TYPING_TTL && room.members.has(id))
+    .map(([id]) => id);
+  // Coarse progress: offline members drop off; a file in a member's 'have' is
+  // omitted (100% is implicit there).
+  const memberProg: Record<string, Record<string, number>> = {};
+  for (const [mid, byFile] of room.memberProg) {
+    const m = room.members.get(mid);
+    if (!m || now - m.lastSeen >= OFFLINE_AFTER) continue;
+    const rec: Record<string, number> = {};
+    for (const [fid, pct] of byFile) {
+      if (m.have.includes(fid)) continue;
+      rec[fid] = pct;
+    }
+    if (Object.keys(rec).length) memberProg[mid] = rec;
+  }
   return {
     roomId: room.roomId,
     name: room.name,
@@ -245,6 +391,9 @@ function buildState(room: Room): RoomState {
     downKbps: room.downKbps,
     kicked: room.kicked,
     ...(room.kicked ? { kickedBy: room.kickedBy } : {}),
+    typingMemberIds,
+    fileReacts: reactsToRecord(room),
+    memberProg,
   };
 }
 
@@ -315,6 +464,7 @@ function helloMsg(room: Room): Msg {
     e2e: room.e2e, // E2E mode + content key ride the encrypted gossip channel
     secret: room.secret,
     ...(room.e2eCfg ? { cfg: room.e2eCfg } : {}), // owner-signed config, re-served for joiners
+    ...(room.fileReacts.size ? { fileReacts: reactsToRecord(room) } : {}), // late joiners union this in
   };
 }
 
@@ -623,6 +773,12 @@ function clampGossip(msg: any): void {
   }
   if (Array.isArray(msg.files)) msg.files = msg.files.slice(0, MAX_ARRAY).map(clampFile).filter(Boolean);
   if ('file' in msg) msg.file = clampFile(msg.file);
+  if ('pct' in msg) {
+    const p = Math.round(Number(msg.pct));
+    msg.pct = Number.isFinite(p) ? Math.min(100, Math.max(0, p)) : 0;
+  }
+  if ('on' in msg) msg.on = msg.on === true;
+  if ('fileReacts' in msg) msg.fileReacts = clampReactsRecord(msg.fileReacts);
 }
 
 function onMessage(room: Room, wire: Wire, raw: any): void {
@@ -674,6 +830,8 @@ function onMessage(room: Room, wire: Wire, raw: any): void {
       // express revives — treat it as fresh so its deletion still sticks.
       for (const id of msg.tombs || []) applyTombstone(room, id, msg.tombsAt?.[id] ?? Date.now());
       for (const f of msg.files || []) mergeFile(room, f);
+      // Union the peer's reaction view into ours (late-join convergence).
+      if (mergeReacts(room, msg.fileReacts)) persistReacts(room);
       pushState(room);
       break;
     }
@@ -697,6 +855,9 @@ function onMessage(room: Room, wire: Wire, raw: any): void {
     case 'have': {
       const m = room.members.get(msg.memberId);
       if (m && !m.have.includes(msg.fileId)) { m.have.push(msg.fileId); m.lastSeen = Date.now(); }
+      // They have the whole file now — the coarse-progress entry is obsolete
+      // ('have' implies 100%).
+      room.memberProg.get(msg.memberId)?.delete(msg.fileId);
       pushState(room);
       break;
     }
@@ -733,6 +894,9 @@ function onMessage(room: Room, wire: Wire, raw: any): void {
         room.members.delete(msg.memberId);
         logEvent(room, { type: 'left', actorId: msg.memberId, actorName: m.name || '?' });
       }
+      // Their session-only liveness goes with them.
+      room.memberProg.delete(msg.memberId);
+      delete room.typing[msg.memberId];
       for (const w of Array.from(room.wires.values())) {
         if (w.memberId === msg.memberId) { try { w.peer.destroy(); } catch { /* ignore */ } room.wires.delete(w.id); }
       }
@@ -760,6 +924,40 @@ function onMessage(room: Room, wire: Wire, raw: any): void {
       const m = room.members.get(msg.memberId);
       if (m) m.lastSeen = Date.now();
       addChat(room, { id: String(msg.id), at: Number(msg.at) || Date.now(), memberId: msg.memberId, name: msg.name || '?', avatarSeed: msg.avatarSeed || msg.memberId, text });
+      break;
+    }
+    case 'typing': {
+      // Only KNOWN, unmuted members get a stamp — that bounds the map by the
+      // roster (hostile gossip can't spray phantom ids into it).
+      const m = room.members.get(msg.memberId);
+      if (!m || room.mutes.has(msg.memberId)) break;
+      const now = Date.now();
+      m.lastSeen = now; // a typer is definitionally alive
+      room.typing[msg.memberId] = now;
+      // Sweep long-expired stamps so the map never outgrows the roster.
+      for (const [id, at] of Object.entries(room.typing)) if (now - at > TYPING_TTL * 2) delete room.typing[id];
+      pushState(room); // the renderer fades on its own TTL — just report the stamps
+      break;
+    }
+    case 'react-file': {
+      if (room.mutes.has(msg.memberId)) break; // a muted member's reactions stay hidden
+      // applyFileReact enforces the emoji whitelist + caps; anything else is a no-op.
+      if (applyFileReact(room, msg.fileId, msg.emoji, msg.memberId, msg.on === true)) {
+        persistReacts(room);
+        pushState(room);
+      }
+      break;
+    }
+    case 'prog': {
+      const m = room.members.get(msg.memberId);
+      if (!m || !msg.fileId) break;           // unknown member — ignore (bounds the map)
+      if (m.have.includes(msg.fileId)) break; // they already have it — 'have' wins
+      let byFile = room.memberProg.get(msg.memberId);
+      if (!byFile) { byFile = new Map(); room.memberProg.set(msg.memberId, byFile); }
+      if (!byFile.has(msg.fileId) && byFile.size >= MAX_ARRAY) break;
+      byFile.set(msg.fileId, msg.pct); // clampGossip bounded pct to an int 0-100
+      m.lastSeen = Date.now();
+      pushState(room);
       break;
     }
   }
@@ -1066,6 +1264,8 @@ function wireTorrentStats(room: Room, torrent: any): void {
       peers: torrent.numPeers || 0,
       haveLocally: done || (room.transfers.get(fileId)?.haveLocally ?? false),
     });
+    // Let peers see our download move (10%-step throttled; 'have' covers 100%).
+    maybeBroadcastProg(room, fileId, torrent.progress || 0, done);
     pushState(room);
   };
   torrent.on('download', update);
@@ -1129,6 +1329,8 @@ function sendRekey(room: Room, oldKey: Buffer, msg: Msg, kickedId: string, excep
 function applyLocalRekey(room: Room, newCode: string, kickedId: string, kickedName: string): void {
   if (room.code === newCode) return; // already applied (dedupe)
   room.members.delete(kickedId);
+  room.memberProg.delete(kickedId);
+  delete room.typing[kickedId];
   for (const wire of Array.from(room.wires.values())) {
     if (wire.memberId === kickedId) { try { wire.peer.destroy(); } catch { /* ignore */ } room.wires.delete(wire.id); }
   }
@@ -1196,7 +1398,7 @@ function kickMember(room: Room, memberId: string): void {
 
 // ── Room lifecycle ───────────────────────────────────────────────────────────
 function startRoom(p: { roomId: string; name: string; code: string; folder: string;
-  self: { memberId: string; name: string; avatarSeed: string; pub: string; priv: string }; useTurn: boolean; turnServers?: any[]; tombstones?: Record<string, number>; manifest?: PersistedRoomFile[]; ownerId?: string; mutes?: string[]; history?: RoomEvent[]; chat?: RoomChatMessage[]; identities?: Record<string, string>; e2e?: boolean; secret?: string; e2eCfg?: E2ECfg | null; cacheDir?: string; autoFetch?: boolean; upKbps?: number; downKbps?: number }): RoomState {
+  self: { memberId: string; name: string; avatarSeed: string; pub: string; priv: string }; useTurn: boolean; turnServers?: any[]; tombstones?: Record<string, number>; manifest?: PersistedRoomFile[]; ownerId?: string; mutes?: string[]; history?: RoomEvent[]; chat?: RoomChatMessage[]; reacts?: Record<string, Record<string, string[]>>; identities?: Record<string, string>; e2e?: boolean; secret?: string; e2eCfg?: E2ECfg | null; cacheDir?: string; autoFetch?: boolean; upKbps?: number; downKbps?: number }): RoomState {
   let room = rooms.get(p.roomId);
   if (room) return buildState(room);
 
@@ -1237,6 +1439,11 @@ function startRoom(p: { roomId: string; name: string; code: string; folder: stri
     mutes: new Set(p.mutes || []),
     history: (p.history || []).slice(-200),
     chat: (p.chat || []).slice(-200),
+    typing: {},
+    lastTypingSent: 0,
+    fileReacts: reactsFromRecord(p.reacts),
+    memberProg: new Map(),
+    progSent: new Map(),
     identities: new Map(Object.entries(p.identities || {})),
     seenGids: new Set(),
     seenGidOrder: [],
@@ -1472,6 +1679,33 @@ ipcRenderer.on('room-cmd', async (_e, msg: any) => {
       data = { ok: true };
     }
     else if (type === 'chat') { sendChat(msg.roomId, String((msg.payload || {}).text || '')); data = { ok: true }; }
+    else if (type === 'typing') {
+      // Fire-and-forget liveness: tell peers we're composing. Rate-limited so a
+      // keystroke-driven renderer can call this freely. Never persisted.
+      const r = rooms.get(msg.roomId);
+      if (r && Date.now() - r.lastTypingSent >= TYPING_MIN_INTERVAL) {
+        r.lastTypingSent = Date.now();
+        broadcast(r, { t: 'typing', memberId: r.self.memberId });
+      }
+      data = { ok: true };
+    }
+    else if (type === 'reactFile') {
+      const r = rooms.get(msg.roomId);
+      if (!r) throw new Error('Room not active');
+      const fileId = String(msg.fileId || '');
+      const emoji = String(msg.emoji || '').slice(0, 16);
+      if (!REACTION_SET.has(emoji)) throw new Error('Unsupported reaction');
+      if (!r.files.has(fileId)) throw new Error('File not found in this room');
+      // Toggle from OUR current view; gossip the explicit on/off so peers
+      // converge without needing to know our previous state.
+      const on = !r.fileReacts.get(fileId)?.get(emoji)?.has(r.self.memberId);
+      if (applyFileReact(r, fileId, emoji, r.self.memberId, on)) {
+        persistReacts(r);
+        broadcast(r, { t: 'react-file', memberId: r.self.memberId, fileId, emoji, on });
+        pushState(r, true);
+      }
+      data = { ok: true };
+    }
     else if (type === 'snapshot') { const r = rooms.get(msg.roomId); data = r ? buildState(r) : null; }
     else if (type === 'setAutoFetch') {
       const r = rooms.get(msg.roomId);

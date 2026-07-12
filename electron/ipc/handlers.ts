@@ -510,6 +510,45 @@ export function setupIpcHandlers(window: BrowserWindow): void {
     async (_event, roomId: string, text: string) => roomManager.sendChat(roomId, text)
   ));
 
+  // Room identity backup — the keypair + profile + joined rooms as one JSON
+  // file (reinstall insurance). The private key goes into the file DECRYPTED;
+  // the renderer warns the user to store it safely.
+  ipcMain.handle('rooms:exportIdentity', wrapHandler('rooms:exportIdentity',
+    async () => {
+      const result = await dialog.showSaveDialog(mainWindow, {
+        title: t('dialog.exportRoomIdentity'),
+        defaultPath: 'havvn-room-identity.json',
+        filters: [{ name: t('dialog.filter.json'), extensions: ['json'] }],
+      });
+      if (result.canceled || !result.filePath) {
+        return { success: false };
+      }
+      const bundle = db.exportRoomIdentityBundle();
+      await fs.writeFile(result.filePath, JSON.stringify(bundle, null, 2), 'utf-8');
+      log.info('Room identity exported', { path: result.filePath, rooms: bundle.rooms.length });
+      return { success: true, path: result.filePath };
+    }
+  ));
+
+  ipcMain.handle('rooms:importIdentity', wrapHandler('rooms:importIdentity',
+    async () => {
+      const result = await dialog.showOpenDialog(mainWindow, {
+        title: t('dialog.importRoomIdentity'),
+        properties: ['openFile'],
+        filters: [{ name: t('dialog.filter.json'), extensions: ['json'] }],
+      });
+      if (result.canceled || result.filePaths.length === 0) {
+        return { success: false };
+      }
+      const content = await fs.readFile(result.filePaths[0], 'utf-8');
+      const { rooms } = db.importRoomIdentityBundle(JSON.parse(content));
+      // Persisted rooms are re-joined at startup — a restart picks the imported
+      // rooms up. No live rejoin plumbing here (the UI shows a restart hint).
+      log.info('Room identity imported', { path: result.filePaths[0], rooms });
+      return { success: true, rooms };
+    }
+  ));
+
   ipcMain.handle('downloads:getTorrentInfo', wrapHandler('downloads:getTorrentInfo',
     async (_event, params: { torrentPath?: string; magnetUri?: string }) => {
       return torrentManager.getTorrentInfo(params);

@@ -589,6 +589,16 @@ const api: IpcApi = {
       ipcRenderer.invoke('rooms:kick', roomId, memberId),
     sendChat: (roomId: string, text: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke('rooms:sendChat', roomId, text),
+    typing: (roomId: string): void => {
+      // Fire-and-forget liveness ping — the engine rate-limits the broadcast.
+      ipcRenderer.invoke('rooms:typing', roomId).catch(() => { /* ignore */ });
+    },
+    reactFile: (roomId: string, fileId: string, emoji: string): Promise<void> =>
+      ipcRenderer.invoke('rooms:reactFile', roomId, fileId, emoji),
+    exportIdentity: (): Promise<{ success: boolean; path?: string }> =>
+      ipcRenderer.invoke('rooms:exportIdentity'),
+    importIdentity: (): Promise<{ success: boolean; rooms?: number }> =>
+      ipcRenderer.invoke('rooms:importIdentity'),
   },
 
   onRoomUpdate: (callback: (state: RoomState) => void): (() => void) => {
