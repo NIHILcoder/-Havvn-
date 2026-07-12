@@ -20,10 +20,10 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { useSettings } from '../SettingsContext';
-import { SettingsCard, SettingRow, StatusPill } from '../controls';
+import { SettingsCard, SettingRow, StatusPill, RestartPendingNotice } from '../controls';
 import { Icon, IconName, Button, Toggle } from '../../../components';
 import { useConfirm } from '../../../components/ConfirmDialog';
-import { PrivacyConfig, IpInfo } from '../../../../shared/types';
+import { PrivacyConfig, IpInfo, VpnBindReport } from '../../../../shared/types';
 import { useTranslation } from '../../../utils/i18nContext';
 import '../../../components/PrivacySettings.css';
 
@@ -51,7 +51,9 @@ export const PrivacySection: React.FC = () => {
     ephemeralPeerId: true,
     sanitizeLogs: true,
     vpnKillSwitch: false,
+    vpnBindEngine: false,
   });
+  const [bindStatus, setBindStatus] = useState<VpnBindReport | null>(null);
   const [ip, setIp] = useState<IpInfo | null>(null);
   const [ipFailed, setIpFailed] = useState(false);
   const [checking, setChecking] = useState(true);
@@ -59,6 +61,15 @@ export const PrivacySection: React.FC = () => {
   const [copied, setCopied] = useState(false);
   const [encryptionAvailable, setEncryptionAvailable] = useState(true);
   const [busyPreset, setBusyPreset] = useState(false);
+
+  const refreshBindStatus = useCallback(async () => {
+    try {
+      const bs = await window.api.getVpnBindStatus();
+      if (bs) setBindStatus(bs);
+    } catch {
+      /* older main without the handler — leave the status area empty */
+    }
+  }, []);
 
   const refreshIp = useCallback(async () => {
     setChecking(true);
@@ -98,8 +109,15 @@ export const PrivacySection: React.FC = () => {
       }
     })();
     void refreshIp();
+    void refreshBindStatus();
     return () => { alive = false; };
-  }, [refreshIp]);
+  }, [refreshIp, refreshBindStatus]);
+
+  // Keep the bind status fresh when the guard re-binds / loses the VPN.
+  useEffect(() => {
+    const off = window.api.onVpnBindStatus(() => { void refreshBindStatus(); });
+    return () => off();
+  }, [refreshBindStatus]);
 
   // Optimistic single-flag save with rollback + shell toast on failure.
   const setCfg = async (key: keyof PrivacyConfig, value: boolean) => {
@@ -189,6 +207,9 @@ export const PrivacySection: React.FC = () => {
   const maskedIp = ip?.ip ? (revealIp ? ip.ip : ip.ip.replace(/[^.:]/g, '•')) : '—';
   const location = ip ? [ip.city, ip.region, ip.country].filter(Boolean).join(', ') : '';
   const interfaces = ip?.interfaces ?? [];
+  // Same native-only gating as the DoH card below: the engine that is actually
+  // RUNNING decides, falling back to the configured one before first load.
+  const isNativeEngine = (runningEngine ?? engine) === 'native';
 
   return (
     <>
@@ -341,6 +362,34 @@ export const PrivacySection: React.FC = () => {
           }
         />
         <SettingRow
+          icon="link"
+          label={t('privacy.vpnBind')}
+          description={isNativeEngine ? t('privacy.vpnBind.desc') : t('privacy.vpnBind.engineOnly')}
+          control={
+            <Toggle
+              checked={config.vpnBindEngine === true}
+              disabled={!isNativeEngine}
+              onChange={(val) => setCfg('vpnBindEngine', val)}
+              ariaLabel={t('privacy.vpnBind')}
+            />
+          }
+        />
+        {isNativeEngine && bindStatus?.running && (config.vpnBindEngine === true) !== bindStatus.running.enabled && (
+          <RestartPendingNotice text={t('privacy.vpnBind.pending')} />
+        )}
+        {bindStatus?.running?.enabled && bindStatus.running.fallback && (
+          <div className="settings-notice-compact warn">
+            <Icon name="alert-triangle" size={14} />
+            <span>{t('privacy.vpnBind.noVpn')}</span>
+          </div>
+        )}
+        {bindStatus?.running?.enabled && !bindStatus.running.fallback && bindStatus.running.boundIp && (
+          <div className="settings-notice-compact">
+            <Icon name="check-circle" size={14} />
+            <span>{t('privacy.vpnBind.bound')} {bindStatus.running.iface} ({bindStatus.running.boundIp})</span>
+          </div>
+        )}
+        <SettingRow
           icon="network"
           label={t('privacy.dht')}
           description={t('privacy.dht.desc')}
@@ -394,7 +443,7 @@ export const PrivacySection: React.FC = () => {
 
       {/* ── 3. DNS-over-HTTPS (unchanged) ───────────────────────────────── */}
       <SettingsCard title={t('settings.grp.doh')} icon="globe">
-        {(runningEngine ?? engine) === 'native' && (
+        {isNativeEngine && (
           <div className="settings-notice-compact warn">
             <Icon name="alert-triangle" size={14} />
             <span>{t('settings.doh.engineWarn')}</span>

@@ -24,6 +24,19 @@ import { Onboarding } from './components/Onboarding';
 import { dismissSplash } from './utils/splash';
 
 
+/** Dismissible warning strip above the page content (VPN / bind / disk guards). */
+const AlertBanner: React.FC<{
+  onDismiss: () => void;
+  dismissLabel: string;
+  children: React.ReactNode;
+}> = ({ onDismiss, dismissLabel, children }) => (
+  <div className="vpn-alert-banner" role="alert">
+    <span className="vpn-alert-icon">⚠</span>
+    <div className="vpn-alert-text">{children}</div>
+    <button className="vpn-alert-close" onClick={onDismiss} aria-label={dismissLabel}>×</button>
+  </div>
+);
+
 const AppContent: React.FC = () => {
   const { t } = useTranslation();
   const { confirm } = useConfirm();
@@ -39,6 +52,8 @@ const AppContent: React.FC = () => {
   const [openTorrentUri, setOpenTorrentUri] = useState<string | null>(null);
   // VPN kill-switch warning banner (set when the guard auto-pauses on VPN drop)
   const [vpnAlert, setVpnAlert] = useState<{ paused: number; publicIP?: string } | null>(null);
+  // Engine VPN-bind banner (bound address vanished — sockets dead until VPN returns)
+  const [vpnBindAlert, setVpnBindAlert] = useState(false);
   // Disk-space guard warning banner
   const [diskAlert, setDiskAlert] = useState<{ paused: number; freeBytes: number; thresholdBytes: number } | null>(null);
   // The most-alive room right now — feeds the status-bar presence bridge
@@ -182,6 +197,15 @@ const AppContent: React.FC = () => {
     const offDropped = window.api.onVpnDropped((info) => setVpnAlert(info));
     const offRestored = window.api.onVpnRestored(() => setVpnAlert(null));
     return () => { offDropped(); offRestored(); };
+  }, []);
+
+  // Engine VPN-bind: 'lost' raises the banner; a re-bind or the same address
+  // returning clears it (the guard drives the actual engine restart).
+  useEffect(() => {
+    const off = window.api.onVpnBindStatus((info) => {
+      setVpnBindAlert(info.kind === 'lost');
+    });
+    return () => off();
   }, []);
 
   // Startup VPN advisory: main sends this when no VPN is detected at boot.
@@ -424,32 +448,29 @@ const AppContent: React.FC = () => {
 
         <main className="main-content">
           {vpnAlert && (
-            <div className="vpn-alert-banner" role="alert">
-              <span className="vpn-alert-icon">⚠</span>
-              <div className="vpn-alert-text">
-                <strong>{t('app.banner.vpnLostTitle')}</strong>{' '}
-                {vpnAlert.paused > 0
-                  ? `${vpnAlert.paused} ${t('app.banner.torrentsPausedIp')}`
-                  : t('app.banner.vpnDown')}
-                {vpnAlert.publicIP ? ` ${t('app.banner.currentIp')} ${vpnAlert.publicIP}.` : ''}
-                {' '}{t('app.banner.vpnReconnect')}
-              </div>
-              <button className="vpn-alert-close" onClick={() => setVpnAlert(null)} aria-label={t('app.banner.dismiss')}>×</button>
-            </div>
+            <AlertBanner onDismiss={() => setVpnAlert(null)} dismissLabel={t('app.banner.dismiss')}>
+              <strong>{t('app.banner.vpnLostTitle')}</strong>{' '}
+              {vpnAlert.paused > 0
+                ? `${vpnAlert.paused} ${t('app.banner.torrentsPausedIp')}`
+                : t('app.banner.vpnDown')}
+              {vpnAlert.publicIP ? ` ${t('app.banner.currentIp')} ${vpnAlert.publicIP}.` : ''}
+              {' '}{t('app.banner.vpnReconnect')}
+            </AlertBanner>
+          )}
+          {vpnBindAlert && (
+            <AlertBanner onDismiss={() => setVpnBindAlert(false)} dismissLabel={t('app.banner.dismiss')}>
+              {t('privacy.vpnBind.lostBanner')}
+            </AlertBanner>
           )}
           {diskAlert && (
-            <div className="vpn-alert-banner" role="alert">
-              <span className="vpn-alert-icon">⚠</span>
-              <div className="vpn-alert-text">
-                <strong>{t('app.banner.diskLowTitle')}</strong>{' '}
-                {`${t('app.banner.diskFree')} ${formatBytes(diskAlert.freeBytes)} / ${formatBytes(diskAlert.thresholdBytes)}.`}
-                {diskAlert.paused > 0
-                  ? ` ${diskAlert.paused} ${t('app.banner.torrentsPausedShort')}`
-                  : ''}
-                {' '}{t('app.banner.diskResume')}
-              </div>
-              <button className="vpn-alert-close" onClick={() => setDiskAlert(null)} aria-label={t('app.banner.dismiss')}>×</button>
-            </div>
+            <AlertBanner onDismiss={() => setDiskAlert(null)} dismissLabel={t('app.banner.dismiss')}>
+              <strong>{t('app.banner.diskLowTitle')}</strong>{' '}
+              {`${t('app.banner.diskFree')} ${formatBytes(diskAlert.freeBytes)} / ${formatBytes(diskAlert.thresholdBytes)}.`}
+              {diskAlert.paused > 0
+                ? ` ${diskAlert.paused} ${t('app.banner.torrentsPausedShort')}`
+                : ''}
+              {' '}{t('app.banner.diskResume')}
+            </AlertBanner>
           )}
           <Suspense fallback={<div className="page-loading" />}>
             {renderPage()}

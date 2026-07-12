@@ -68,6 +68,7 @@ export const DB_BRIDGE_FNS = [
   'getAllDownloads',
   'getDownloadById',
   'getDownloadsByStatus',
+  'getPrivacyConfig',
   'getSettings',
   'updateDownloadField',
   'updateDownloadFields',

@@ -1049,13 +1049,25 @@ export function setupIpcHandlers(window: BrowserWindow): void {
           sanitize: result.sanitizeLogs,
         });
       }
-      // Restart the VPN kill-switch guard when its toggle changes
-      if (updates.vpnKillSwitch !== undefined) {
+      // Restart the VPN guard when either of its toggles changes (kill-switch
+      // reacts live; the engine bind applies on restart but the monitor arms now)
+      if (updates.vpnKillSwitch !== undefined || updates.vpnBindEngine !== undefined) {
         const { restartGuardFromConfig } = await import('../utils/vpn-guard');
         await restartGuardFromConfig();
       }
       return result;
     }
+  ));
+
+  // Engine VPN-bind status: what the running engine is actually doing (host
+  // mirror — the engine re-reads the toggle on every host spawn, so this stays
+  // truthful even across a mid-session crash-respawn) plus the persisted
+  // toggle. The renderer diffs the two for its restart-pending banner.
+  ipcMain.handle('privacy:getVpnBindStatus', wrapHandler('privacy:getVpnBindStatus',
+    async () => ({
+      running: getTorrentManager().getVpnBindStatus(),
+      configured: (await db.getPrivacyConfig()).vpnBindEngine === true,
+    })
   ));
 
   ipcMain.handle('privacy:clearAllData', wrapHandler('privacy:clearAllData',

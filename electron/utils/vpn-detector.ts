@@ -13,6 +13,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import https from 'https';
 import { logger } from './logger';
+import { VPN_IFACE_PATTERNS, selectVpnIPv4, VpnIfaceAddr } from '../../shared/vpn-bind';
 
 const execAsync = promisify(exec);
 
@@ -110,22 +111,9 @@ function checkVPNInterfaces(): {
   const vpnInterfaces: string[] = [];
   let provider: string | undefined;
 
-  // Common VPN interface patterns
-  const vpnPatterns = [
-    /^tun/i,        // OpenVPN, WireGuard
-    /^tap/i,        // OpenVPN bridged mode
-    /^wg/i,         // WireGuard
-    /^utun/i,       // macOS VPN
-    /^ppp/i,        // PPTP VPN
-    /^ipsec/i,      // IPSec VPN
-    /^l2tp/i,       // L2TP VPN
-    /vpn/i,         // Generic VPN
-    /nordlynx/i,    // NordVPN
-    /mullvad/i,     // Mullvad VPN
-    /proton/i,      // ProtonVPN
-    /expressvpn/i,  // ExpressVPN
-    /surfshark/i,   // Surfshark
-  ];
+  // Common VPN interface patterns — shared with the engine-bind logic so
+  // detection and binding always agree on what counts as a VPN adapter.
+  const vpnPatterns = VPN_IFACE_PATTERNS;
 
   // VPN provider detection
   const providerPatterns: Record<string, RegExp> = {
@@ -214,6 +202,14 @@ function getLocalIP(): string | undefined {
   }
 
   return undefined;
+}
+
+/**
+ * IPv4 of the first detected VPN adapter — what the engine's bind-address-ipv4
+ * needs. Distinct from getLocalIP(), which deliberately SKIPS VPN interfaces.
+ */
+export function getVpnInterfaceIPv4(): VpnIfaceAddr | null {
+  return selectVpnIPv4(os.networkInterfaces());
 }
 
 /**

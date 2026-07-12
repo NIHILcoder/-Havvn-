@@ -419,6 +419,34 @@ export interface PrivacyConfig {
   ephemeralPeerId: boolean;
   sanitizeLogs: boolean;
   vpnKillSwitch: boolean;   // Auto-pause all torrents if the VPN drops
+  vpnBindEngine?: boolean;  // Bind the native engine's peer sockets to the VPN
+                            // adapter (fail-closed; applied at engine start).
+                            // Optional: absent on installs that predate 2.11.
+}
+
+/**
+ * What the RUNNING native engine is bound to. Null status = feature off or the
+ * webtorrent engine (which cannot bind). `fallback` means the engine started
+ * with no VPN present and was bound to loopback — working, but peerless until
+ * the VPN connects and the guard re-binds it.
+ */
+export interface VpnBindStatus {
+  enabled: boolean;
+  boundIp: string | null;  // null while in the loopback fallback
+  iface: string | null;
+  fallback: boolean;
+}
+
+/** privacy:getVpnBindStatus reply: live engine state + the persisted toggle. */
+export interface VpnBindReport {
+  running: VpnBindStatus | null; // null: webtorrent engine or mirror not yet fed
+  configured: boolean;
+}
+
+/** app:vpnBindStatus push payload (guard → renderer). */
+export interface VpnBindEvent {
+  kind: 'lost' | 'rebound' | 'restored';
+  boundIp?: string;
 }
 
 export interface VPNDetectionResult {
@@ -827,6 +855,7 @@ export interface IpcApi {
   // Privacy & Security
   getPrivacyConfig: () => Promise<PrivacyConfig>;
   updatePrivacyConfig: (updates: Partial<PrivacyConfig>) => Promise<PrivacyConfig>;
+  getVpnBindStatus: () => Promise<VpnBindReport>;
   checkVPN: () => Promise<VPNDetectionResult>;
   getIpInfo: () => Promise<IpInfo>;
   getNetworkHealth: () => Promise<NetworkHealth>;
@@ -871,6 +900,9 @@ export interface IpcApi {
   };
   onVpnDropped: (callback: (info: { paused: number; publicIP?: string }) => void) => () => void;
   onVpnRestored: (callback: () => void) => () => void;
+  // Engine VPN-bind lifecycle: lost = bound address vanished (sockets dead),
+  // rebound = engine restarted onto a new VPN IP, restored = same IP came back.
+  onVpnBindStatus: (callback: (info: VpnBindEvent) => void) => () => void;
   // Startup "VPN not detected" advisory + its "Don't show again" opt-out
   onVpnWarning: (callback: (info: { publicIP?: string }) => void) => () => void;
   vpnWarningDismissed: () => void;

@@ -16,6 +16,7 @@ import {
   CreateTorrentResult,
   CreateTorrentProgress,
   PrivacyConfig,
+  VpnBindEvent,
   ShareInfo,
   RoomProfile,
   RoomState,
@@ -218,6 +219,10 @@ const api: IpcApi = {
 
   updatePrivacyConfig: (updates: Partial<PrivacyConfig>) => {
     return ipcRenderer.invoke('privacy:updateConfig', updates);
+  },
+
+  getVpnBindStatus: () => {
+    return ipcRenderer.invoke('privacy:getVpnBindStatus');
   },
 
   checkVPN: () => {
@@ -439,6 +444,13 @@ const api: IpcApi = {
     const handler = () => callback();
     ipcRenderer.on('app:vpnRestored', handler);
     return () => { ipcRenderer.removeListener('app:vpnRestored', handler); };
+  },
+
+  // Engine VPN-bind lifecycle (lost / rebound / restored) from the guard
+  onVpnBindStatus: (callback: (info: VpnBindEvent) => void): (() => void) => {
+    const handler = (_e: IpcRendererEvent, info: VpnBindEvent) => callback(info);
+    ipcRenderer.on('app:vpnBindStatus', handler);
+    return () => { ipcRenderer.removeListener('app:vpnBindStatus', handler); };
   },
 
   // Startup "VPN not detected" advisory (main → renderer, at most once per boot)

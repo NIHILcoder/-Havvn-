@@ -20,7 +20,7 @@ import { FromHost, DbRequest, EventMsg } from './protocol';
 import { TorrentError } from '../errors';
 import type { TorrentManager } from '../manager';
 import type { CastServer } from '../cast-server';
-import type { DownloadStats, CreateTorrentRequest, CreateTorrentResult, CreateTorrentProgress } from '../../../shared/types';
+import type { DownloadStats, CreateTorrentRequest, CreateTorrentResult, CreateTorrentProgress, VpnBindStatus } from '../../../shared/types';
 
 const log = logger.child('TorrentHostProxy');
 
@@ -50,6 +50,7 @@ class TorrentManagerProxy {
   private readyPromise: Promise<void> | null = null;
   private resolveReady: (() => void) | null = null;
   private rejectReady: ((e: Error) => void) | null = null;
+  private restarting: Promise<void> | null = null;
   private seq = 0;
   private pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
   private statsCbs = new Set<StatsCb>();
@@ -60,11 +61,19 @@ class TorrentManagerProxy {
   private listeningPort = 0;
   private altSpeed = false;
   private ffmpeg: string | null = null;
+  private vpnBind: VpnBindStatus | null = null;
 
   // ── Lifecycle ────────────────────────────────────────────────────────────
   initialize(): Promise<void> { return this.ensureReady(); }
 
   private ensureReady(): Promise<void> {
+    // A restart owns the lifecycle for its duration: callers arriving mid-restart
+    // wait for the NEW host instead of racing a spawn against the teardown.
+    if (this.restarting) return this.restarting;
+    return this.ensureSpawned();
+  }
+
+  private ensureSpawned(): Promise<void> {
     if (!this.readyPromise) {
       this.readyPromise = new Promise<void>((res, rej) => { this.resolveReady = res; this.rejectReady = rej; });
       this.spawn();
@@ -81,6 +90,11 @@ class TorrentManagerProxy {
     child.stdout?.on('data', (d) => log.info('host', { out: String(d).trim() }));
     child.stderr?.on('data', (d) => log.warn('host', { err: String(d).trim() }));
     child.on('exit', (code) => {
+      // Identity guard: after destroy()/restartEngine() this exit belongs to a
+      // child that is no longer current — resetting state here would clobber
+      // the NEW host (reject its readiness, null its child) and end up with
+      // two daemons racing on the same configDir.
+      if (this.child !== child) return;
       log.warn('Torrent host exited', { code });
       this.failAll('torrent host stopped');
       // If the host died BEFORE signalling ready, its readiness promise is still
@@ -102,7 +116,13 @@ class TorrentManagerProxy {
 
   private onMessage(msg: FromHost): void {
     switch (msg.kind) {
-      case 'ready': this.resolveReady?.(); this.resolveReady = null; this.rejectReady = null; break;
+      case 'ready':
+        this.resolveReady?.(); this.resolveReady = null; this.rejectReady = null;
+        // Every fresh host starts with an empty peer blocklist. Re-push it on
+        // EVERY ready (startup, crash respawn, engine restart) so no spawn path
+        // can forget it — main.ts's startup push stays as the post-loadAll seed.
+        void this.reapplyBlocklist();
+        break;
       case 'rpc-res': {
         const p = this.pending.get(msg.id);
         if (p) { this.pending.delete(msg.id); msg.ok ? p.resolve(msg.result) : p.reject(reviveError(msg.error, msg.code, msg.name, msg.downloadId)); }
@@ -110,6 +130,18 @@ class TorrentManagerProxy {
       }
       case 'db': void this.handleDb(msg); break;
       case 'event': this.handleEvent(msg); break;
+    }
+  }
+
+  private async reapplyBlocklist(): Promise<void> {
+    try {
+      // Lazy import: the blocklist service pulls db/store; keep the proxy's
+      // module graph free of it until a host is actually up.
+      const { getIPBlocklistService } = await import('../../services/ip-blocklist');
+      const ranges = getIPBlocklistService().getRanges();
+      if (ranges.length > 0) await this.applyIpBlocklist(ranges);
+    } catch (e) {
+      log.warn('Failed to re-apply IP blocklist after host spawn', { error: e instanceof Error ? e.message : String(e) });
     }
   }
 
@@ -130,8 +162,9 @@ class TorrentManagerProxy {
     } else if (msg.event === 'complete') {
       for (const cb of this.completeCbs) { try { cb(msg.payload as { id: string; name: string }); } catch { /* ignore */ } }
     } else if (msg.event === 'state') {
-      const s = msg.payload as { ffmpeg: string | null; listeningPort: number; altSpeedEnabled: boolean };
+      const s = msg.payload as { ffmpeg: string | null; listeningPort: number; altSpeedEnabled: boolean; vpnBind?: VpnBindStatus | null };
       this.ffmpeg = s.ffmpeg; this.listeningPort = s.listeningPort; this.altSpeed = s.altSpeedEnabled;
+      this.vpnBind = s.vpnBind ?? null;
     } else if (msg.event === 'create-progress') {
       for (const cb of this.createProgressCbs) { try { cb(msg.payload as CreateTorrentProgress); } catch { /* ignore */ } }
     }
@@ -152,9 +185,42 @@ class TorrentManagerProxy {
       try { await this.rpc('destroy', []); } catch { /* host may be down */ }
       try { this.child.kill(); } catch { /* ignore */ }
       this.child = null;
+      // The exit handler skips non-current children, so reject in-flight RPCs
+      // here — otherwise they would hang forever.
+      this.failAll('torrent host stopped');
     }
     this.readyPromise = null; this.resolveReady = null; this.rejectReady = null;
   }
+
+  /**
+   * Full engine restart: tear the host down and re-spawn it so the native
+   * sidecar rebuilds settings.json (bind-address-* is read only at daemon
+   * startup — there is no live rebind). Serialized via `restarting`, which
+   * ensureReady() also honors, so concurrent callers wait for the NEW host
+   * instead of spawning one mid-teardown. Waits for the old child to actually
+   * exit so two daemons never overlap on the same configDir (capped — a hung
+   * child is handled by the sidecar's stale-daemon reaper on next start).
+   */
+  restartEngine(): Promise<void> {
+    if (this.restarting) return this.restarting;
+    this.restarting = (async () => {
+      try {
+        const old = this.child;
+        const exited = old
+          ? new Promise<void>((resolve) => old.once('exit', () => resolve()))
+          : Promise.resolve();
+        await this.destroy();
+        await Promise.race([exited, new Promise((r) => setTimeout(r, 15_000))]);
+        await this.ensureSpawned();
+      } finally {
+        this.restarting = null;
+      }
+    })();
+    return this.restarting;
+  }
+
+  /** Live VPN-bind state of the running engine (null: feature off / webtorrent). */
+  getVpnBindStatus(): VpnBindStatus | null { return this.vpnBind; }
 
   // ── Event subscriptions (local) ──────────────────────────────────────────
   onStats(cb: StatsCb): () => void { this.statsCbs.add(cb); return () => this.statsCbs.delete(cb); }

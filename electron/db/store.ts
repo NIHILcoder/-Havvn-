@@ -211,6 +211,7 @@ const configStore = new Store<ConfigSchema>({
       ephemeralPeerId: true,
       sanitizeLogs: true,
       vpnKillSwitch: false,
+      vpnBindEngine: false,
     },
     windowBounds: null,
     defaultsSeeded: false,

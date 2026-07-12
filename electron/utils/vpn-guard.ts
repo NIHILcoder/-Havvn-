@@ -1,18 +1,27 @@
 /**
- * VPN Kill-Switch / Guard
+ * VPN Kill-Switch / Guard + engine VPN-bind monitor.
  *
- * Periodically re-checks VPN status while torrents are active. If the VPN drops
- * (was up, now down) it auto-pauses ALL torrents so the user's real IP isn't
- * exposed to the swarm, fires an OS notification, and tells the renderer to show
- * a warning banner. Resume is manual by design (the user decides when it's safe).
+ * Kill-switch (PrivacyConfig.vpnKillSwitch): periodically re-checks VPN status
+ * while torrents are active. If the VPN drops (was up, now down) it auto-pauses
+ * ALL torrents so the user's real IP isn't exposed to the swarm, fires an OS
+ * notification, and tells the renderer to show a warning banner. Resume is
+ * manual by design (the user decides when it's safe).
  *
- * Enabled via PrivacyConfig.vpnKillSwitch.
+ * Bind monitor (PrivacyConfig.vpnBindEngine, native engine only): the engine's
+ * peer sockets are hard-bound to the VPN adapter's IPv4 (see shared/vpn-bind).
+ * The daemon reads bind-address-* once at startup, so ANY address change —
+ * including the same address coming back after a drop, which does NOT revive
+ * the daemon's listening socket — is applied via a full engine restart
+ * (manager.restartEngine), debounced against VPN flaps. A plain drop needs no
+ * action (sockets are already dead — that's the feature working); it is only
+ * reported.
  */
 
-import { BrowserWindow, Notification } from 'electron';
-import { detectVPN } from './vpn-detector';
+import { BrowserWindow } from 'electron';
+import { detectVPN, getVpnInterfaceIPv4 } from './vpn-detector';
+import { planBindAction } from '../../shared/vpn-bind';
 import { logger } from './logger';
-import { getAppIconPath } from './index';
+import { showOsNotification } from './os-notify';
 import * as db from '../db/store';
 import { getTorrentManager } from '../torrent';
 import { t } from '../i18n';
@@ -20,11 +29,25 @@ import { t } from '../i18n';
 const log = logger.child('VPNGuard');
 
 const CHECK_INTERVAL_MS = 20_000; // re-check every 20s
+// Re-bind debounce: the new address must survive 2 consecutive ticks, and
+// engine restarts are at least a minute apart — a flapping VPN reconnect must
+// not turn into a restart storm that kills active streams over and over.
+const REBIND_MIN_INTERVAL_MS = 60_000;
 
 let timer: NodeJS.Timeout | null = null;
+let mainWindowRef: BrowserWindow | null = null;
+
+// Kill-switch state
+let killSwitchOn = false;
 let lastVpnActive: boolean | null = null; // null = unknown / not yet checked
 let tripped = false;                       // already auto-paused this outage
-let mainWindowRef: BrowserWindow | null = null;
+
+// Bind-monitor state
+let bindOn = false;
+let bindLost = false;                      // warned about the current outage
+let pendingRebindIp: string | null = null; // debounce: candidate IP from the previous tick
+let lastRebindAt = 0;
+let rebindInProgress = false;
 
 export function initVpnGuard(mainWindow: BrowserWindow): void {
   mainWindowRef = mainWindow;
@@ -34,23 +57,44 @@ export function initVpnGuard(mainWindow: BrowserWindow): void {
 
 /** (Re)start or stop the guard loop based on the persisted privacy config. */
 export async function restartGuardFromConfig(): Promise<void> {
-  let enabled = false;
+  let killSwitch = false;
+  let bind = false;
   try {
     const cfg = await db.getPrivacyConfig();
-    enabled = cfg.vpnKillSwitch === true;
+    killSwitch = cfg.vpnKillSwitch === true;
+    // Monitor the bind when the RUNNING engine is bound (the truth for this
+    // session — survives the toggle being flipped off before a restart), OR
+    // when the toggle is on for the native engine (covers a host crash-respawn
+    // silently adopting the new config mid-session).
+    const runningBound = getTorrentManager().getVpnBindStatus()?.enabled === true;
+    bind = runningBound || (cfg.vpnBindEngine === true && db.getEngineChoice() === 'native');
   } catch {
-    enabled = false;
+    killSwitch = false;
+    bind = false;
   }
 
   stopVpnGuard();
-  if (!enabled) {
-    log.info('VPN kill-switch disabled');
+  const killSwitchChanged = killSwitch !== killSwitchOn;
+  const bindChanged = bind !== bindOn;
+  killSwitchOn = killSwitch;
+  bindOn = bind;
+  if (!killSwitchOn && !bindOn) {
+    log.info('VPN guard disabled');
     return;
   }
 
-  log.info('VPN kill-switch enabled — monitoring');
-  lastVpnActive = null;
-  tripped = false;
+  log.info('VPN guard enabled', { killSwitch: killSwitchOn, bind: bindOn });
+  // Reset per-feature state only when that feature's enablement flipped —
+  // toggling one must not wipe the other's in-progress outage latch (a tripped
+  // kill-switch would otherwise re-pause / lose its "restored" edge).
+  if (killSwitchChanged) {
+    lastVpnActive = null;
+    tripped = false;
+  }
+  if (bindChanged) {
+    bindLost = false;
+    pendingRebindIp = null;
+  }
   timer = setInterval(() => { void tick(); }, CHECK_INTERVAL_MS);
   // Run one check shortly after enabling
   setTimeout(() => { void tick(); }, 2_000);
@@ -64,55 +108,126 @@ export function stopVpnGuard(): void {
 }
 
 async function tick(): Promise<void> {
-  try {
-    // Only act when there is something to protect
-    const manager = getTorrentManager();
-    const downloads = await manager.getDownloads();
-    const hasActive = downloads.some(
-      d => d.status === 'downloading' || d.status === 'queued' || d.status === 'seeding'
-    );
-
-    const result = await detectVPN();
-    const vpnActive = result.isVPNActive;
-
-    // VPN dropped: was active (or known) and now inactive, with active torrents
-    if (lastVpnActive !== false && !vpnActive && hasActive && !tripped) {
-      tripped = true;
-      const count = await manager.pauseAllActive();
-      log.warn('VPN dropped — auto-paused all torrents', { paused: count });
-      notifyDropped(count);
-      sendToRenderer('app:vpnDropped', { paused: count, publicIP: result.details.publicIP });
+  // The bind check is cheap (os.networkInterfaces only) — run it first so a
+  // slow detectVPN() (exec + network) never delays a re-bind decision.
+  if (bindOn) {
+    try {
+      tickBind();
+    } catch (e) {
+      log.error('VPN bind tick failed', { error: e instanceof Error ? e.message : String(e) });
     }
-
-    // VPN restored: clear the tripped latch so a future drop trips again.
-    // Resume stays manual — we only inform the renderer.
-    if (vpnActive && tripped) {
-      tripped = false;
-      log.info('VPN restored — kill-switch re-armed (resume is manual)');
-      sendToRenderer('app:vpnRestored', {});
+  }
+  if (killSwitchOn) {
+    try {
+      await tickKillSwitch();
+    } catch (e) {
+      log.error('VPN guard tick failed', { error: e instanceof Error ? e.message : String(e) });
     }
-
-    lastVpnActive = vpnActive;
-  } catch (e) {
-    log.error('VPN guard tick failed', { error: e instanceof Error ? e.message : String(e) });
   }
 }
 
-function notifyDropped(count: number): void {
-  try {
-    if (!Notification.isSupported()) return;
-    const iconPath = getAppIconPath();
-    const n = new Notification({
-      title: t('notify.vpnLost.title'),
-      body: count > 0
+// ── Kill-switch ──────────────────────────────────────────────────────────────
+async function tickKillSwitch(): Promise<void> {
+  // Only act when there is something to protect
+  const manager = getTorrentManager();
+  const downloads = await manager.getDownloads();
+  const hasActive = downloads.some(
+    d => d.status === 'downloading' || d.status === 'queued' || d.status === 'seeding'
+  );
+
+  const result = await detectVPN();
+  const vpnActive = result.isVPNActive;
+
+  // VPN dropped: was active (or known) and now inactive, with active torrents
+  if (lastVpnActive !== false && !vpnActive && hasActive && !tripped) {
+    tripped = true;
+    const count = await manager.pauseAllActive();
+    log.warn('VPN dropped — auto-paused all torrents', { paused: count });
+    showOsNotification(
+      t('notify.vpnLost.title'),
+      count > 0
         ? t(count === 1 ? 'notify.vpnLost.bodyOne' : 'notify.vpnLost.bodyMany', { count })
         : t('notify.vpnLost.bodyNone'),
-      ...(iconPath ? { icon: iconPath } : {}),
-      urgency: 'critical',
-    });
-    n.show();
-  } catch {
-    /* best-effort */
+      { critical: true },
+    );
+    sendToRenderer('app:vpnDropped', { paused: count, publicIP: result.details.publicIP });
+  }
+
+  // VPN restored: clear the tripped latch so a future drop trips again.
+  // Resume stays manual — we only inform the renderer.
+  if (vpnActive && tripped) {
+    tripped = false;
+    log.info('VPN restored — kill-switch re-armed (resume is manual)');
+    sendToRenderer('app:vpnRestored', {});
+  }
+
+  lastVpnActive = vpnActive;
+}
+
+// ── Engine bind monitor ──────────────────────────────────────────────────────
+function tickBind(): void {
+  if (rebindInProgress) return;
+  const manager = getTorrentManager();
+  const status = manager.getVpnBindStatus(); // running engine's bind, mirrored from the host
+  if (!status?.enabled) return;              // nothing bound — skip the interface scan
+  const current = getVpnInterfaceIPv4();
+  const action = planBindAction(status, current?.address ?? null, bindLost);
+
+  switch (action) {
+    // 'restored' (same address back after a loss) restarts too: the daemon's
+    // LISTENING socket died with the interface and is never re-bound mid-run,
+    // so without a restart incoming peer connections would stay dead.
+    case 'rebind':
+    case 'restored': {
+      const ip = current!.address;
+      if (pendingRebindIp !== ip) { pendingRebindIp = ip; return; } // 1st sighting — confirm next tick
+      if (Date.now() - lastRebindAt < REBIND_MIN_INTERVAL_MS) return;
+      pendingRebindIp = null;
+      // Fire and forget: the restart takes seconds and must not stall the
+      // kill-switch half of this tick; rebindInProgress guards re-entry.
+      void rebindEngine(ip);
+      return;
+    }
+    case 'lost': {
+      pendingRebindIp = null;
+      bindLost = true;
+      log.warn('VPN adapter lost while the engine is bound — peer sockets are dead (fail-closed)');
+      showOsNotification(t('notify.vpnBindLost.title'), t('notify.vpnBindLost.body'), { critical: true });
+      sendToRenderer('app:vpnBindStatus', { kind: 'lost' });
+      return;
+    }
+    default:
+      pendingRebindIp = null;
+  }
+}
+
+async function rebindEngine(newIp: string): Promise<void> {
+  rebindInProgress = true;
+  try {
+    log.info('VPN address changed — restarting the engine to re-bind', { ip: newIp });
+    const manager = getTorrentManager();
+    await manager.restartEngine();
+    lastRebindAt = Date.now();
+    // Trust the engine's own report, not our intent: the VPN may have vanished
+    // again mid-restart, leaving the fresh engine in loopback fallback — then
+    // nothing is bound and announcing success would be a lie. Leave the lost
+    // latch as-is and let the next tick drive a new re-bind attempt.
+    const status = manager.getVpnBindStatus();
+    if (status?.enabled && status.boundIp) {
+      bindLost = false;
+      log.info('Engine re-bound to the VPN', { ip: status.boundIp });
+      showOsNotification(t('notify.vpnRebound.title'), t('notify.vpnRebound.body', { ip: status.boundIp }));
+      // Note: if the kill-switch also tripped during this outage, torrents STAY
+      // paused — its resume is manual by design; the rebound toast must not
+      // imply downloads resumed.
+      sendToRenderer('app:vpnBindStatus', { kind: 'rebound', boundIp: status.boundIp });
+    } else {
+      log.warn('Engine restarted but is not bound to a VPN (loopback fallback) — will retry when an adapter appears');
+    }
+  } catch (e) {
+    log.error('Engine re-bind failed', { error: e instanceof Error ? e.message : String(e) });
+  } finally {
+    rebindInProgress = false;
   }
 }
 

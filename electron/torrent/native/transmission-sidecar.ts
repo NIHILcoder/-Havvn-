@@ -176,6 +176,12 @@ export class TransmissionSidecar {
       'encryption': 1,
       'peer-port': this.peerPortActual,
       'peer-port-random-on-start': false,
+      // Explicit bind defaults: the daemon persists whatever bind-address the
+      // VPN-bind feature last wrote (it rewrites settings.json on exit), so
+      // without re-imposing the wildcard here a disabled feature would leave
+      // the engine silently bound to a stale VPN IP. Overrides layer on top.
+      'bind-address-ipv4': '0.0.0.0',
+      'bind-address-ipv6': '::',
       'port-forwarding-enabled': true, // daemon's own UPnP/NAT-PMP
       'download-dir': this.opts.downloadDir,
       // Keep incomplete files at their FINAL name (default renames them to

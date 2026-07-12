@@ -6,7 +6,8 @@
  * widths, so labels and controls never collide.
  */
 import React from 'react';
-import { Icon, IconName } from '../../components';
+import { Button, Icon, IconName } from '../../components';
+import { useTranslation } from '../../utils/i18nContext';
 import './controls.css';
 
 /** A titled group of setting rows. */
@@ -92,6 +93,24 @@ export const TextField: React.FC<{
     onChange={(e) => onChange(e.target.value)}
   />
 );
+
+/**
+ * "Change saved — applies after a restart" banner with the relaunch button.
+ * The engine-picker restart pattern, shared by every restart-only setting
+ * (styles live in SettingsPage.css under .engine-restart).
+ */
+export const RestartPendingNotice: React.FC<{ text: string }> = ({ text }) => {
+  const { t } = useTranslation();
+  return (
+    <div className="engine-restart">
+      <Icon name="alert-triangle" size={14} />
+      <span>{text}</span>
+      <Button variant="primary" size="sm" onClick={() => window.api.relaunchApp()}>
+        {t('settings.engine.restartNow')}
+      </Button>
+    </div>
+  );
+};
 
 /** Small status pill (olive = good/active, muted = neutral, ember = attention). */
 export const StatusPill: React.FC<{

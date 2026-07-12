@@ -55,6 +55,7 @@ export const deleteDownload = bridged('deleteDownload');
 export const getAllDownloads = bridged('getAllDownloads');
 export const getDownloadById = bridged('getDownloadById');
 export const getDownloadsByStatus = bridged('getDownloadsByStatus');
+export const getPrivacyConfig = bridged('getPrivacyConfig');
 export const getSettings = bridged('getSettings');
 export const updateDownloadField = bridged('updateDownloadField');
 export const updateDownloadFields = bridged('updateDownloadFields');

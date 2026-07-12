@@ -17,6 +17,7 @@
  */
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import crypto from 'node:crypto';
@@ -36,9 +37,10 @@ import { NativeMediaServer } from './media-server';
 import { extractInfoHashFromMagnet } from '../../../shared/magnet';
 import { classifyMediaKind, isDirectlyPlayable } from '../../../shared/media';
 import { isPrivateOrReservedIPv4 } from '../../../shared/ip-range';
+import { selectVpnIPv4, resolveBindOverrides } from '../../../shared/vpn-bind';
 import type {
   AppSettings, Download, DownloadStats, FilePriority, NetworkHealth, PeerInfo, SourceType,
-  SwarmGeo, TorrentFile, TorrentInfo, TrackerInfo,
+  SwarmGeo, TorrentFile, TorrentInfo, TrackerInfo, VpnBindStatus,
 } from '../../../shared/types';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -91,6 +93,7 @@ export class NativeTorrentManager {
   private altSpeedEnabled = false;
   private readonly ffmpegPath = resolveFfmpeg();
   private geoReady = false;
+  private vpnBind: VpnBindStatus = { enabled: false, boundIp: null, iface: null, fallback: false };
 
   // Streaming: one shared 127.0.0.1 media server (loopback + per-session token),
   // and per-torrent the set of files pinned into sequential/priority-high head
@@ -121,7 +124,27 @@ export class NativeTorrentManager {
     if (!env.engineBinary || !fs.existsSync(env.engineBinary)) {
       throw new Error(`transmission binary missing (${env.engineBinary ?? 'unset'}) — run: node scripts/fetch-transmission.mjs`);
     }
-    this.settings = await db.getSettings();
+    const [settings, privacy] = await Promise.all([
+      db.getSettings(),
+      db.getPrivacyConfig().catch((e) => {
+        log.warn('Failed to read privacy config for VPN bind — starting unbound', { error: String(e) });
+        return null;
+      }),
+    ]);
+    this.settings = settings;
+    // VPN bind (privacy.vpnBindEngine): resolve the VPN adapter's IPv4 NOW and
+    // freeze it into settings.json — the daemon reads bind-address-* once at
+    // startup, so every later change goes through a full engine restart
+    // (vpn-guard drives that). No VPN present → loopback, never a real NIC.
+    let bindOverrides: Record<string, unknown> = {};
+    if (privacy?.vpnBindEngine === true) {
+      const ifaces = os.networkInterfaces();
+      const vpn = selectVpnIPv4(ifaces);
+      bindOverrides = resolveBindOverrides(vpn);
+      this.vpnBind = { enabled: true, boundIp: vpn?.address ?? null, iface: vpn?.iface ?? null, fallback: !vpn };
+      if (vpn) log.info('Engine bound to VPN interface', { iface: vpn.iface, ip: vpn.address });
+      else log.warn('VPN bind enabled but no VPN adapter recognized — engine bound to loopback (fail-closed, zero peers until the VPN connects)', { interfaces: Object.keys(ifaces) });
+    }
     this.sidecar = new TransmissionSidecar({
       binaryPath: env.engineBinary,
       configDir: env.engineStateDir,
@@ -129,7 +152,7 @@ export class NativeTorrentManager {
       peerPort: (this.settings.portMin ?? 0) > 0 ? this.settings.portMin : undefined,
       // Main's existing UPnP service owns the router mapping (honors the
       // portForwarding toggle); don't let the daemon double-map the port.
-      settingsOverrides: { 'port-forwarding-enabled': false },
+      settingsOverrides: { 'port-forwarding-enabled': false, ...bindOverrides },
       onLog: (line) => log.debug('daemon', { line }),
       // Host exits → proxy respawns the whole host → clean engine restart.
       onUnexpectedExit: (code) => { log.error('transmission daemon died', { code }); process.exit(1); },
@@ -208,6 +231,7 @@ export class NativeTorrentManager {
 
   isAltSpeedEnabled(): boolean { return this.altSpeedEnabled; }
   getListeningPort(): number { return this.sidecar?.peerPort ?? 0; }
+  getVpnBindStatus(): VpnBindStatus { return this.vpnBind; }
   get ffmpegBinary(): string | null { return this.ffmpegPath; }
 
   // ── Restore / identity mapping ──────────────────────────────────────────────

@@ -59,6 +59,10 @@ const en: Dict = {
   'notify.vpnLost.bodyOne': 'Paused 1 torrent to protect your IP. Reconnect your VPN, then resume manually.',
   'notify.vpnLost.bodyMany': 'Paused {count} torrents to protect your IP. Reconnect your VPN, then resume manually.',
   'notify.vpnLost.bodyNone': 'Your VPN appears to be down. Reconnect it before resuming torrents.',
+  'notify.vpnBindLost.title': 'VPN lost — engine is bound to the VPN',
+  'notify.vpnBindLost.body': 'Peer traffic is blocked at the socket level until the VPN returns.',
+  'notify.vpnRebound.title': 'VPN address changed — engine re-bound',
+  'notify.vpnRebound.body': 'The download engine restarted and is bound to {ip}.',
 
   // Shared
   'common.ok': 'OK',
@@ -127,6 +131,10 @@ const ru: Dict = {
   'notify.vpnLost.bodyOne': 'Приостановлен 1 торрент для защиты вашего IP. Переподключите VPN и возобновите вручную.',
   'notify.vpnLost.bodyMany': 'Приостановлено торрентов: {count} для защиты вашего IP. Переподключите VPN и возобновите вручную.',
   'notify.vpnLost.bodyNone': 'Похоже, ваш VPN отключён. Переподключите его перед возобновлением торрентов.',
+  'notify.vpnBindLost.title': 'VPN потерян — движок привязан к VPN',
+  'notify.vpnBindLost.body': 'Трафик пиров заблокирован на уровне сокетов, пока VPN не восстановится.',
+  'notify.vpnRebound.title': 'Адрес VPN изменился — движок перепривязан',
+  'notify.vpnRebound.body': 'Движок загрузок перезапущен и привязан к {ip}.',
 
   // Shared
   'common.ok': 'OK',
@@ -169,6 +177,7 @@ let current: MainLang = 'en';
 /** Read the persisted UI language once at startup (before the tray is built). */
 export function initMainI18n(): void {
   try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { getUiLanguage } = require('../db/store') as typeof import('../db/store');
     current = getUiLanguage();
   } catch {
@@ -181,6 +190,7 @@ export function setMainLanguage(lang: unknown): void {
   if (lang !== 'en' && lang !== 'ru') return;
   current = lang;
   try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { setUiLanguage } = require('../db/store') as typeof import('../db/store');
     setUiLanguage(lang);
   } catch {

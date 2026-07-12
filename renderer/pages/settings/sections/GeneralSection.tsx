@@ -5,8 +5,8 @@
  */
 import React from 'react';
 import { useSettings } from '../SettingsContext';
-import { SettingsCard, SettingRow } from '../controls';
-import { Button, Icon, Toggle } from '../../../components';
+import { SettingsCard, SettingRow, RestartPendingNotice } from '../controls';
+import { Icon, Toggle } from '../../../components';
 import { useTranslation } from '../../../utils/i18nContext';
 
 export const GeneralSection: React.FC = () => {
@@ -43,13 +43,7 @@ export const GeneralSection: React.FC = () => {
           </button>
         </div>
         {ctx.engineRestartPending ? (
-          <div className="engine-restart">
-            <Icon name="alert-triangle" size={14} />
-            <span>{t('settings.engine.pending')}</span>
-            <Button variant="primary" size="sm" onClick={() => window.api.relaunchApp()}>
-              {t('settings.engine.restartNow')}
-            </Button>
-          </div>
+          <RestartPendingNotice text={t('settings.engine.pending')} />
         ) : (
           <div className="settings-notice-compact">
             <Icon name="info" size={14} />

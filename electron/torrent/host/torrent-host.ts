@@ -27,6 +27,8 @@ interface EngineManager {
   ffmpegBinary: string | null;
   getListeningPort(): number;
   isAltSpeedEnabled(): boolean;
+  /** Native engine only — the webtorrent manager cannot bind and omits it. */
+  getVpnBindStatus?(): unknown;
   getCastFileInfo(id: string, fileIndex: number): unknown;
   onStats(cb: (stats: DownloadStats[]) => void): () => void;
   onComplete(cb: (info: { id: string; name: string }) => void): () => void;
@@ -109,6 +111,7 @@ function postState(): void {
       ffmpeg: manager.ffmpegBinary,
       listeningPort: manager.getListeningPort(),
       altSpeedEnabled: manager.isAltSpeedEnabled(),
+      vpnBind: manager.getVpnBindStatus?.() ?? null,
     },
   });
 }
