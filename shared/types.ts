@@ -103,7 +103,28 @@ export interface RoomFile {
   addedByName: string;
   addedAt: number;
   enc?: boolean;         // E2E rooms: the seeded torrent is ciphertext (decrypt after download)
+  // Folder/section this file sits in. Absent, '', or an id that resolves to no
+  // live folder all mean "Uncategorized" — so a peer on an older build that
+  // strips the field just shows the file in the flat list, never breaks.
+  folderId?: string;
+  folderAt?: number;     // last-writer-wins clock for the folder assignment (independent of addedAt)
 }
+
+/**
+ * A named folder/section for organizing a room's shared files. Optional overlay
+ * on the flat manifest: a room with no folders renders exactly as before. `at`
+ * is the last-edit clock (ms) used for last-writer-wins convergence across peers.
+ */
+export interface RoomFolder {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+  at: number;
+}
+
+/** A room folder as persisted to disk (same shape; re-served on restart). */
+export type PersistedRoomFolder = RoomFolder;
 
 /**
  * A manifest entry persisted to disk so a room shows — and re-seeds — its files
@@ -177,6 +198,7 @@ export interface RoomState {
   e2e: boolean;          // end-to-end encryption: file bytes seeded as ciphertext
   members: RoomMember[];
   files: RoomFile[];
+  folders?: RoomFolder[];   // room sections (absent/empty = flat list, legacy behaviour)
   transfers: Record<string, RoomTransfer>;
   history: RoomEvent[];  // recent activity, newest last
   chat: RoomChatMessage[];  // recent chat messages, newest last
