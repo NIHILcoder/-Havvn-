@@ -1391,11 +1391,21 @@ const RoomPlayer: React.FC<{ room: RoomState; roomId: string; file: RoomFile; se
     const onPlay = () => send('play');
     const onPause = () => send('pause');
     const onSeeked = () => send('seek');
+    // Speed changes propagate too (PlayerControls gained a rate menu) — the
+    // sync handler below applies msg.rate, so the room plays at one speed.
+    const onRate = () => send('rate');
     v.addEventListener('play', onPlay);
     v.addEventListener('pause', onPause);
     v.addEventListener('seeked', onSeeked);
-    return () => { v.removeEventListener('play', onPlay); v.removeEventListener('pause', onPause); v.removeEventListener('seeked', onSeeked); };
+    v.addEventListener('ratechange', onRate);
+    return () => { v.removeEventListener('play', onPlay); v.removeEventListener('pause', onPause); v.removeEventListener('seeked', onSeeked); v.removeEventListener('ratechange', onRate); };
   }, [roomId, current.fileId]);
+
+  // Leaving the player unmounts its <video> — close any PiP window it owns
+  // instead of stranding a dead floating frame.
+  useEffect(() => () => {
+    if (document.pictureInPictureElement) void document.exitPictureInPicture().catch(() => {});
+  }, []);
 
   // Track who's watching (presence) + apply remote sync when "together" is on.
   useEffect(() => {
@@ -1442,7 +1452,7 @@ const RoomPlayer: React.FC<{ room: RoomState; roomId: string; file: RoomFile; se
       if (msg.action === 'react') { if (msg.emoji) spawnReaction(msg.emoji); return; }
       // Playback follow — only the actual control actions, only when in sync.
       if (!togetherRef.current) return;
-      if (msg.action !== 'play' && msg.action !== 'pause' && msg.action !== 'seek') return;
+      if (msg.action !== 'play' && msg.action !== 'pause' && msg.action !== 'seek' && msg.action !== 'rate') return;
       const v = videoRef.current;
       if (!v) return;
       setController(msg.name);
@@ -1456,6 +1466,9 @@ const RoomPlayer: React.FC<{ room: RoomState; roomId: string; file: RoomFile; se
       const guard = setTimeout(done, 250);
       const settle = () => { clearTimeout(guard); done(); };
       try {
+        // Speed rides every sync message; 'rate' is also its own action so a
+        // lone speed change (no play/pause/seek) still propagates.
+        if (typeof msg.rate === 'number' && msg.rate > 0 && Math.abs(v.playbackRate - msg.rate) > 0.001) v.playbackRate = msg.rate;
         if (msg.action === 'pause') { v.pause(); if (Math.abs(v.currentTime - msg.position) > 0.5) v.currentTime = msg.position; }
         else if (msg.action === 'seek') { v.addEventListener('seeked', settle, { once: true }); v.currentTime = msg.position; }
         else if (msg.action === 'play') { if (Math.abs(v.currentTime - expected) > 1.5) v.currentTime = expected; v.play().catch(() => {}); }

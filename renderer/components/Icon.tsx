@@ -102,7 +102,9 @@ export type IconName =
   | 'volume-2'
   | 'volume-x'
   | 'maximize'
-  | 'minimize';
+  | 'minimize'
+  | 'skip-forward'
+  | 'pip';
 
 interface IconProps {
   name: IconName;
@@ -207,6 +209,8 @@ const paths: Record<IconName, string> = {
   'volume-x': 'M11 5L6 9H2v6h4l5 4V5z M23 9l-6 6 M17 9l6 6',
   'maximize': 'M8 3H5a2 2 0 0 0-2 2v3 M21 8V5a2 2 0 0 0-2-2h-3 M3 16v3a2 2 0 0 0 2 2h3 M16 21h3a2 2 0 0 0 2-2v-3',
   'minimize': 'M8 3v3a2 2 0 0 1-2 2H3 M21 8h-3a2 2 0 0 1-2-2V3 M3 16h3a2 2 0 0 1 2 2v3 M16 21v-3a2 2 0 0 1 2-2h3',
+  'skip-forward': 'M5 4l10 8-10 8V4z M19 5v14',
+  'pip': 'M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z M12 12h7v5h-7z',
 };
 
 export const Icon: React.FC<IconProps> = ({

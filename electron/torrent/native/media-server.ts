@@ -16,6 +16,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import { Writable } from 'node:stream';
 import { spawn, ChildProcess } from 'node:child_process';
+import { parseAudioTrackParam, transcodeMapArgs } from '../audio-probe';
 
 export interface MediaFileInfo {
   diskPath: string;
@@ -104,7 +105,10 @@ export class NativeMediaServer {
     const info = parts.length >= 3 ? this.resolve(id, fileIndex) : null;
     if (!info) { res.writeHead(404); res.end(); return; }
     if (parts[0] === 'direct') { void this.serveDirect(req, res, info, id, fileIndex); return; }
-    if (parts[0] === 'transcode') { this.serveTranscode(res, info, id, fileIndex); return; }
+    if (parts[0] === 'transcode') {
+      this.serveTranscode(res, info, id, fileIndex, parseAudioTrackParam(url.searchParams.get('a')));
+      return;
+    }
     res.writeHead(404); res.end();
   }
 
@@ -194,13 +198,17 @@ export class NativeMediaServer {
   }
 
   /** ffmpeg → fmp4/mp3, fed from a tailing read of the (possibly incomplete) file. */
-  private serveTranscode(res: http.ServerResponse, info: MediaFileInfo, id: string, fileIndex: number): void {
+  private serveTranscode(res: http.ServerResponse, info: MediaFileInfo, id: string, fileIndex: number, audioTrack?: number): void {
     const ffmpeg = this.ffmpeg();
     if (!ffmpeg) { res.writeHead(503); res.end('ffmpeg unavailable'); return; }
+    // transcodeMapArgs is empty unless a track was explicitly chosen, so
+    // default playback keeps the exact historical args byte-for-byte.
+    const maps = transcodeMapArgs(info.kind, audioTrack);
     const args = info.kind === 'audio'
-      ? ['-i', 'pipe:0', '-c:a', 'libmp3lame', '-b:a', '192k', '-f', 'mp3', 'pipe:1']
+      ? ['-i', 'pipe:0', ...maps, '-c:a', 'libmp3lame', '-b:a', '192k', '-f', 'mp3', 'pipe:1']
       : [
           '-i', 'pipe:0',
+          ...maps,
           '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
           '-c:a', 'aac', '-b:a', '160k', '-ac', '2',
           '-movflags', 'frag_keyframe+empty_moov+default_base_moof',

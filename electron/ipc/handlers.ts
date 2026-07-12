@@ -211,7 +211,7 @@ export function setupIpcHandlers(window: BrowserWindow): void {
   ));
 
   ipcMain.handle('downloads:getStreamUrl', wrapHandler('downloads:getStreamUrl',
-    async (_event, id: string, fileIndex: number, opts?: { transcode?: boolean }) => {
+    async (_event, id: string, fileIndex: number, opts?: { transcode?: boolean; audioTrack?: number }) => {
       return torrentManager.getStreamUrl(id, fileIndex, opts);
     }
   ));
@@ -334,6 +334,11 @@ export function setupIpcHandlers(window: BrowserWindow): void {
 
   ipcMain.handle('subtitles:get', wrapHandler('subtitles:get',
     async (_event, id: string, fileIndex: number, key: string) => torrentManager.getSubtitleVtt(id, fileIndex, key)
+  ));
+
+  // Audio tracks (multi-audio MKV — the player restarts the transcode with -map)
+  ipcMain.handle('audioTracks:list', wrapHandler('audioTracks:list',
+    async (_event, id: string, fileIndex: number) => torrentManager.getAudioTracks(id, fileIndex)
   ));
 
   // ── Friend swarms / private rooms (Phase 3) ─────────────────────────────

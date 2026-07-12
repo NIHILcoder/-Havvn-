@@ -252,6 +252,7 @@ class TorrentManagerProxy {
   getStreamUrl(...a: Parameters<TM['getStreamUrl']>): Fwd<TM['getStreamUrl']> { return this.rpc('getStreamUrl', a); }
   stopStream(...a: Parameters<TM['stopStream']>): Fwd<TM['stopStream']> { return this.rpc('stopStream', a); }
   getSubtitleTracks(...a: Parameters<TM['getSubtitleTracks']>): Fwd<TM['getSubtitleTracks']> { return this.rpc('getSubtitleTracks', a); }
+  getAudioTracks(...a: Parameters<TM['getAudioTracks']>): Fwd<TM['getAudioTracks']> { return this.rpc('getAudioTracks', a); }
   getSubtitleVtt(...a: Parameters<TM['getSubtitleVtt']>): Fwd<TM['getSubtitleVtt']> { return this.rpc('getSubtitleVtt', a); }
   getTorrentInfo(...a: Parameters<TM['getTorrentInfo']>): Fwd<TM['getTorrentInfo']> { return this.rpc('getTorrentInfo', a); }
   pauseDownload(...a: Parameters<TM['pauseDownload']>): Fwd<TM['pauseDownload']> { return this.rpc('pauseDownload', a); }

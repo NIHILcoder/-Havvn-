@@ -64,7 +64,7 @@ const api: IpcApi = {
     return ipcRenderer.invoke('downloads:getFiles', id);
   },
 
-  getStreamUrl: (id: string, fileIndex: number, opts?: { transcode?: boolean }): Promise<{ url: string; name: string; kind: 'video' | 'audio' | 'other'; transcoded: boolean }> => {
+  getStreamUrl: (id: string, fileIndex: number, opts?: { transcode?: boolean; audioTrack?: number }): Promise<{ url: string; name: string; kind: 'video' | 'audio' | 'other'; transcoded: boolean }> => {
     return ipcRenderer.invoke('downloads:getStreamUrl', id, fileIndex, opts);
   },
 
@@ -587,6 +587,12 @@ const api: IpcApi = {
       ipcRenderer.invoke('subtitles:list', id, fileIndex),
     get: (id: string, fileIndex: number, key: string): Promise<string> =>
       ipcRenderer.invoke('subtitles:get', id, fileIndex, key),
+  },
+
+  // Audio tracks (multi-audio MKV)
+  audioTracks: {
+    list: (id: string, fileIndex: number): Promise<Array<{ index: number; label: string; lang?: string; isDefault?: boolean }>> =>
+      ipcRenderer.invoke('audioTracks:list', id, fileIndex),
   },
 
   // Friend swarms / private rooms (Phase 3)

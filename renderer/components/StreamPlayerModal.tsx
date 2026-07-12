@@ -19,6 +19,7 @@ import './StreamPlayerModal.css';
 interface StreamFile {
   index: number;
   name: string;
+  path: string; // torrent-relative — basenames repeat across season folders
   length: number;
   kind: MediaKind;
 }
@@ -132,6 +133,17 @@ export const StreamPlayerModal: React.FC<StreamPlayerModalProps> = ({ downloadId
   const [subOpen, setSubOpen] = useState(false);
   const [subActiveKey, setSubActiveKey] = useState<string | null>(null);
   const [subUrl, setSubUrl] = useState<string | null>(null);
+  // Audio tracks (multi-audio MKV): null = ffmpeg's default; picking a track
+  // forces transcode (browsers can't switch embedded tracks on a plain <video>).
+  const [audioTracks, setAudioTracks] = useState<Array<{ index: number; label: string; lang?: string; isDefault?: boolean }>>([]);
+  const [audioOpen, setAudioOpen] = useState(false);
+  const [audioTrackIndex, setAudioTrackIndex] = useState<number | null>(null);
+  // Serial mode: playlist panel + auto-advance to the next episode on 'ended'.
+  const [playlistOpen, setPlaylistOpen] = useState(false);
+  const [autoNext, setAutoNext] = useState<boolean>(() => {
+    try { return localStorage.getItem('playerAutoNext') !== '0'; } catch { return true; }
+  });
+  const advancedRef = useRef(false); // once-per-mounted-element auto-advance guard
   // Custom Ember controls: the media element remounts per stream URL, so it is
   // captured via a callback ref; the stage wrapper is the fullscreen target.
   const [mediaEl, setMediaEl] = useState<HTMLVideoElement | HTMLAudioElement | null>(null);
@@ -168,7 +180,7 @@ export const StreamPlayerModal: React.FC<StreamPlayerModalProps> = ({ downloadId
       try {
         const all = await window.api.getTorrentFiles(downloadId);
         const streamable: StreamFile[] = all
-          .map((f, index) => ({ index, name: f.name, length: f.length, kind: classifyMediaKind(f.name) }))
+          .map((f, index) => ({ index, name: f.name, path: f.path || f.name, length: f.length, kind: classifyMediaKind(f.name) }))
           .filter((f) => f.kind !== 'other')
           .sort((a, b) => b.length - a.length);
         if (cancelled) return;
@@ -189,7 +201,9 @@ export const StreamPlayerModal: React.FC<StreamPlayerModalProps> = ({ downloadId
     return () => { cancelled = true; };
   }, [downloadId, t]);
 
-  // Resolve a stream URL whenever the active file (or transcode mode) changes.
+  // Resolve a stream URL whenever the active file (or transcode mode, or the
+  // chosen audio track) changes. A non-default audio track forces transcode —
+  // the new URL remounts <video key={url}>, restarting ffmpeg with the -map.
   useEffect(() => {
     if (activeIndex === null) return;
     let cancelled = false;
@@ -198,7 +212,10 @@ export const StreamPlayerModal: React.FC<StreamPlayerModalProps> = ({ downloadId
     setStreamUrl(null);
     (async () => {
       try {
-        const info = await window.api.getStreamUrl(downloadId, activeIndex, { transcode: forceTranscode });
+        const info = await window.api.getStreamUrl(downloadId, activeIndex, {
+          transcode: forceTranscode || audioTrackIndex !== null,
+          audioTrack: audioTrackIndex ?? undefined,
+        });
         if (cancelled) return;
         streamIndexRef.current = activeIndex;
         setStreamUrl(info.url);
@@ -213,7 +230,7 @@ export const StreamPlayerModal: React.FC<StreamPlayerModalProps> = ({ downloadId
       }
     })();
     return () => { cancelled = true; };
-  }, [downloadId, activeIndex, forceTranscode]);
+  }, [downloadId, activeIndex, forceTranscode, audioTrackIndex]);
 
   // Close on Escape.
   useEffect(() => {
@@ -229,6 +246,9 @@ export const StreamPlayerModal: React.FC<StreamPlayerModalProps> = ({ downloadId
   useEffect(() => { activeIndexRef.current = activeIndex; }, [activeIndex]);
   useEffect(() => {
     return () => {
+      // The modal removes the element without pausing — exit PiP explicitly so
+      // closing never strands a floating frame on Chromium's auto-close timing.
+      if (document.pictureInPictureElement) void document.exitPictureInPicture().catch(() => {});
       const idx = activeIndexRef.current;
       void window.api.stopStream(downloadId, idx === null ? undefined : idx);
     };
@@ -240,6 +260,33 @@ export const StreamPlayerModal: React.FC<StreamPlayerModalProps> = ({ downloadId
     posRestoredRef.current = false;
     posUserSeekedRef.current = false;
     posLastSaveRef.current = 0;
+    advancedRef.current = false;
+  }, [mediaEl]);
+
+  // PiP continuity: the per-URL remount destroys the element Chromium has in
+  // picture-in-picture, closing the floating window on every auto-advance or
+  // track switch. Remember that PiP was on (unless the user closed it while
+  // the element was still mounted) and best-effort re-enter on the fresh
+  // element — if Chromium demands a user gesture, the next manual toggle
+  // resumes the flow instead.
+  const pipWantedRef = useRef(false);
+  useEffect(() => {
+    if (!(mediaEl instanceof HTMLVideoElement)) return;
+    const onEnter = () => { pipWantedRef.current = true; };
+    const onLeave = () => { if (mediaEl.isConnected) pipWantedRef.current = false; };
+    mediaEl.addEventListener('enterpictureinpicture', onEnter);
+    mediaEl.addEventListener('leavepictureinpicture', onLeave);
+    return () => {
+      mediaEl.removeEventListener('enterpictureinpicture', onEnter);
+      mediaEl.removeEventListener('leavepictureinpicture', onLeave);
+    };
+  }, [mediaEl]);
+  useEffect(() => {
+    if (!pipWantedRef.current || !(mediaEl instanceof HTMLVideoElement)) return;
+    const tryEnter = () => { void mediaEl.requestPictureInPicture().catch(() => { /* gesture required */ }); };
+    if (mediaEl.readyState >= 1) { tryEnter(); return; }
+    mediaEl.addEventListener('loadedmetadata', tryEnter, { once: true });
+    return () => mediaEl.removeEventListener('loadedmetadata', tryEnter);
   }, [mediaEl]);
 
   // Playback-position memory: throttled saves on timeupdate, clear on finish,
@@ -253,6 +300,10 @@ export const StreamPlayerModal: React.FC<StreamPlayerModalProps> = ({ downloadId
     // Save the position, or clear it once the film is (nearly) finished.
     const saveOrClear = (final: boolean) => {
       try {
+        // A live transcode restarts at 0:00 and isn't seekable — saving from
+        // it would overwrite the direct-play position that tryRestore below
+        // deliberately preserves "for a future direct play".
+        if (transcoded) return;
         const d = mediaEl.duration;
         if (!Number.isFinite(d) || d <= PLAY_POS_MIN_DURATION) return;
         const cur = mediaEl.currentTime;
@@ -315,9 +366,13 @@ export const StreamPlayerModal: React.FC<StreamPlayerModalProps> = ({ downloadId
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mediaEl, transcoded, posKeyBase, t]);
 
-  const selectFile = useCallback((index: number) => {
+  const selectFile = useCallback((index: number, opts?: { keepAudioTrack?: boolean }) => {
     setActiveIndex(index);
     setForceTranscode(false);
+    // Manual switches reset the track choice (a different film has different
+    // tracks); serial auto-advance/Next keeps it — season packs share layouts,
+    // and the probe validates the ordinal against the new file's track list.
+    if (!opts?.keepAudioTrack) setAudioTrackIndex(null);
     setError(null);
   }, []);
 
@@ -328,6 +383,105 @@ export const StreamPlayerModal: React.FC<StreamPlayerModalProps> = ({ downloadId
   }, [transcoded, t]);
 
   const activeFile = files.find((f) => f.index === activeIndex) || null;
+
+  // ── Serial mode ─────────────────────────────────────────────────────────────
+  // Episode order = natural sort over the torrent-relative PATH ("E2" before
+  // "E10", and Season 1 before Season 2 — basenames alone repeat across season
+  // folders). The chip strip below keeps its size-desc order (best for "play
+  // the main file"); this second view powers series. Entries whose basename
+  // repeats get the parent folder prefixed so they stay distinguishable.
+  const playlist = React.useMemo(() => {
+    const vids = files
+      .filter((f) => f.kind === 'video')
+      .slice()
+      .sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true, sensitivity: 'base' }));
+    const nameCounts = new Map<string, number>();
+    for (const f of vids) nameCounts.set(f.name, (nameCounts.get(f.name) ?? 0) + 1);
+    return vids.map((f) => {
+      if ((nameCounts.get(f.name) ?? 0) <= 1) return { ...f, label: f.name };
+      const parts = f.path.split(/[\\/]/);
+      const parent = parts.length > 1 ? parts[parts.length - 2] : '';
+      return { ...f, label: parent ? `${parent} / ${f.name}` : f.name };
+    });
+  }, [files]);
+  const playlistPos = activeIndex === null ? -1 : playlist.findIndex((f) => f.index === activeIndex);
+  // Deliberately no wrap-around from the last episode — prevents infinite loops.
+  const nextFile = playlistPos >= 0 && playlistPos < playlist.length - 1 ? playlist[playlistPos + 1] : null;
+
+  const playNext = useCallback(() => {
+    if (nextFile) selectFile(nextFile.index, { keepAudioTrack: true });
+  }, [nextFile, selectFile]);
+
+  const toggleAutoNext = useCallback(() => {
+    setAutoNext((v) => {
+      const next = !v;
+      try { localStorage.setItem('playerAutoNext', next ? '1' : '0'); } catch { /* cosmetic */ }
+      return next;
+    });
+  }, []);
+
+  // Auto-advance on 'ended' — a SEPARATE effect from the position-memory one
+  // (whose flush/clear semantics must stay keyed on streamIndexRef): that
+  // handler clears the finished file's position, this one moves to the next.
+  useEffect(() => {
+    if (!mediaEl || kind !== 'video') return;
+    const onEnded = () => {
+      if (!autoNext || advancedRef.current || !nextFile) return;
+      // A stale 'ended' from the OLD element after the user already picked
+      // another file must not override that choice.
+      if (activeIndexRef.current !== streamIndexRef.current) return;
+      // A stream that produced nothing can't chain-skip episodes…
+      if (!(mediaEl.currentTime > 0)) return;
+      // …and a finite-duration stream that "ended" far from the end was
+      // truncated (dead transcode / dropped source) — surface it, don't skip.
+      // Live transcodes report a non-finite duration, so a mid-episode ffmpeg
+      // death there still advances: known limitation, documented in the plan.
+      const d = mediaEl.duration;
+      if (Number.isFinite(d) && d > 0 && mediaEl.currentTime / d < PLAY_POS_FINISHED_FRAC) return;
+      advancedRef.current = true;
+      playNext();
+    };
+    mediaEl.addEventListener('ended', onEnded);
+    return () => mediaEl.removeEventListener('ended', onEnded);
+  }, [mediaEl, kind, autoNext, nextFile, playNext]);
+
+  // ── Audio tracks ────────────────────────────────────────────────────────────
+  // The chosen track, mirrored for async probe callbacks.
+  const audioTrackIndexRef = useRef<number | null>(null);
+  useEffect(() => { audioTrackIndexRef.current = audioTrackIndex; }, [audioTrackIndex]);
+
+  // Probe the active VIDEO file's audio tracks: once at open, and once more on
+  // loadedmetadata if the first probe found nothing (the container header may
+  // not be on disk yet when the modal opens). Local flags per effect run — a
+  // cancelled probe can't clobber the next file's list.
+  useEffect(() => {
+    setAudioOpen(false);
+    setAudioTracks([]);
+    if (activeIndex === null || activeFile?.kind !== 'video') return;
+    let cancelled = false;
+    let probed = false;
+    const probe = () => {
+      window.api.audioTracks.list(downloadId, activeIndex)
+        .then((list) => {
+          if (cancelled || list.length === 0) return;
+          probed = true;
+          setAudioTracks(list);
+          // A track choice preserved across an episode boundary must exist in
+          // THIS file too, or -map would point at a missing stream.
+          const chosen = audioTrackIndexRef.current;
+          if (chosen !== null && !list.some((tr) => tr.index === chosen)) setAudioTrackIndex(null);
+        })
+        .catch(() => {});
+    };
+    probe();
+    const el = mediaEl;
+    const onMeta = () => { if (!probed) { probed = true; probe(); } };
+    el?.addEventListener('loadedmetadata', onMeta);
+    return () => {
+      cancelled = true;
+      el?.removeEventListener('loadedmetadata', onMeta);
+    };
+  }, [mediaEl, downloadId, activeIndex, activeFile?.kind]);
 
   // Publish the current file on the LAN and show a QR + URL to open elsewhere.
   const handleCast = useCallback(async () => {
@@ -501,10 +655,16 @@ export const StreamPlayerModal: React.FC<StreamPlayerModalProps> = ({ downloadId
         >
           {subUrl && <track kind="subtitles" src={subUrl} srcLang="und" label={t('player.subtitles')} default />}
         </video>
-        <PlayerControls media={mediaEl} fullscreenTarget={stageRef} seekable={!transcoded} />
+        <PlayerControls media={mediaEl} fullscreenTarget={stageRef} seekable={!transcoded}>
+          {nextFile && (
+            <button className="pc-btn" onClick={playNext} title={t('player.nextEpisode')}>
+              <Icon name="skip-forward" size={15} />
+            </button>
+          )}
+        </PlayerControls>
       </div>
     );
-  }, [error, loading, streamUrl, kind, activeFile, transcoded, handleMediaError, t, subUrl, mediaEl]);
+  }, [error, loading, streamUrl, kind, activeFile, transcoded, handleMediaError, t, subUrl, mediaEl, nextFile, playNext]);
 
   return (
     <div className="player-overlay" onClick={onClose}>
@@ -523,11 +683,78 @@ export const StreamPlayerModal: React.FC<StreamPlayerModalProps> = ({ downloadId
               </span>
             )}
           </div>
+          {playlist.length > 1 && (
+            <div className="player-sub-wrap">
+              <button
+                className={`player-cast-btn ${playlistOpen ? 'active' : ''}`}
+                onClick={() => { setPlaylistOpen((o) => !o); setAudioOpen(false); setSubOpen(false); }}
+                title={t('player.playlist')}
+              >
+                <Icon name="list" size={15} />
+                <span className="player-cast-label">
+                  {playlistPos >= 0 ? `${playlistPos + 1}/${playlist.length}` : t('player.playlist')}
+                </span>
+              </button>
+              {playlistOpen && (
+                <div className="player-sub-panel player-playlist">
+                  <button className={`player-sub-item ${autoNext ? 'active' : ''}`} onClick={toggleAutoNext}>
+                    <Icon name="skip-forward" size={13} />
+                    <span>{t('player.autoNext')}</span>
+                    <span className="player-playlist-check">{autoNext ? '✓' : ''}</span>
+                  </button>
+                  {playlist.map((f, i) => (
+                    <button
+                      key={f.index}
+                      className={`player-sub-item ${f.index === activeIndex ? 'active' : ''}`}
+                      onClick={() => { setPlaylistOpen(false); selectFile(f.index); }}
+                      title={f.path}
+                    >
+                      <span className="player-playlist-num">{i + 1}</span>
+                      <span>{f.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          {activeFile?.kind === 'video' && audioTracks.length > 1 && (
+            <div className="player-sub-wrap">
+              <button
+                className={`player-cast-btn ${audioOpen ? 'active' : ''}`}
+                onClick={() => { setAudioOpen((o) => !o); setPlaylistOpen(false); setSubOpen(false); }}
+                title={t('player.audioTracks')}
+              >
+                <Icon name="music" size={15} />
+                <span className="player-cast-label">{audioTrackIndex !== null ? `A${audioTrackIndex + 1}` : 'A'}</span>
+              </button>
+              {audioOpen && (
+                <div className="player-sub-panel">
+                  <button
+                    className={`player-sub-item ${audioTrackIndex === null ? 'active' : ''}`}
+                    onClick={() => { setAudioOpen(false); setAudioTrackIndex(null); }}
+                  >
+                    {t('player.audioDefault')}
+                  </button>
+                  {audioTracks.map((tr) => (
+                    <button
+                      key={tr.index}
+                      className={`player-sub-item ${audioTrackIndex === tr.index ? 'active' : ''}`}
+                      onClick={() => { setAudioOpen(false); setAudioTrackIndex(tr.index); }}
+                    >
+                      <Icon name="music" size={13} />
+                      <span>{tr.label}{tr.isDefault ? ' ●' : ''}</span>
+                    </button>
+                  ))}
+                  <div className="player-sub-empty">{t('player.audioSwitchNote')}</div>
+                </div>
+              )}
+            </div>
+          )}
           {activeFile?.kind === 'video' && (
             <div className="player-sub-wrap">
               <button
                 className={`player-cast-btn ${subOpen ? 'active' : ''}`}
-                onClick={() => setSubOpen((o) => !o)}
+                onClick={() => { setSubOpen((o) => !o); setPlaylistOpen(false); setAudioOpen(false); }}
                 title={t('player.subtitles')}
               >
                 <Icon name="file-text" size={15} />

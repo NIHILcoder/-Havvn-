@@ -34,6 +34,11 @@ interface PlayerControlsProps {
   children?: React.ReactNode;
 }
 
+// Playback-rate presets (session-only; the element remounts reset to 1×, and a
+// small effect below re-applies the chosen rate so it survives episode
+// auto-advance and audio-track switches).
+const RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
+
 export const PlayerControls: React.FC<PlayerControlsProps> = ({
   media,
   fullscreenTarget,
@@ -48,8 +53,18 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
   const [volume, setVolume] = useState(1);
   const [muted, setMuted] = useState(false);
   const [fs, setFs] = useState(false);
+  const [rate, setRate] = useState(1);
+  const [rateOpen, setRateOpen] = useState(false);
+  const [pip, setPip] = useState(false);
+  // True once the element decoded an actual video stream. Gates PiP: rooms
+  // plays MUSIC through a CSS-hidden <video>, where a PiP window would be a
+  // black rectangle — instanceof alone can't tell the difference.
+  const [hasVideo, setHasVideo] = useState(false);
   const barRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
+  // The rate the USER chose in this player instance — re-applied on element
+  // remount (rooms' remote rate-sync still reflects into `rate` via ratechange).
+  const rateRef = useRef(1);
 
   // Mirror the element's state — the element is the source of truth, so remote
   // watch-together commands and codec fallbacks reflect here automatically.
@@ -64,11 +79,37 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
       } catch { /* transient buffered ranges */ }
       setVolume(media.volume);
       setMuted(media.muted);
+      setRate(media.playbackRate);
+      setHasVideo(media instanceof HTMLVideoElement && media.videoWidth > 0);
     };
     sync();
-    const evs = ['play', 'pause', 'timeupdate', 'durationchange', 'progress', 'volumechange', 'loadedmetadata', 'ended'];
+    const evs = ['play', 'pause', 'timeupdate', 'durationchange', 'progress', 'volumechange', 'loadedmetadata', 'ended', 'ratechange'];
     for (const ev of evs) media.addEventListener(ev, sync);
     return () => { for (const ev of evs) media.removeEventListener(ev, sync); };
+  }, [media]);
+
+  // A fresh element starts at 1× (remount per stream URL) — re-apply the chosen
+  // rate so speed survives auto-advance / track switches within the session.
+  useEffect(() => {
+    if (!media) return;
+    setRateOpen(false);
+    if (rateRef.current !== 1 && media.playbackRate !== rateRef.current) {
+      media.playbackRate = rateRef.current;
+    }
+  }, [media]);
+
+  // PiP state mirrors the element (video only; <audio> has no PiP API).
+  useEffect(() => {
+    if (!(media instanceof HTMLVideoElement)) { setPip(false); return; }
+    const on = () => setPip(true);
+    const off = () => setPip(false);
+    setPip(document.pictureInPictureElement === media);
+    media.addEventListener('enterpictureinpicture', on);
+    media.addEventListener('leavepictureinpicture', off);
+    return () => {
+      media.removeEventListener('enterpictureinpicture', on);
+      media.removeEventListener('leavepictureinpicture', off);
+    };
   }, [media]);
 
   useEffect(() => {
@@ -118,7 +159,23 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
     else void el.requestFullscreen().catch(() => {});
   }, [fullscreenTarget]);
 
-  // Keyboard: Space / ←→ / M / F — never while typing (chat, inputs).
+  const applyRate = useCallback((r: number) => {
+    rateRef.current = r;
+    if (media) media.playbackRate = r; // `rate` state follows via 'ratechange'
+    setRateOpen(false);
+  }, [media]);
+
+  // PiP: HTMLVideoElement with a real video stream only (hasVideo hides it for
+  // <audio> AND for audio played through a hidden <video>, e.g. rooms music);
+  // works on the live fmp4 transcode too.
+  const canPip = media instanceof HTMLVideoElement && hasVideo && document.pictureInPictureEnabled && !media.disablePictureInPicture;
+  const togglePip = useCallback(() => {
+    if (!(media instanceof HTMLVideoElement)) return;
+    if (document.pictureInPictureElement === media) void document.exitPictureInPicture().catch(() => {});
+    else void media.requestPictureInPicture().catch(() => {});
+  }, [media]);
+
+  // Keyboard: Space / ←→ / M / F / P — never while typing (chat, inputs).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tgt = e.target as HTMLElement;
@@ -129,10 +186,13 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
       else if (e.code === 'ArrowRight' && canSeek) { e.preventDefault(); media.currentTime = Math.min(duration, media.currentTime + 5); }
       else if (e.code === 'KeyM') { toggleMute(); }
       else if (e.code === 'KeyF' && fullscreenTarget) { toggleFullscreen(); }
+      // Plain P only: Ctrl+P toggles the downloads view mode and Ctrl+Shift+P
+      // is the global pause-all hotkey — both keep listening under the player.
+      else if (e.code === 'KeyP' && canPip && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) { togglePip(); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [media, toggle, toggleMute, toggleFullscreen, canSeek, duration, fullscreenTarget]);
+  }, [media, toggle, toggleMute, toggleFullscreen, canSeek, duration, fullscreenTarget, canPip, togglePip]);
 
   const pct = canSeek ? Math.min(100, (time / duration) * 100) : 100;
   const bufPct = canSeek ? Math.min(100, (buffered / duration) * 100) : 0;
@@ -172,7 +232,30 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
         onChange={(e) => setVol(Number(e.target.value))}
         aria-label={t('player.volume')}
       />
+      <div className="pc-rate-wrap">
+        <button
+          className={`pc-btn pc-rate ${rate !== 1 ? 'active' : ''}`}
+          onClick={() => setRateOpen((o) => !o)}
+          title={t('player.speed')}
+        >
+          {rate}×
+        </button>
+        {rateOpen && (
+          <div className="pc-menu">
+            {RATES.map((r) => (
+              <button key={r} className={`pc-menu-item ${rate === r ? 'active' : ''}`} onClick={() => applyRate(r)}>
+                {r}×
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
       {children}
+      {canPip && (
+        <button className="pc-btn" onClick={togglePip} title={pip ? t('player.pipExit') : t('player.pip')}>
+          <Icon name="pip" size={15} />
+        </button>
+      )}
       {fullscreenTarget && (
         <button className="pc-btn" onClick={toggleFullscreen} title={fs ? t('player.exitFullscreen') : t('player.fullscreen')}>
           <Icon name={fs ? 'minimize' : 'maximize'} size={15} />

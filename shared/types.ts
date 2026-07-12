@@ -766,7 +766,7 @@ export interface IpcApi {
   recheckDownload: (id: string) => Promise<void>;
   getDownloads: () => Promise<Download[]>;
   getTorrentFiles: (id: string) => Promise<TorrentFile[]>;
-  getStreamUrl: (id: string, fileIndex: number, opts?: { transcode?: boolean }) => Promise<{ url: string; name: string; kind: 'video' | 'audio' | 'other'; transcoded: boolean }>;
+  getStreamUrl: (id: string, fileIndex: number, opts?: { transcode?: boolean; audioTrack?: number }) => Promise<{ url: string; name: string; kind: 'video' | 'audio' | 'other'; transcoded: boolean }>;
   stopStream: (id: string, fileIndex?: number) => Promise<void>;
   shareStart: (downloadId: string) => Promise<ShareInfo>;
   shareStop: (downloadId: string) => Promise<{ ok: boolean }>;
@@ -959,6 +959,11 @@ export interface IpcApi {
     tvRefresh: () => Promise<Array<{ name: string; host: string }>>;
     tvPlay: (id: string, fileIndex: number, host: string) => Promise<{ ok: boolean }>;
     tvControl: (host: string, action: 'pause' | 'resume' | 'stop') => Promise<{ ok: boolean }>;
+  };
+
+  // Audio tracks for the player (multi-audio MKV; switching restarts the transcode)
+  audioTracks: {
+    list: (id: string, fileIndex: number) => Promise<Array<{ index: number; label: string; lang?: string; isDefault?: boolean }>>;
   };
 
   // Subtitles for the player (embedded text tracks + sidecar files → WebVTT)

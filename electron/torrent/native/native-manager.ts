@@ -34,6 +34,7 @@ import {
   mapTorrentInfo, complementIndices,
 } from './map';
 import { NativeMediaServer } from './media-server';
+import { probeAudioStreams, audioTrackList, audioTrackParam, AudioTrackListItem } from '../audio-probe';
 import { extractInfoHashFromMagnet } from '../../../shared/magnet';
 import { classifyMediaKind, isDirectlyPlayable } from '../../../shared/media';
 import { isPrivateOrReservedIPv4 } from '../../../shared/ip-range';
@@ -846,7 +847,7 @@ export class NativeTorrentManager {
   }
 
   // ── In-app streaming ─────────────────────────────────────────────────────────
-  async getStreamUrl(id: string, fileIndex: number, opts?: { transcode?: boolean }): Promise<{ url: string; name: string; kind: 'video' | 'audio' | 'other'; transcoded: boolean }> {
+  async getStreamUrl(id: string, fileIndex: number, opts?: { transcode?: boolean; audioTrack?: number }): Promise<{ url: string; name: string; kind: 'video' | 'audio' | 'other'; transcoded: boolean }> {
     await this.whenReady();
     const d = this.getRecord(id);
     const hash = await this.ensureInDaemon(d);
@@ -863,8 +864,13 @@ export class NativeTorrentManager {
     const q = `k=${this.streamToken}&t=${Date.now()}`;
     const wantTranscode = opts?.transcode === true || !info.direct;
     const mode = wantTranscode && this.ffmpegPath ? 'transcode' : 'direct';
+    // Audio-track choice rides the URL (a new URL remounts <video key={url}> in
+    // the renderer, which closes the old response and thereby kills the old
+    // ffmpeg — the same restart mechanism forceTranscode already uses). Only
+    // meaningful for transcode; the guard only checks k=, extra params are safe.
+    const audio = mode === 'transcode' ? audioTrackParam(opts?.audioTrack) : '';
     return {
-      url: `http://127.0.0.1:${port}/${mode}/${encodeURIComponent(id)}/${fileIndex}?${q}`,
+      url: `http://127.0.0.1:${port}/${mode}/${encodeURIComponent(id)}/${fileIndex}?${q}${audio}`,
       name: info.name,
       kind: info.kind,
       transcoded: mode === 'transcode',
@@ -947,6 +953,15 @@ export class NativeTorrentManager {
     if (d.filePriorities?.[fileIndex] === 'skip') return false;
     if (d.selectedFiles && d.selectedFiles.length > 0) return d.selectedFiles.includes(fileIndex);
     return true;
+  }
+
+  // ── Audio tracks (multi-audio MKV — selection restarts the transcode with -map) ──
+  async getAudioTracks(id: string, fileIndex: number): Promise<AudioTrackListItem[]> {
+    await this.whenReady();
+    if (!this.metaCache.get(id)?.[fileIndex]) await this.getFiles(id).catch(() => undefined);
+    const info = this.getCastFileInfo(id, fileIndex);
+    if (!info) return [];
+    return audioTrackList(await probeAudioStreams(this.ffmpegPath, info.diskPath));
   }
 
   // ── Subtitles (disk + ffmpeg — engine-agnostic, ported from the webtorrent manager) ──

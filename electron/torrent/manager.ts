@@ -39,6 +39,7 @@ import { extractInfoHashFromMagnet } from '../../shared/magnet';
 import { shouldStopSeeding } from '../../shared/seeding-limits';
 import { planRestore } from '../../shared/restore-plan';
 import { peekCastServer } from './cast-server';
+import { probeAudioStreams, audioTrackList, audioTrackParam, parseAudioTrackParam, transcodeMapArgs, AudioTrackListItem } from './audio-probe';
 import { spawn, ChildProcess } from 'child_process';
 import { AdaptiveThrottle } from './adaptive-throttle';
 import { installDohLookup, configureDoh } from './host/doh-lookup';
@@ -2423,7 +2424,7 @@ export class TorrentManager {
   async getStreamUrl(
     id: string,
     fileIndex: number,
-    opts?: { transcode?: boolean },
+    opts?: { transcode?: boolean; audioTrack?: number },
   ): Promise<{ url: string; name: string; kind: 'video' | 'audio' | 'other'; transcoded: boolean }> {
     await this.whenReady();
     const managed = this.managedTorrents.get(id);
@@ -2452,8 +2453,12 @@ export class TorrentManager {
     const wantTranscode = opts?.transcode === true || !isDirectlyPlayable(file.name);
     if (wantTranscode && this.ffmpegPath) {
       const port = await this.ensureTranscodeServer();
+      // Audio-track choice rides the URL: a new URL remounts the renderer's
+      // <video key={url}>, which closes the old response and spawns a fresh
+      // ffmpeg with the -map (same restart mechanism as forceTranscode).
+      const audio = audioTrackParam(opts?.audioTrack);
       return {
-        url: `http://127.0.0.1:${port}/transcode/${encodeURIComponent(id)}/${fileIndex}?t=${Date.now()}`,
+        url: `http://127.0.0.1:${port}/transcode/${encodeURIComponent(id)}/${fileIndex}?t=${Date.now()}${audio}`,
         name: file.name,
         kind,
         transcoded: true,
@@ -2610,6 +2615,13 @@ export class TorrentManager {
     });
   }
 
+  /** List embedded audio tracks (multi-audio MKV) — parity with the native engine. */
+  async getAudioTracks(id: string, fileIndex: number): Promise<AudioTrackListItem[]> {
+    const info = this.getCastFileInfo(id, fileIndex);
+    if (!info) return [];
+    return audioTrackList(await probeAudioStreams(this.ffmpegPath, info.diskPath));
+  }
+
   /** List selectable subtitle tracks: embedded text subs + sidecar files. */
   async getSubtitleTracks(id: string, fileIndex: number): Promise<Array<{ key: string; label: string; lang?: string; source: 'embedded' | 'external' }>> {
     const info = this.getCastFileInfo(id, fileIndex);
@@ -2711,10 +2723,14 @@ export class TorrentManager {
       try { (file as any).select(); } catch { /* ignore */ }
       const kind = classifyMediaKind(file.name);
 
+      // transcodeMapArgs is empty unless a track was explicitly chosen (any map
+      // disables ffmpeg's auto-selection) — shared with the native media-server.
+      const maps = transcodeMapArgs(kind, parseAudioTrackParam(url.searchParams.get('a')));
       const args = kind === 'audio'
-        ? ['-i', 'pipe:0', '-c:a', 'libmp3lame', '-b:a', '192k', '-f', 'mp3', 'pipe:1']
+        ? ['-i', 'pipe:0', ...maps, '-c:a', 'libmp3lame', '-b:a', '192k', '-f', 'mp3', 'pipe:1']
         : [
             '-i', 'pipe:0',
+            ...maps,
             '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
             '-c:a', 'aac', '-b:a', '160k', '-ac', '2',
             '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
