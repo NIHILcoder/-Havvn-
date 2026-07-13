@@ -1,0 +1,481 @@
+/**
+ * Custom themes — the trust boundary for user-authored and *imported* themes.
+ *
+ * A theme is a JSON token map layered over a built-in base (dark/light). It is
+ * applied by writing each token with `documentElement.style.setProperty` — never
+ * by injecting a CSS string — so there is no stylesheet-parse surface and the
+ * strict production CSP (`script-src 'self'`, `connect-src 'self'`,
+ * `font-src 'self' data:`) stays intact.
+ *
+ * The one real malicious-theme vector is a *value* that phones home or breaks
+ * out — e.g. `background-image: url(https://evil/beacon)` reached through a
+ * tokenized `var(--…)`. None of the 122 whitelisted tokens legitimately needs
+ * `url()`, `@import`, `expression()`, `var()`, `javascript:` or CSS-breakout
+ * punctuation, so every value is run through a global blocklist and then a
+ * per-category shape check. Anything that does not match is dropped.
+ *
+ * This module is pure (no Node/Electron/DOM-global imports) so the renderer, the
+ * IPC import path in main, and vitest all use the exact same validator.
+ */
+
+export type ThemeBase = 'dark' | 'light';
+
+/** A custom theme: base gives the starting palette, `tokens` overrides it. */
+export interface Theme {
+  id: string;
+  name: string;
+  base: ThemeBase;
+  /** Whitelisted `--token` → sanitized value overrides layered on `base`. */
+  tokens: Record<string, string>;
+  /** Optional font stack; convenience mirror of the `--font-family` token. */
+  font?: string;
+}
+
+export type ValidateResult =
+  | { ok: true; theme: Theme; warnings: string[] }
+  | { ok: false; errors: string[] };
+
+/* ------------------------------------------------------------------ *
+ * Token whitelist — the exact 122 custom properties defined in the
+ * `:root` block of renderer/styles/variables.css. Grouped only for
+ * readability; membership is what matters. Keep in sync if variables.css
+ * grows a new token that themes should be allowed to override.
+ * ------------------------------------------------------------------ */
+const TOKEN_NAMES: readonly string[] = [
+  // backgrounds + legacy/compat aliases + glass
+  '--color-bg-primary', '--color-bg-secondary', '--color-bg-tertiary',
+  '--color-bg-elevated', '--color-bg-hover', '--color-bg-active',
+  '--color-bg-base', '--color-bg-subtle',
+  '--color-border', '--color-border-hover', '--color-accent',
+  '--color-accent-hover', '--color-accent-rgb', '--color-text-muted',
+  '--glass-bg', '--glass-border', '--glass-blur',
+  // borders
+  '--color-border-default', '--color-border-subtle', '--color-border-strong',
+  '--color-border-focus',
+  // text
+  '--color-text-primary', '--color-text-secondary', '--color-text-tertiary',
+  '--color-text-disabled',
+  // accent
+  '--color-accent-primary', '--color-accent-primary-hover', '--color-accent-bg',
+  '--color-accent-secondary', '--color-accent-secondary-hover',
+  // gradients
+  '--gradient-primary', '--gradient-success', '--gradient-warning',
+  '--gradient-danger', '--gradient-elevated', '--gradient-sidebar',
+  '--gradient-card',
+  // status
+  '--color-status-queued', '--color-status-downloading', '--color-status-paused',
+  '--color-status-completed', '--color-status-seeding', '--color-status-error',
+  '--color-status-removed', '--color-status-connected', '--color-status-download',
+  '--color-status-upload',
+  // semantic
+  '--color-success', '--color-success-bg', '--color-success-rgb',
+  '--color-warning', '--color-warning-bg', '--color-warning-rgb',
+  '--color-error', '--color-error-bg', '--color-error-rgb',
+  '--color-info', '--color-info-bg', '--color-info-rgb',
+  // file-type
+  '--color-video', '--color-audio', '--color-image', '--color-archive',
+  '--color-document',
+  // spacing
+  '--space-1', '--space-2', '--space-3', '--space-4', '--space-5', '--space-6',
+  '--space-8', '--space-10', '--space-12', '--space-16',
+  // typography
+  '--font-family', '--font-family-mono', '--font-primary',
+  '--font-size-xs', '--font-size-sm', '--font-size-base', '--font-size-md',
+  '--font-size-lg', '--font-size-xl', '--font-size-2xl', '--font-size-3xl',
+  '--font-weight-normal', '--font-weight-medium', '--font-weight-semibold',
+  '--font-weight-bold',
+  '--line-height-tight', '--line-height-normal', '--line-height-relaxed',
+  // radius
+  '--radius-sm', '--radius-md', '--radius-lg', '--radius-xl', '--radius-2xl',
+  '--radius-full',
+  // shadows
+  '--shadow-xs', '--shadow-sm', '--shadow-md', '--shadow-lg', '--shadow-xl',
+  '--shadow-glow', '--shadow-glow-sm', '--shadow-focus',
+  // transitions
+  '--transition-fast', '--transition-normal', '--transition-slow',
+  '--transition-spring',
+  // layout
+  '--sidebar-width', '--sidebar-collapsed-width', '--header-height',
+  '--topbar-height', '--footer-height', '--settings-content-max-width',
+  // z-index
+  '--z-dropdown', '--z-sticky', '--z-modal-backdrop', '--z-modal', '--z-popover',
+  '--z-tooltip',
+];
+
+export const TOKEN_WHITELIST: ReadonlySet<string> = new Set(TOKEN_NAMES);
+
+/* ------------------------------------------------------------------ *
+ * Bounds — cheap denial-of-service and abuse guards.
+ * ------------------------------------------------------------------ */
+const MAX_VALUE_LEN = 256;
+const MAX_TOKENS = 200;
+const MAX_NAME_LEN = 60;
+const MAX_ID_LEN = 64;
+
+/* ------------------------------------------------------------------ *
+ * Value category per token — drives which shape check a value must pass.
+ * ------------------------------------------------------------------ */
+type ValueCategory =
+  | 'color' | 'colorTriplet' | 'gradient' | 'filter' | 'length'
+  | 'number' | 'fontWeight' | 'integer' | 'shadow' | 'transition' | 'fontFamily';
+
+/** Classify a whitelisted token by its expected value shape. */
+export function tokenCategory(name: string): ValueCategory | null {
+  if (name.endsWith('-rgb')) return 'colorTriplet';
+  if (name === '--glass-blur') return 'filter';
+  if (name.startsWith('--gradient-')) return 'gradient';
+  if (name.startsWith('--shadow-')) return 'shadow';
+  if (name.startsWith('--transition-')) return 'transition';
+  if (name.startsWith('--line-height-')) return 'number';
+  if (name.startsWith('--font-weight-')) return 'fontWeight';
+  if (name.startsWith('--font-size-')) return 'length';
+  if (name === '--font-family' || name === '--font-family-mono' || name === '--font-primary') return 'fontFamily';
+  if (name.startsWith('--z-')) return 'integer';
+  if (name.startsWith('--space-') || name.startsWith('--radius-')) return 'length';
+  if (name.startsWith('--color-') || name === '--glass-bg' || name === '--glass-border') return 'color';
+  if (/(width|height)/.test(name)) return 'length';
+  return null;
+}
+
+/* ------------------------------------------------------------------ *
+ * Global blocklist — applied to EVERY value before any shape check.
+ * These sequences never appear in a legitimate token value, and each is
+ * a known exfiltration / breakout vector, so rejecting them outright is
+ * both safe and the cheapest possible defense.
+ * ------------------------------------------------------------------ */
+const FORBIDDEN_SUBSTRINGS = [
+  'url(',        // remote/data fetch — the beacon vector
+  '@import',     // pulls a remote stylesheet
+  'expression(', // legacy IE script execution
+  'javascript:', // scheme-based execution
+  'image-set',   // can reference remote images
+  'cross-fade',  // ditto
+  'element(',    // references live DOM as an image source
+  'paint(',      // CSS Houdini paint worklet
+  'var(',        // no token value needs indirection; blocks alias abuse
+  '/*', '*/',    // CSS comments — no legitimate use here
+  '\\',          // escapes could smuggle blocked sequences past a naive scan
+];
+
+/** True if the value contains any forbidden sequence, breakout punctuation, or control chars. */
+function hasForbiddenSequence(value: string): boolean {
+  const lower = value.toLowerCase();
+  if (FORBIDDEN_SUBSTRINGS.some((s) => lower.includes(s))) return true;
+  // Stylesheet-breakout punctuation and angle brackets — never valid in a value.
+  if (/[<>{};]/.test(value)) return true;
+  // Control characters (incl. NUL, newlines, DEL). A numeric scan avoids
+  // embedding raw control bytes in this source file.
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code < 0x20 || code === 0x7f) return true;
+  }
+  return false;
+}
+
+/** Balanced, shallow parentheses — rejects malformed/deeply-nested function soup. */
+function balancedParens(value: string): boolean {
+  let depth = 0;
+  for (const ch of value) {
+    if (ch === '(') { depth++; if (depth > 3) return false; }
+    else if (ch === ')') { depth--; if (depth < 0) return false; }
+  }
+  return depth === 0;
+}
+
+/* ---- per-category shape checks (input is already blocklist-clean) ---- */
+
+const NAMED_COLORS: ReadonlySet<string> = new Set([
+  'transparent', 'currentcolor', 'white', 'black', 'red', 'green', 'blue',
+  'gray', 'grey', 'silver', 'orange', 'yellow', 'purple', 'teal', 'navy',
+]);
+
+function isColorValue(v: string): boolean {
+  if (/^#([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(v)) return true;
+  const fn = /^(rgb|rgba|hsl|hsla)\(([^()]*)\)$/i.exec(v);
+  if (fn) {
+    const inner = fn[2].trim();
+    // digits, dot, comma, %, slash (modern a/ syntax), whitespace, and the
+    // angle-unit letters for hsl hue. No parens (the [^()] above guarantees it),
+    // so no nested function can hide here.
+    return inner.length > 0 && /^[-0-9a-z.,%/\s]+$/i.test(inner);
+  }
+  return NAMED_COLORS.has(v.toLowerCase());
+}
+
+function isRgbTriplet(v: string): boolean {
+  const m = /^(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})$/.exec(v);
+  if (!m) return false;
+  return [m[1], m[2], m[3]].every((n) => Number(n) <= 255);
+}
+
+function isGradientValue(v: string): boolean {
+  if (!/^(linear|radial|conic)-gradient\(/i.test(v) || !v.endsWith(')')) return false;
+  return /^[-a-z0-9#%.,()/\s]+$/i.test(v) && balancedParens(v);
+}
+
+function isBlurValue(v: string): boolean {
+  return /^blur\(\s*\d+(\.\d+)?(px|rem|em)\s*\)$/i.test(v);
+}
+
+const LENGTH_RE = /^-?\d+(\.\d+)?(px|rem|em|%|vh|vw|vmin|vmax|ch)$/i;
+function isLengthValue(v: string): boolean {
+  return v === '0' || LENGTH_RE.test(v);
+}
+
+function isNumberOrLength(v: string): boolean {
+  return /^\d+(\.\d+)?$/.test(v) || isLengthValue(v);
+}
+
+function isFontWeight(v: string): boolean {
+  return /^(normal|bold|lighter|bolder|[1-9]00)$/i.test(v);
+}
+
+function isIntegerValue(v: string): boolean {
+  return /^\d{1,6}$/.test(v);
+}
+
+function isShadowValue(v: string): boolean {
+  if (v.toLowerCase() === 'none') return true;
+  // Lengths + optional `inset` + colors, possibly comma-joined layers. Reachable
+  // only via import (not an editor field), so a strict charset + balance gate.
+  return /^[-a-z0-9#%.,()/\s]+$/i.test(v) && balancedParens(v) && /\d/.test(v);
+}
+
+function isTransitionValue(v: string): boolean {
+  return /^[-a-z0-9.,()%/\s]+$/i.test(v) && balancedParens(v) && /\d(ms|s)\b/i.test(v);
+}
+
+/** A font stack of quoted or bare family names — remote fonts are CSP-blocked anyway. */
+function isFontStack(v: string): boolean {
+  return v.length <= 200 && /^[-a-z0-9 ,'"_]+$/i.test(v);
+}
+
+/**
+ * Validate and normalize one token value. Returns the trimmed value if it is a
+ * safe, well-shaped value for `key`, or null to drop it.
+ */
+export function sanitizeTokenValue(key: string, rawValue: unknown): string | null {
+  if (typeof rawValue !== 'string') return null;
+  const value = rawValue.trim();
+  if (!value || value.length > MAX_VALUE_LEN) return null;
+  if (hasForbiddenSequence(value)) return null;
+  const cat = tokenCategory(key);
+  switch (cat) {
+    case 'color': return isColorValue(value) ? value : null;
+    case 'colorTriplet': return isRgbTriplet(value) ? value : null;
+    case 'gradient': return isGradientValue(value) ? value : null;
+    case 'filter': return isBlurValue(value) ? value : null;
+    case 'length': return isLengthValue(value) ? value : null;
+    case 'number': return isNumberOrLength(value) ? value : null;
+    case 'fontWeight': return isFontWeight(value) ? value : null;
+    case 'integer': return isIntegerValue(value) ? value : null;
+    case 'shadow': return isShadowValue(value) ? value : null;
+    case 'transition': return isTransitionValue(value) ? value : null;
+    case 'fontFamily': return isFontStack(value) ? value : null;
+    default: return null; // unknown/non-whitelisted token
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Accent derivation — one picked color fans out to the accent tokens.
+ * ------------------------------------------------------------------ */
+interface Rgb { r: number; g: number; b: number; }
+
+function parseHexColor(hex: string): Rgb | null {
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return null;
+  let h = m[1];
+  if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+  return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16) };
+}
+
+function toHex({ r, g, b }: Rgb): string {
+  const h = (n: number) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0');
+  return `#${h(r)}${h(g)}${h(b)}`;
+}
+
+/**
+ * Derive the accent token group from a single picked hex color. Hover is a
+ * hue-preserving darken; `-bg` is a low-alpha wash; `-rgb` feeds the rgba()
+ * shadows/rings. Returns null for an unparseable color.
+ */
+export function deriveAccent(hex: string): Record<string, string> | null {
+  const rgb = parseHexColor(hex);
+  if (!rgb) return null;
+  const darken = (n: number) => n * 0.86;
+  const hover: Rgb = { r: darken(rgb.r), g: darken(rgb.g), b: darken(rgb.b) };
+  return {
+    '--color-accent-primary': toHex(rgb),
+    '--color-accent-primary-hover': toHex(hover),
+    '--color-accent-bg': `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.12)`,
+    '--color-accent-rgb': `${rgb.r}, ${rgb.g}, ${rgb.b}`,
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ * Bundled font stacks — the only families guaranteed to resolve locally
+ * (Inter is self-hosted via @fontsource; the rest are system fallbacks).
+ * The Level-1 font picker offers exactly these.
+ * ------------------------------------------------------------------ */
+export interface FontOption { id: string; label: string; stack: string; }
+export const FONT_OPTIONS: readonly FontOption[] = [
+  { id: 'inter', label: 'Inter', stack: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif" },
+  { id: 'system', label: 'System', stack: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif" },
+  { id: 'mono', label: 'Monospace', stack: "'SF Mono', 'Fira Code', 'Consolas', ui-monospace, monospace" },
+];
+
+/* ------------------------------------------------------------------ *
+ * Editable groups — the curated subset the live editor exposes. Not all
+ * 122 tokens: spacing / z-index / layout / shadows are intentionally left
+ * out of the GUI (still overridable by a hand-authored import).
+ * Label keys resolve against the i18n dictionaries.
+ * ------------------------------------------------------------------ */
+export interface EditableToken { token: string; labelKey: string; }
+export interface EditableGroup {
+  id: string;
+  labelKey: string;
+  /** 'accent' = single picker → deriveAccent; others edit their tokens directly. */
+  kind: 'color' | 'accent' | 'font' | 'length';
+  tokens: EditableToken[];
+}
+
+export const EDITABLE_TOKENS: readonly EditableGroup[] = [
+  { id: 'backgrounds', labelKey: 'settings.theme.group.backgrounds', kind: 'color', tokens: [
+    { token: '--color-bg-primary', labelKey: 'settings.theme.token.bgPrimary' },
+    { token: '--color-bg-secondary', labelKey: 'settings.theme.token.bgSecondary' },
+    { token: '--color-bg-tertiary', labelKey: 'settings.theme.token.bgTertiary' },
+    { token: '--color-bg-elevated', labelKey: 'settings.theme.token.bgElevated' },
+  ] },
+  { id: 'text', labelKey: 'settings.theme.group.text', kind: 'color', tokens: [
+    { token: '--color-text-primary', labelKey: 'settings.theme.token.textPrimary' },
+    { token: '--color-text-secondary', labelKey: 'settings.theme.token.textSecondary' },
+    { token: '--color-text-tertiary', labelKey: 'settings.theme.token.textTertiary' },
+    { token: '--color-text-disabled', labelKey: 'settings.theme.token.textDisabled' },
+  ] },
+  { id: 'accent', labelKey: 'settings.theme.group.accent', kind: 'accent', tokens: [
+    { token: '--color-accent-primary', labelKey: 'settings.theme.token.accentPrimary' },
+  ] },
+  { id: 'borders', labelKey: 'settings.theme.group.borders', kind: 'color', tokens: [
+    { token: '--color-border-default', labelKey: 'settings.theme.token.borderDefault' },
+    { token: '--color-border-subtle', labelKey: 'settings.theme.token.borderSubtle' },
+    { token: '--color-border-strong', labelKey: 'settings.theme.token.borderStrong' },
+    { token: '--color-border-focus', labelKey: 'settings.theme.token.borderFocus' },
+  ] },
+  { id: 'semantic', labelKey: 'settings.theme.group.semantic', kind: 'color', tokens: [
+    { token: '--color-success', labelKey: 'settings.theme.token.success' },
+    { token: '--color-warning', labelKey: 'settings.theme.token.warning' },
+    { token: '--color-error', labelKey: 'settings.theme.token.error' },
+    { token: '--color-info', labelKey: 'settings.theme.token.info' },
+  ] },
+  { id: 'statuses', labelKey: 'settings.theme.group.statuses', kind: 'color', tokens: [
+    { token: '--color-status-downloading', labelKey: 'settings.theme.token.statusDownloading' },
+    { token: '--color-status-seeding', labelKey: 'settings.theme.token.statusSeeding' },
+    { token: '--color-status-paused', labelKey: 'settings.theme.token.statusPaused' },
+    { token: '--color-status-error', labelKey: 'settings.theme.token.statusError' },
+  ] },
+  { id: 'font', labelKey: 'settings.theme.group.font', kind: 'font', tokens: [
+    { token: '--font-family', labelKey: 'settings.theme.token.font' },
+  ] },
+  { id: 'radius', labelKey: 'settings.theme.group.radius', kind: 'length', tokens: [
+    { token: '--radius-sm', labelKey: 'settings.theme.token.radiusSm' },
+    { token: '--radius-md', labelKey: 'settings.theme.token.radiusMd' },
+    { token: '--radius-lg', labelKey: 'settings.theme.token.radiusLg' },
+    { token: '--radius-xl', labelKey: 'settings.theme.token.radiusXl' },
+  ] },
+];
+
+/* ------------------------------------------------------------------ *
+ * Whole-theme validation — the gate every imported file passes before it
+ * can touch the DOM. Structural problems fail closed; individual bad
+ * tokens are dropped with a warning so one hostile value can't poison an
+ * otherwise-valid theme.
+ * ------------------------------------------------------------------ */
+function clampName(name: string): string {
+  let stripped = '';
+  for (let i = 0; i < name.length; i++) {
+    const code = name.charCodeAt(i);
+    if (code >= 0x20 && code !== 0x7f) stripped += name[i];
+  }
+  return stripped.trim().slice(0, MAX_NAME_LEN);
+}
+
+function sanitizeId(id: unknown): string {
+  return typeof id === 'string' && /^[a-z0-9_-]{1,64}$/i.test(id) ? id.slice(0, MAX_ID_LEN) : '';
+}
+
+export function validateTheme(input: unknown): ValidateResult {
+  const errors: string[] = [];
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    return { ok: false, errors: ['theme must be a JSON object'] };
+  }
+  const obj = input as Record<string, unknown>;
+
+  const base = obj.base;
+  if (base !== 'dark' && base !== 'light') errors.push('base must be "dark" or "light"');
+
+  const name = typeof obj.name === 'string' ? clampName(obj.name) : '';
+  if (!name) errors.push('name is required');
+
+  const rawTokens = obj.tokens;
+  const tokensOk = typeof rawTokens === 'object' && rawTokens !== null && !Array.isArray(rawTokens);
+  if (!tokensOk) errors.push('tokens must be an object');
+
+  if (errors.length) return { ok: false, errors };
+
+  const warnings: string[] = [];
+  const tokens: Record<string, string> = {};
+  const entries = Object.entries(rawTokens as Record<string, unknown>);
+  if (entries.length > MAX_TOKENS) warnings.push(`too many tokens; only the first ${MAX_TOKENS} were considered`);
+  for (const [key, val] of entries.slice(0, MAX_TOKENS)) {
+    if (!TOKEN_WHITELIST.has(key)) { warnings.push(`unknown token dropped: ${key}`); continue; }
+    const clean = sanitizeTokenValue(key, val);
+    if (clean === null) { warnings.push(`invalid value dropped: ${key}`); continue; }
+    tokens[key] = clean;
+  }
+
+  let font: string | undefined;
+  if (obj.font !== undefined) {
+    const f = typeof obj.font === 'string' ? obj.font.trim() : '';
+    if (f && !hasForbiddenSequence(f) && isFontStack(f)) font = f;
+    else warnings.push('invalid font dropped');
+  }
+
+  const theme: Theme = {
+    id: sanitizeId(obj.id),
+    name,
+    base: base as ThemeBase,
+    tokens,
+    ...(font ? { font } : {}),
+  };
+  return { ok: true, theme, warnings };
+}
+
+/* ------------------------------------------------------------------ *
+ * DOM application — the only impure surface, kept behind a minimal
+ * structural type so it runs against a real HTMLElement in the app and a
+ * plain stub in tests (no jsdom needed).
+ * ------------------------------------------------------------------ */
+export interface ThemeApplyTarget {
+  style: { setProperty(name: string, value: string): void; removeProperty(name: string): void };
+  setAttribute(name: string, value: string): void;
+}
+
+/** Remove every inline token override, reverting to the stylesheet base. */
+export function clearAppliedTheme(root: ThemeApplyTarget): void {
+  for (const name of TOKEN_WHITELIST) root.style.removeProperty(name);
+}
+
+/**
+ * Apply a theme: set `data-theme` to its base, wipe any prior inline overrides,
+ * then write each whitelisted token. Idempotent and self-cleaning, so switching
+ * between themes never leaves a stale override behind. Assumes `theme` already
+ * came through validateTheme / sanitizeTokenValue.
+ */
+export function applyTheme(root: ThemeApplyTarget, theme: Theme): void {
+  clearAppliedTheme(root);
+  root.setAttribute('data-theme', theme.base);
+  for (const [key, value] of Object.entries(theme.tokens)) {
+    if (TOKEN_WHITELIST.has(key)) root.style.setProperty(key, value);
+  }
+  if (theme.font) root.style.setProperty('--font-family', theme.font);
+}

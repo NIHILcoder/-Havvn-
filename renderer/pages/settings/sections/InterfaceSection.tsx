@@ -10,6 +10,11 @@ import { SettingsCard, SettingRow } from '../controls';
 import { Select, ThemeSelector, Toggle } from '../../../components';
 import { useTranslation } from '../../../utils/i18nContext';
 import { setSpeedUnits, getSpeedUnits, SpeedUnits } from '../../../utils/format-helpers';
+import {
+  currentAccent, setAccentPref, hasAccentOverride,
+  currentFontId, setFontPref,
+} from '../../../utils/theme-prefs';
+import { FONT_OPTIONS } from '../../../../shared/theme';
 
 const SCALE_OPTIONS = [90, 100, 110, 125] as const;
 
@@ -35,6 +40,9 @@ export const InterfaceSection: React.FC = () => {
   const [compact, setCompact] = useState<boolean>(() => readPref('density') === 'compact');
   const [startPage, setStartPage] = useState<string>(() => (readPref('startPage') === 'rooms' ? 'rooms' : 'downloads'));
   const [speedUnits, setSpeedUnitsState] = useState<SpeedUnits>(getSpeedUnits);
+  const [accent, setAccent] = useState<string>(currentAccent);
+  const [accentOn, setAccentOn] = useState<boolean>(hasAccentOverride);
+  const [fontId, setFontId] = useState<string>(currentFontId);
 
   const applyScale = (scale: number) => {
     setUiScale(scale);
@@ -68,6 +76,23 @@ export const InterfaceSection: React.FC = () => {
     writePref('density', on ? 'compact' : 'normal');
   };
 
+  const handleAccent = (hex: string) => {
+    setAccent(hex);
+    setAccentOn(true);
+    setAccentPref(hex);
+  };
+
+  const handleAccentReset = () => {
+    setAccentPref(null);
+    setAccentOn(false);
+    setAccent(currentAccent()); // reads back the base theme's own accent
+  };
+
+  const handleFont = (id: string) => {
+    setFontId(id);
+    setFontPref(id);
+  };
+
   return (
     <>
       <SettingsCard title={t('settings.iface.appearance')} icon="sun">
@@ -76,6 +101,39 @@ export const InterfaceSection: React.FC = () => {
           description={t('settings.theme.desc')}
           wide
           control={<ThemeSelector currentTheme={ctx.theme} onThemeChange={ctx.handleThemeChange} />}
+        />
+        <SettingRow
+          label={t('settings.iface.accent')}
+          description={t('settings.iface.accent.desc')}
+          control={
+            <div className="accent-picker">
+              <input
+                type="color"
+                className="accent-swatch"
+                value={accent}
+                onChange={(e) => handleAccent(e.target.value)}
+                aria-label={t('settings.iface.accent')}
+              />
+              {accentOn && (
+                <button type="button" className="accent-reset" onClick={handleAccentReset}>
+                  {t('settings.iface.accent.reset')}
+                </button>
+              )}
+            </div>
+          }
+        />
+        <SettingRow
+          label={t('settings.iface.font')}
+          description={t('settings.iface.font.desc')}
+          control={
+            <div style={{ width: 170 }}>
+              <Select
+                options={FONT_OPTIONS.map((o) => ({ value: o.id, label: o.label, icon: 'type' }))}
+                value={fontId}
+                onChange={handleFont}
+              />
+            </div>
+          }
         />
         <SettingRow
           label={t('settings.language')}
