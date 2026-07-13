@@ -66,10 +66,10 @@
      gradients reference their color token so a custom theme that recolors the
      token (e.g. the sidebar via --color-bg-secondary) recolors these too. */
   --gradient-primary: linear-gradient(135deg, var(--color-accent-primary) 0%, var(--color-accent-primary) 100%);
-  --gradient-success: linear-gradient(135deg, #ADB87C 0%, #ADB87C 100%);
-  --gradient-warning: linear-gradient(135deg, #F0B24A 0%, #F0B24A 100%);
-  --gradient-danger: linear-gradient(135deg, #E2664A 0%, #E2664A 100%);
-  --gradient-elevated: linear-gradient(180deg, #212329 0%, #212329 100%);
+  --gradient-success: linear-gradient(135deg, var(--color-success) 0%, var(--color-success) 100%);
+  --gradient-warning: linear-gradient(135deg, var(--color-warning) 0%, var(--color-warning) 100%);
+  --gradient-danger: linear-gradient(135deg, var(--color-error) 0%, var(--color-error) 100%);
+  --gradient-elevated: linear-gradient(180deg, var(--color-bg-elevated) 0%, var(--color-bg-elevated) 100%);
   --gradient-sidebar: linear-gradient(180deg, var(--color-bg-secondary) 0%, var(--color-bg-secondary) 100%);
   --gradient-card: linear-gradient(135deg, var(--color-bg-tertiary) 0%, var(--color-bg-tertiary) 100%);
 
@@ -226,9 +226,9 @@
   --gradient-sidebar: linear-gradient(180deg, var(--color-bg-secondary) 0%, var(--color-bg-secondary) 100%);
   --gradient-card: linear-gradient(135deg, var(--color-bg-elevated) 0%, var(--color-bg-elevated) 100%);
   --gradient-primary: linear-gradient(135deg, var(--color-accent-primary) 0%, var(--color-accent-primary) 100%);
-  /* Elevated surfaces (e.g. the Create-Torrent header) must be light in light
-     mode, otherwise dark text sits on a dark bar. */
-  --gradient-elevated: linear-gradient(180deg, #FFFFFF 0%, #FFFFFF 100%);
+  /* Elevated surfaces (e.g. the Create-Torrent header) follow the elevated
+     token (white in light), so a custom theme recolors them too. */
+  --gradient-elevated: linear-gradient(180deg, var(--color-bg-elevated) 0%, var(--color-bg-elevated) 100%);
 
   --shadow-sm: 0 1px 3px rgba(27, 24, 20, 0.08), 0 1px 2px rgba(27, 24, 20, 0.04);
   --shadow-md: 0 4px 12px rgba(27, 24, 20, 0.10);
