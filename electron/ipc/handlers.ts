@@ -373,29 +373,66 @@ export function setupIpcHandlers(window: BrowserWindow): void {
     async (_event, roomId: string) => roomManager.getRoom(roomId)
   ));
 
+  // Room sharing caps (also used by the "share from download" path below).
+  const ROOM_SHARE_MAX_FILES = 25;
+  // The picker/list surfaces more than the share cap so the user can choose.
+  const ROOM_SHARE_LIST_MAX = 400;
+
+  /**
+   * Expand a path into the files it represents: a file → itself; a directory →
+   * every file inside it, walked recursively. lstat the root so a symlinked root
+   * isn't blindly followed, and only descend real subdirs (Dirent.isDirectory()
+   * is false for symlinks) so we can't loop. Capped at ROOM_SHARE_LIST_MAX.
+   */
+  const expandToFiles = (root: string): string[] => {
+    const st = fsSync.lstatSync(root, { throwIfNoEntry: false });
+    if (st?.isFile()) return [root];
+    if (!st?.isDirectory()) return [];
+    const out: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of fsSync.readdirSync(dir, { withFileTypes: true })) {
+        if (out.length > ROOM_SHARE_LIST_MAX) return;
+        const p = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(p);
+        else if (entry.isFile()) out.push(p);
+      }
+    };
+    walk(root);
+    return out.sort();
+  };
+
+  /** Expand dropped/picked paths (dirs → their files) and enforce the add cap. */
+  const expandRoomAddPaths = (paths: unknown): string[] => {
+    const expanded = (Array.isArray(paths) ? (paths as string[]) : []).flatMap(expandToFiles);
+    if (expanded.length > ROOM_SHARE_MAX_FILES) {
+      throw new Error(`Too many files (${expanded.length}). Add at most ${ROOM_SHARE_MAX_FILES} at a time.`);
+    }
+    return expanded;
+  };
+
   ipcMain.handle('rooms:addFiles', wrapHandler('rooms:addFiles',
     async (_event, roomId: string, paths: string[], folderId?: string) =>
-      roomManager.addFiles(roomId, Array.isArray(paths) ? paths : [], folderId ? { folderId } : undefined)
+      // Dropping a folder adds the files inside it (the engine seeds files only).
+      roomManager.addFiles(roomId, expandRoomAddPaths(paths), folderId ? { folderId } : undefined)
   ));
 
   ipcMain.handle('rooms:pickAndAddFiles', wrapHandler('rooms:pickAndAddFiles',
     async (_event, roomId: string, folderId?: string) => {
+      // Windows can't offer file + directory selection in one dialog, so the
+      // picker stays file-only; folders come in via drag-drop (expanded above).
       const result = await dialog.showOpenDialog(mainWindow, {
         title: t('dialog.addFilesToRoom'),
         properties: ['openFile', 'multiSelections'],
       });
       if (result.canceled || !result.filePaths.length) return null;
-      return roomManager.addFiles(roomId, result.filePaths, folderId ? { folderId } : undefined);
+      return roomManager.addFiles(roomId, expandRoomAddPaths(result.filePaths), folderId ? { folderId } : undefined);
     }
   ));
 
   // Share a finished download into a room ("Share to room" / "Bring a file
   // from Transfers"). Resolves the download's content on disk and feeds the
   // FILES to the room engine (it seeds single files only — directories are
-  // walked; E2E rooms encrypt each file individually).
-  const ROOM_SHARE_MAX_FILES = 25;
-  // The picker lists more than the share cap so the user can choose which 25.
-  const ROOM_SHARE_LIST_MAX = 400;
+  // walked by expandToFiles; E2E rooms encrypt each file individually).
 
   /** The download's shareable files on disk (capped walk), or throws. */
   const collectShareableFiles = async (downloadId: string): Promise<string[]> => {
@@ -405,32 +442,14 @@ export function setupIpcHandlers(window: BrowserWindow): void {
     const complete = download.progress >= 1 || ['completed', 'seeding'].includes(download.status);
     if (!complete) throw new Error('This download is not complete yet');
 
-    const collect = (root: string): string[] => {
-      // lstat: treat a symlinked root like nested entries (don't follow).
-      const st = fsSync.lstatSync(root, { throwIfNoEntry: false });
-      if (st?.isFile()) return [root];
-      if (!st?.isDirectory()) return [];
-      const out: string[] = [];
-      const walk = (dir: string): void => {
-        for (const entry of fsSync.readdirSync(dir, { withFileTypes: true })) {
-          if (out.length > ROOM_SHARE_LIST_MAX) return;
-          const p = path.join(dir, entry.name);
-          if (entry.isDirectory()) walk(p);
-          else if (entry.isFile()) out.push(p);
-        }
-      };
-      walk(root);
-      return out.sort();
-    };
-
     // Created "start seeding" records are authoritative about their source
     // paths (same order as share:start) — the record's name may be a custom
     // torrent name that doesn't exist under savePath.
-    let files = (download.seedPaths ?? []).flatMap(collect);
+    let files = (download.seedPaths ?? []).flatMap(expandToFiles);
     if (!files.length) {
       // Peer-supplied torrent names are not trusted as path fragments.
       const safeName = safeBaseName(download.name) || download.name;
-      files = collect(downloadContentPath(download.savePath, safeName));
+      files = expandToFiles(downloadContentPath(download.savePath, safeName));
     }
     if (!files.length) throw new Error('Files not found on disk');
     return files;
