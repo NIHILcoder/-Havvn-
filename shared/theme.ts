@@ -37,6 +37,13 @@ export interface Theme {
   light: Record<string, string>;
   /** Optional font stack (applies in both modes); mirror of --font-family. */
   font?: string;
+  /**
+   * Optional embedded custom font as a self-contained `data:font/…;base64,…`
+   * URL. Registered via the FontFace API (never a CSS `url()` in a token), so it
+   * stays within `font-src 'self' data:` and carries with an exported theme. The
+   * family it defines is the first name in `font`.
+   */
+  fontData?: string;
 }
 
 export type ValidateResult =
@@ -119,6 +126,20 @@ const MAX_VALUE_LEN = 256;
 const MAX_TOKENS = 200;
 const MAX_NAME_LEN = 60;
 const MAX_ID_LEN = 64;
+const MAX_FONT_DATA_LEN = 2_000_000; // ~1.5 MB embedded font, base64
+
+/**
+ * Validate an embedded-font data URL: `data:<font-mime>;base64,<payload>`, size
+ * capped, strict base64. Returned as-is or null. The font is loaded through the
+ * FontFace API (not a CSS url()), so this is the only gate it crosses.
+ */
+export function sanitizeFontData(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const v = raw.trim();
+  if (!v || v.length > MAX_FONT_DATA_LEN) return null;
+  return /^data:(?:font\/(?:woff2|woff|ttf|otf|sfnt)|application\/(?:font-woff|x-font-ttf|octet-stream));base64,[A-Za-z0-9+/]+=*$/.test(v)
+    ? v : null;
+}
 
 /* ------------------------------------------------------------------ *
  * Value category per token — drives which shape check a value must pass.
@@ -516,12 +537,19 @@ export function validateTheme(input: unknown): ValidateResult {
     else warnings.push('invalid font dropped');
   }
 
+  let fontData: string | undefined;
+  if (obj.fontData !== undefined) {
+    const fd = sanitizeFontData(obj.fontData);
+    if (fd) fontData = fd; else warnings.push('invalid font data dropped');
+  }
+
   const theme: Theme = {
     id: sanitizeId(obj.id),
     name,
     dark,
     light,
     ...(font ? { font } : {}),
+    ...(fontData ? { fontData } : {}),
   };
   return { ok: true, theme, warnings };
 }

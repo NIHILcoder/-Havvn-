@@ -266,21 +266,27 @@ export const FormsSample: React.FC = () => (
       <span className="help-text">Shown to everyone who joins the room.</span>
     </div>
 
-    <div className="te-gallery-toggles">
-      <div className="toggle-container">
-        <div className="toggle-switch medium active" role="switch" aria-checked="true" aria-label="Seed after download"><span className="toggle-slider" /></div>
-        <span className="toggle-label">Seed after download</span>
-      </div>
-      <div className="toggle-container">
-        <div className="toggle-switch medium" role="switch" aria-checked="false" aria-label="Start paused"><span className="toggle-slider" /></div>
-        <span className="toggle-label">Start paused</span>
+    <div className="form-group">
+      <label className="label">Download folder</label>
+      <div className="custom-select-container">
+        <div className="custom-select-trigger" role="button" aria-haspopup="listbox" aria-expanded="false">
+          <div className="custom-select-value"><span>~/Downloads/Havvn</span></div>
+          <div className="custom-select-icon"><Icon name="chevron-down" size={16} /></div>
+        </div>
       </div>
     </div>
 
-    <div className="custom-select-container">
-      <div className="custom-select-trigger" role="button" aria-haspopup="listbox" aria-expanded="false">
-        <div className="custom-select-value"><span>Download folder</span></div>
-        <div className="custom-select-icon"><Icon name="chevron-down" size={16} /></div>
+    <div className="form-group">
+      <label className="label">Options</label>
+      <div className="te-gallery-toggles">
+        <div className="toggle-container">
+          <div className="toggle-switch medium active" role="switch" aria-checked="true" aria-label="Seed after download"><span className="toggle-slider" /></div>
+          <span className="toggle-label">Seed after download</span>
+        </div>
+        <div className="toggle-container">
+          <div className="toggle-switch medium" role="switch" aria-checked="false" aria-label="Start paused"><span className="toggle-slider" /></div>
+          <span className="toggle-label">Start paused</span>
+        </div>
       </div>
     </div>
 

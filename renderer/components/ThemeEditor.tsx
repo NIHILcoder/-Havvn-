@@ -24,7 +24,7 @@ import Icon from './Icon';
 import { useTranslation } from '../utils/i18nContext';
 import {
   Theme, ThemeMode, EDITABLE_TOKENS, ADVANCED_GROUPS, FONT_OPTIONS, deriveAccent, validateTheme,
-  sanitizeTokenValue, tokenCategory, clearAppliedTheme, TOKEN_WHITELIST,
+  sanitizeTokenValue, sanitizeFontData, tokenCategory, clearAppliedTheme, TOKEN_WHITELIST,
 } from '../../shared/theme';
 import { contrastRatio, wcagLevel } from '../../shared/contrast';
 import { parseColor, toRgbString } from '../../shared/color';
@@ -178,6 +178,9 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ onClose }) => {
   const [inspectRect, setInspectRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   // Coalesces rapid same-target edits (a slider drag) into ONE undo step.
   const coalesceRef = useRef<{ key: string; time: number }>({ key: '', time: 0 });
+  // Custom-font upload: hidden file input + the picked file's name for display.
+  const fontInputRef = useRef<HTMLInputElement>(null);
+  const [customFontName, setCustomFontName] = useState('');
 
   // Defaults for the edited variant — seeds every field's shown value.
   const defaults = useMemo(() => readModeDefaults(variant), [variant]);
@@ -247,6 +250,20 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ onClose }) => {
     coalesceRef.current = { key: '', time: 0 };
   };
 
+  // Ctrl/Cmd+Z undo · Ctrl/Cmd+Shift+Z or Ctrl+Y redo — while focus is in the
+  // dock. Yields to the browser's native text undo when a text field is focused
+  // (so editing a value string still undoes character-by-character there).
+  const onDockKeyDown = (e: React.KeyboardEvent) => {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    const target = e.target as HTMLElement;
+    const el = target as HTMLInputElement;
+    const typing = target.tagName === 'TEXTAREA' || (target.tagName === 'INPUT' && el.type === 'text');
+    if (typing) return;
+    const key = e.key.toLowerCase();
+    if (key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+    else if ((key === 'z' && e.shiftKey) || key === 'y') { e.preventDefault(); redo(); }
+  };
+
   const paletteKey = variant === 'light' ? 'light' : 'dark';
   const valueOf = (token: string): string =>
     (draft && draft[paletteKey][token] !== undefined ? draft[paletteKey][token] : defaults[token]) ?? '';
@@ -290,10 +307,43 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ onClose }) => {
     if (derived) editDraft((d) => ({ ...d, [paletteKey]: { ...d[paletteKey], ...derived } }), 'accent');
   };
 
-  const currentFontId = (): string => FONT_OPTIONS.find((o) => o.stack === draft?.font)?.id ?? 'inter';
+  // A custom (uploaded) font means no bundled option is selected.
+  const currentFontId = (): string => draft?.fontData ? '' : (FONT_OPTIONS.find((o) => o.stack === draft?.font)?.id ?? 'inter');
   const setFont = (id: string) => {
     const stack = FONT_OPTIONS.find((o) => o.id === id)?.stack;
-    editDraft((d) => ({ ...d, font: id === 'inter' ? undefined : stack }), 'font');
+    setCustomFontName('');
+    editDraft((d) => { const next = { ...d, font: id === 'inter' ? undefined : stack }; delete next.fontData; return next; }, 'font');
+  };
+
+  /** Load a user font file → embed it as a data: URL on the draft (registered on
+   *  the next preview via the FontFace API). Capped size, extension-derived mime. */
+  const onFontFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // let the same file be re-picked later
+    if (!file) return;
+    if (file.size > 1_400_000) { note('err', t('settings.theme.fontTooLarge')); return; }
+    const ext = (file.name.split('.').pop() || '').toLowerCase();
+    const mime = ext === 'woff2' ? 'font/woff2' : ext === 'woff' ? 'font/woff' : ext === 'otf' ? 'font/otf' : ext === 'ttf' ? 'font/ttf' : '';
+    if (!mime) { note('err', t('settings.theme.fontInvalid')); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      const comma = result.indexOf(',');
+      const dataUrl = comma < 0 ? '' : `data:${mime};base64,${result.slice(comma + 1)}`;
+      if (!dataUrl || sanitizeFontData(dataUrl) === null) { note('err', t('settings.theme.fontInvalid')); return; }
+      const family = `tf-${genThemeId().slice(4)}`;
+      const stack = `'${family}', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`;
+      setCustomFontName(file.name);
+      editDraft((d) => ({ ...d, font: stack, fontData: dataUrl }));
+      note('ok', t('settings.theme.fontLoaded'));
+    };
+    reader.onerror = () => note('err', t('settings.theme.fontInvalid'));
+    reader.readAsDataURL(file);
+  };
+
+  const clearCustomFont = () => {
+    setCustomFontName('');
+    editDraft((d) => { const next = { ...d }; delete next.font; delete next.fontData; return next; }, 'font');
   };
 
   // ── "magic" (palette generation + variant adaptation) ──────────────────────
@@ -616,7 +666,7 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ onClose }) => {
       {inspecting && inspectRect && (
         <div className="te-inspect-box" style={{ left: inspectRect.x, top: inspectRect.y, width: inspectRect.w, height: inspectRect.h }} />
       )}
-    <aside className="ted" data-side={side} style={{ width }} role="region" aria-label={t('settings.theme.editorTitle')}>
+    <aside className="ted" data-side={side} style={{ width }} role="region" aria-label={t('settings.theme.editorTitle')} onKeyDown={onDockKeyDown}>
       <div className="ted-resize" onPointerDown={onResizeDown} role="separator" aria-orientation="vertical" />
 
       <header className="ted-head">
@@ -721,7 +771,8 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ onClose }) => {
                       )}
                       {group.kind === 'font' && (
                         // A segmented control (not a Select) so there is no popup to
-                        // clip against the dock's overflow; only 3 bundled families.
+                        // clip against the dock's overflow; only 3 bundled families,
+                        // plus an upload for a custom font.
                         <div className="te-token te-token--font">
                           <div className="iface-seg" role="group">
                             {FONT_OPTIONS.map((o) => (
@@ -729,6 +780,21 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ onClose }) => {
                                 {o.label}
                               </button>
                             ))}
+                          </div>
+                          <div className="te-font-upload">
+                            <button type="button" className="te-tool" onClick={() => fontInputRef.current?.click()}>
+                              <Icon name="upload" size={13} /> {t('settings.theme.uploadFont')}
+                            </button>
+                            {draft.fontData && (
+                              <span className="te-font-custom">
+                                <Icon name="type" size={12} />
+                                <span className="te-font-custom-name">{customFontName || t('settings.theme.customFont')}</span>
+                                <button type="button" className="te-font-remove" onClick={clearCustomFont} title={t('settings.theme.removeFont')} aria-label={t('settings.theme.removeFont')}>
+                                  <Icon name="x" size={12} />
+                                </button>
+                              </span>
+                            )}
+                            <input ref={fontInputRef} type="file" accept=".woff2,.woff,.ttf,.otf" style={{ display: 'none' }} onChange={onFontFile} />
                           </div>
                         </div>
                       )}

@@ -581,6 +581,7 @@
 .trow-rate {
   min-width: 0;
   font-variant-numeric: tabular-nums;
+  transition: opacity var(--transition-fast);
 }
 
 .trow-rate-main {
@@ -643,7 +644,9 @@
 }
 
 .download-item:hover .trow-status,
-.download-item:focus-within .trow-status {
+.download-item:focus-within .trow-status,
+.download-item:hover .trow-rate,
+.download-item:focus-within .trow-rate {
   opacity: 0;
 }
 

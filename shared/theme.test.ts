@@ -10,6 +10,7 @@ import {
   FONT_OPTIONS,
   EDITABLE_TOKENS,
   ADVANCED_GROUPS,
+  sanitizeFontData,
   type Theme,
   type ThemeApplyTarget,
 } from './theme';
@@ -409,5 +410,31 @@ describe('ADVANCED_GROUPS', () => {
       expect(g.tokens.length).toBeGreaterThan(0);
       expect(g.labelKey.startsWith('settings.theme.adv.')).toBe(true);
     }
+  });
+});
+
+describe('sanitizeFontData', () => {
+  const okData = 'data:font/woff2;base64,d09GMgABAAAAAA==';
+
+  it('accepts a well-formed base64 font data URL', () => {
+    expect(sanitizeFontData(okData)).toBe(okData);
+    expect(sanitizeFontData('data:font/ttf;base64,AAEAAAALAIAAAwAw')).not.toBeNull();
+  });
+
+  it('rejects non-font schemes, bad base64, and oversized blobs', () => {
+    expect(sanitizeFontData('https://evil/font.woff2')).toBeNull();
+    expect(sanitizeFontData('data:image/png;base64,AAAA')).toBeNull();
+    expect(sanitizeFontData('data:font/woff2;base64,not base64!!')).toBeNull();
+    expect(sanitizeFontData('data:font/woff2;base64,' + 'A'.repeat(2_000_001))).toBeNull();
+    expect(sanitizeFontData(42)).toBeNull();
+    expect(sanitizeFontData('')).toBeNull();
+  });
+
+  it('validateTheme keeps valid fontData and drops invalid', () => {
+    const okv = validateTheme({ name: 'F', dark: {}, light: {}, font: "'tf-x', sans-serif", fontData: okData });
+    expect(okv.ok && okv.theme.fontData).toBe(okData);
+    const badv = validateTheme({ name: 'F', dark: {}, light: {}, fontData: 'https://evil/f.woff2' });
+    expect(badv.ok && badv.theme.fontData).toBeUndefined();
+    expect(badv.ok && badv.warnings.some((w) => /font data/i.test(w))).toBe(true);
   });
 });

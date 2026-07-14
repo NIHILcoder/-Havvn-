@@ -37,8 +37,7 @@
 }
 
 /* Reveal the inline controls that are opacity:0 until row hover, so the editor
-   shows the full colored palette at rest (these are safe to reveal — they sit
-   inline; the trailing .trow-actions cluster is left to hover to avoid overlap). */
+   shows the full colored palette at rest (safe — they sit inline). */
 .te-gallery .room-file-react,
 .te-gallery .room-folder-acts,
 .te-gallery .room-folder-act,
@@ -47,6 +46,29 @@
 
 /* Downloads sample: the list normally sits on a page; give it a hair of breathing room. */
 .te-gallery-list { padding-top: var(--space-2); }
+
+/* The download row's responsive breakpoints are VIEWPORT-based, so inside the
+   narrow dock it would render the full desktop grid (~500px) and overflow,
+   flinging the absolute hover-actions across the stats. Force the compact
+   presentation: drop the progress + rate columns and lay the action cluster
+   inline (no absolute overlay), always visible so its colors show at rest. */
+.te-gallery .trow-main {
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: var(--space-3);
+}
+.te-gallery .trow-prog,
+.te-gallery .trow-rate { display: none; }
+.te-gallery .trow-sub-pct { display: inline; }
+.te-gallery .trow-actions {
+  position: static;
+  transform: none;
+  opacity: 1;
+  pointer-events: auto;
+  background: none;
+  padding-left: 0;
+}
+.te-gallery .download-item:hover .trow-status,
+.te-gallery .download-item:focus-within .trow-status { opacity: 1; }
 
 /* Forms sample layout ------------------------------------------------------- */
 .te-gallery-forms { display: flex; flex-direction: column; gap: var(--space-4); }

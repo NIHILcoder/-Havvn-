@@ -27,6 +27,35 @@ const write = (key: string, value: string | null): void => {
 
 const root = (): HTMLElement => document.documentElement;
 
+/* ------------------------------------------------------------------ *
+ * Custom embedded fonts. A theme may carry its font as a data: URL
+ * (theme.fontData); we register it with the FontFace API (never a CSS
+ * url()) so --font-family can name it. Families are registered once.
+ * ------------------------------------------------------------------ */
+const registeredFonts = new Set<string>();
+
+/** The family a theme's font stack defines — the first (quoted) name. */
+function themeFontFamily(font: string | undefined): string | null {
+  if (!font) return null;
+  const m = /^\s*(?:'([^']+)'|"([^"]+)"|([^,]+))/.exec(font);
+  const name = (m && (m[1] ?? m[2] ?? m[3]) || '').trim();
+  return name || null;
+}
+
+/** Register a theme's embedded font (idempotent). Failures are swallowed —
+ *  the stack's fallbacks then take over. */
+export function registerThemeFont(theme: Theme): void {
+  if (!theme.fontData) return;
+  const family = themeFontFamily(theme.font);
+  if (!family || registeredFonts.has(family)) return;
+  try {
+    if (typeof FontFace === 'undefined' || !document.fonts) return;
+    registeredFonts.add(family);
+    const face = new FontFace(family, `url("${theme.fontData}")`);
+    face.load().then((f) => document.fonts.add(f)).catch(() => registeredFonts.delete(family));
+  } catch { registeredFonts.delete(family); }
+}
+
 export function genThemeId(): string {
   try {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) return `thm-${crypto.randomUUID().slice(0, 8)}`;
@@ -74,12 +103,14 @@ export function resolvedMode(): ThemeMode {
 
 /** Apply a custom theme's current-mode variant live, then re-layer quick prefs. */
 export function applyThemeObject(theme: Theme): void {
+  registerThemeFont(theme);
   applyTheme(root(), theme, resolvedMode());
   restoreThemePrefs();
 }
 
 /** Preview a specific variant of a theme (used by the editor while editing it). */
 export function previewTheme(theme: Theme, mode: ThemeMode): void {
+  registerThemeFont(theme);
   applyTheme(root(), theme, mode);
   restoreThemePrefs();
 }
@@ -110,5 +141,5 @@ export function deactivateTheme(): void {
  */
 export function bootApplyActiveTheme(): void {
   const active = getActiveTheme();
-  if (active) applyTheme(root(), active, resolvedMode());
+  if (active) { registerThemeFont(active); applyTheme(root(), active, resolvedMode()); }
 }
