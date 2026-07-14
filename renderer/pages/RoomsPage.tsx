@@ -791,6 +791,7 @@ const RoomDetail: React.FC<DetailProps> = ({ room, onAddFiles, onDropFiles, onCr
               />
             )}
 
+            <div className="room-files-scroll">
             {!hasFolders ? (
               room.files.length === 0 ? (
                 <div className="room-files-empty">{t('rooms.noFiles')}</div>
@@ -854,6 +855,7 @@ const RoomDetail: React.FC<DetailProps> = ({ room, onAddFiles, onDropFiles, onCr
                 })}
               </div>
             )}
+            </div>
 
             <div className="room-files-actions">
               <Button
