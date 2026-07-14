@@ -30,15 +30,18 @@ export interface ColorFieldProps {
   onChange: (value: string) => void;
   /** When present, renders a link that copies the current value into both variants. */
   onApplyBoth?: (value: string) => void;
+  /** When present (token is overridden), renders a reset-to-default control. */
+  onReset?: () => void;
   applyBothTitle?: string;
   eyedropperTitle?: string;
+  resetTitle?: string;
   sliderTitles?: { h: string; s: string; l: string; a: string };
 }
 
 const GRAY: Hsla = { h: 0, s: 0, l: 50, a: 1 };
 
 export const ColorField: React.FC<ColorFieldProps> = ({
-  label, value, valid, format = 'auto', onChange, onApplyBoth, applyBothTitle, eyedropperTitle, sliderTitles,
+  label, value, valid, format = 'auto', onChange, onApplyBoth, onReset, applyBothTitle, eyedropperTitle, resetTitle, sliderTitles,
 }) => {
   const [open, setOpen] = useState(false);
   const [hsla, setHsla] = useState<Hsla>(() => { const p = parseColor(value); return p ? rgbToHsl(p) : GRAY; });
@@ -100,6 +103,11 @@ export const ColorField: React.FC<ColorFieldProps> = ({
         {onApplyBoth && (
           <button type="button" className="cf-icon" onClick={() => onApplyBoth(value)} title={applyBothTitle} aria-label={applyBothTitle}>
             <Icon name="copy" size={14} />
+          </button>
+        )}
+        {onReset && (
+          <button type="button" className="cf-icon" onClick={onReset} title={resetTitle} aria-label={resetTitle}>
+            <Icon name="rotate-ccw" size={14} />
           </button>
         )}
         <button type="button" className={`cf-icon cf-caret ${open ? 'open' : ''}`} onClick={() => setOpen((o) => !o)}

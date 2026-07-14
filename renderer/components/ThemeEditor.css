@@ -352,6 +352,40 @@ body.te-resizing { cursor: ew-resize; user-select: none; }
 .te-pv-bar { margin-top: auto; height: 6px; border-radius: var(--radius-full); background: var(--color-bg-tertiary); overflow: hidden; }
 .te-pv-bar-fill { display: block; height: 100%; width: 62%; background: var(--color-accent-primary); border-radius: var(--radius-full); }
 
+/* ── Toolbar (undo/redo · inspect · generate · adapt) ─────────── */
+.te-toolbar { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-bottom: var(--space-3); }
+.te-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 8px;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  font-family: var(--font-family);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.te-tool:hover:not(:disabled) { color: var(--color-accent-primary); border-color: var(--color-border-focus); }
+.te-tool:disabled { opacity: 0.4; cursor: default; }
+.te-tool.active { color: var(--color-accent-primary); border-color: var(--color-accent-primary); background: var(--color-accent-bg); }
+.te-tool-sep { width: 1px; align-self: stretch; background: var(--color-border-subtle); margin: 2px 2px; }
+
+/* Inspect mode: crosshair everywhere + a highlight box over the hovered element. */
+body.te-inspecting, body.te-inspecting * { cursor: crosshair !important; }
+.te-inspect-box {
+  position: fixed;
+  z-index: var(--z-tooltip);
+  pointer-events: none;
+  border: 2px solid var(--color-accent-primary);
+  background: var(--color-accent-bg);
+  border-radius: 2px;
+  transition: all 0.05s linear;
+}
+
 /* ── Simple/Advanced mode + filters ───────────────────────────── */
 .te-mode-row { margin-bottom: var(--space-3); }
 .te-mode-row .iface-seg { display: flex; width: 100%; }

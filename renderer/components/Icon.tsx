@@ -105,7 +105,9 @@ export type IconName =
   | 'minimize'
   | 'skip-forward'
   | 'pip'
-  | 'pipette';
+  | 'pipette'
+  | 'rotate-cw'
+  | 'crosshair';
 
 interface IconProps {
   name: IconName;
@@ -195,6 +197,8 @@ const paths: Record<IconName, string> = {
   'power': 'M12 2v10 M18.36 6.64a9 9 0 1 1-12.73 0',
   'refresh-cw': 'M23 4v6h-6 M1 20v-6h6 M3.51 9a9 9 0 0 1 14.85-3.36L23 10 M1 14l4.64 4.36A9 9 0 0 0 20.49 15',
   'rotate-ccw': 'M1 4v6h6 M3.51 15a9 9 0 1 0 2.13-9.36L1 10',
+  'rotate-cw': 'M23 4v6h-6 M20.49 15a9 9 0 1 1-2.12-9.36L23 10',
+  'crosshair': 'M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20z M22 12h-4 M6 12H2 M12 6V2 M12 22v-4',
   'trending-up': 'M23 6l-9.5 9.5-5-5L1 18 M16 6h7v7',
   'edit-2': 'M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z',
   'share-2': 'M18 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M6 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M18 20a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M8.59 13.51l6.83 3.98 M15.41 6.51l-6.82 3.98',

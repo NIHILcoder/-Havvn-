@@ -18,7 +18,7 @@
  * hint, and the whole draft goes through validateTheme on save and on import —
  * the same trust boundary an imported file crosses.
  */
-import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Button } from './Button';
 import Icon from './Icon';
 import { useTranslation } from '../utils/i18nContext';
@@ -28,6 +28,7 @@ import {
 } from '../../shared/theme';
 import { contrastRatio, wcagLevel } from '../../shared/contrast';
 import { parseColor, toRgbString } from '../../shared/color';
+import { generatePalette, adaptVariant } from '../../shared/palette';
 import {
   loadLibrary, saveLibrary, getActiveId, getActiveTheme, genThemeId,
   applyThemeObject, previewTheme, activateTheme, deactivateTheme, revertToBase, resolvedMode,
@@ -47,6 +48,35 @@ const CONTRAST_PAIRS: [string, string][] = [
   ['--color-accent-primary', '--color-bg-primary'],
 ];
 const shortToken = (name: string): string => name.replace(/^--color-/, '').replace(/^--/, '');
+
+/**
+ * Inspector heuristic: match an element's used background / text / border color
+ * to the whitelisted color token whose currently-applied `:root` value resolves
+ * to the same RGB. Background wins over text over border. Returns the token or
+ * null. Impure (reads the live DOM) — kept module-level so the component stays lean.
+ */
+function tokenForElement(el: Element): string | null {
+  const rootCS = getComputedStyle(document.documentElement);
+  const byRgb = new Map<string, string>(); // "r,g,b" -> first token with that resolved value
+  for (const tk of TOKEN_WHITELIST) {
+    const cat = tokenCategory(tk);
+    if (cat !== 'color' && cat !== 'colorTriplet') continue;
+    const raw = rootCS.getPropertyValue(tk).trim();
+    if (!raw) continue;
+    const p = parseColor(cat === 'colorTriplet' ? `rgb(${raw})` : raw);
+    if (!p || p.a === 0) continue;
+    const key = `${p.r},${p.g},${p.b}`;
+    if (!byRgb.has(key)) byRgb.set(key, tk);
+  }
+  const cs = getComputedStyle(el);
+  for (const used of [cs.backgroundColor, cs.color, cs.borderTopColor]) {
+    const p = parseColor(used);
+    if (!p || p.a === 0) continue;
+    const hit = byRgb.get(`${p.r},${p.g},${p.b}`);
+    if (hit) return hit;
+  }
+  return null;
+}
 
 // Dock geometry + persistence.
 const DOCK_MIN = 320;
@@ -141,6 +171,13 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ onClose }) => {
   const [editMode, setEditMode] = useState<EditMode>('simple');
   const [search, setSearch] = useState('');
   const [onlyChanged, setOnlyChanged] = useState(false);
+  // Undo/redo of the draft, and the "inspect element" mode.
+  const [undoStack, setUndoStack] = useState<Theme[]>([]);
+  const [redoStack, setRedoStack] = useState<Theme[]>([]);
+  const [inspecting, setInspecting] = useState(false);
+  const [inspectRect, setInspectRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  // Coalesces rapid same-target edits (a slider drag) into ONE undo step.
+  const coalesceRef = useRef<{ key: string; time: number }>({ key: '', time: 0 });
 
   // Defaults for the edited variant — seeds every field's shown value.
   const defaults = useMemo(() => readModeDefaults(variant), [variant]);
@@ -170,16 +207,60 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ onClose }) => {
   const activeId = getActiveId();
   const note = (kind: 'ok' | 'err', text: string) => setStatus({ kind, text });
 
+  // ── draft history (undo/redo) ──────────────────────────────────────────────
+  const resetHistory = () => { setUndoStack([]); setRedoStack([]); coalesceRef.current = { key: '', time: 0 }; };
+
+  /** Load a different draft (or none) and drop the edit history. */
+  const loadDraft = (next: Theme | null) => { setDraft(next); resetHistory(); };
+
+  /**
+   * Mutate the current draft as ONE undoable step. Rapid edits sharing a
+   * coalesceKey within 500ms fold into the same step, so a slider drag is a
+   * single undo rather than fifty.
+   */
+  const editDraft = (updater: (d: Theme) => Theme, coalesceKey?: string) => {
+    if (!draft) return;
+    const now = Date.now();
+    // 200ms gap: a slider drag streams events ~16ms apart (folds into one step),
+    // but deliberate discrete edits to the same token land >200ms apart (kept
+    // as separate undo steps).
+    const coalesce = !!coalesceKey && coalesceRef.current.key === coalesceKey && now - coalesceRef.current.time < 200;
+    if (!coalesce) { setUndoStack((s) => [...s.slice(-49), draft]); setRedoStack([]); }
+    coalesceRef.current = { key: coalesceKey ?? '', time: now };
+    setDraft(updater(draft));
+  };
+
+  const undo = () => {
+    if (!undoStack.length || !draft) return;
+    const prev = undoStack[undoStack.length - 1];
+    setUndoStack((s) => s.slice(0, -1));
+    setRedoStack((s) => [...s, draft]);
+    setDraft(prev);
+    coalesceRef.current = { key: '', time: 0 };
+  };
+  const redo = () => {
+    if (!redoStack.length || !draft) return;
+    const next = redoStack[redoStack.length - 1];
+    setRedoStack((s) => s.slice(0, -1));
+    setUndoStack((s) => [...s, draft]);
+    setDraft(next);
+    coalesceRef.current = { key: '', time: 0 };
+  };
+
   const paletteKey = variant === 'light' ? 'light' : 'dark';
   const valueOf = (token: string): string =>
     (draft && draft[paletteKey][token] !== undefined ? draft[paletteKey][token] : defaults[token]) ?? '';
 
   const setToken = (token: string, value: string) =>
-    setDraft((d) => (d ? { ...d, [paletteKey]: { ...d[paletteKey], [token]: value } } : d));
+    editDraft((d) => ({ ...d, [paletteKey]: { ...d[paletteKey], [token]: value } }), `set:${paletteKey}:${token}`);
 
   /** Write one value into BOTH variants at once (the apply-to-both affordance). */
   const setTokenBoth = (token: string, value: string) =>
-    setDraft((d) => (d ? { ...d, dark: { ...d.dark, [token]: value }, light: { ...d.light, [token]: value } } : d));
+    editDraft((d) => ({ ...d, dark: { ...d.dark, [token]: value }, light: { ...d.light, [token]: value } }), `both:${token}`);
+
+  /** Remove the override → the token falls back to its base value. */
+  const resetToken = (token: string) =>
+    editDraft((d) => { const next = { ...d[paletteKey] }; delete next[token]; return { ...d, [paletteKey]: next }; });
 
   /** Does the draft explicitly override this token in the edited variant? */
   const hasOverride = (token: string): boolean => !!draft && draft[paletteKey][token] !== undefined;
@@ -206,13 +287,29 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ onClose }) => {
 
   const setAccent = (hex: string) => {
     const derived = deriveAccent(hex);
-    if (derived) setDraft((d) => (d ? { ...d, [paletteKey]: { ...d[paletteKey], ...derived } } : d));
+    if (derived) editDraft((d) => ({ ...d, [paletteKey]: { ...d[paletteKey], ...derived } }), 'accent');
   };
 
   const currentFontId = (): string => FONT_OPTIONS.find((o) => o.stack === draft?.font)?.id ?? 'inter';
   const setFont = (id: string) => {
     const stack = FONT_OPTIONS.find((o) => o.id === id)?.stack;
-    setDraft((d) => (d ? { ...d, font: id === 'inter' ? undefined : stack } : d));
+    editDraft((d) => ({ ...d, font: id === 'inter' ? undefined : stack }), 'font');
+  };
+
+  // ── "magic" (palette generation + variant adaptation) ──────────────────────
+  /** Fan a coherent palette out of the current accent + background into this variant. */
+  const generateFromBase = () => {
+    const gen = generatePalette({ accent: valueOf('--color-accent-primary'), bg: valueOf('--color-bg-primary') });
+    if (!Object.keys(gen).length) { note('err', t('settings.theme.generateFailed')); return; }
+    editDraft((d) => ({ ...d, [paletteKey]: { ...d[paletteKey], ...gen } }));
+    note('ok', t('settings.theme.generated'));
+  };
+  /** Build the opposite variant from this one's overrides (light↔dark). */
+  const adaptToOther = () => {
+    if (!draft) return;
+    const other = variant === 'light' ? 'dark' : 'light';
+    editDraft((d) => ({ ...d, [other]: adaptVariant(d[paletteKey]) }));
+    note('ok', t('settings.theme.adapted'));
   };
 
   // ── dock chrome actions ────────────────────────────────────────────────────
@@ -249,17 +346,16 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ onClose }) => {
     window.addEventListener('pointercancel', up);
   };
 
-  // ── theme lifecycle ──────────────────────────────────────────────────────
-  const createNew = () => { setDraft(emptyTheme(t('settings.theme.newName'))); setTab('edit'); note('ok', t('settings.theme.newHint')); };
+  // ── theme lifecycle (loads reset the undo history) ─────────────────────────
+  const createNew = () => { loadDraft(emptyTheme(t('settings.theme.newName'))); setTab('edit'); note('ok', t('settings.theme.newHint')); };
   const duplicate = (theme: Theme) => {
-    setDraft({ ...structuredClone(theme), id: genThemeId(), name: `${theme.name} ${t('settings.theme.copySuffix')}` });
+    loadDraft({ ...structuredClone(theme), id: genThemeId(), name: `${theme.name} ${t('settings.theme.copySuffix')}` });
     setTab('edit');
   };
-  const edit = (theme: Theme) => { setDraft(structuredClone(theme)); setTab('edit'); };
+  const edit = (theme: Theme) => { loadDraft(structuredClone(theme)); setTab('edit'); };
 
   /** Copy the variant you're editing onto the other one (bootstrap the pair). */
-  const copyToOther = () => setDraft((d) => {
-    if (!d) return d;
+  const copyToOther = () => editDraft((d) => {
     const other = variant === 'light' ? 'dark' : 'light';
     return { ...d, [other]: { ...d[paletteKey] } };
   });
@@ -275,7 +371,7 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ onClose }) => {
     saveLibrary(lib);
     setLibrary(lib);
     activateTheme(clean);
-    setDraft(structuredClone(clean));
+    loadDraft(structuredClone(clean));
     note('ok', t('settings.theme.saved'));
   };
 
@@ -284,14 +380,14 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ onClose }) => {
     saveLibrary(lib);
     setLibrary(lib);
     if (getActiveId() === theme.id) deactivateTheme();
-    if (draft?.id === theme.id) setDraft(null);
+    if (draft?.id === theme.id) loadDraft(null);
     note('ok', t('settings.theme.deleted'));
   };
 
-  const apply = (theme: Theme) => { activateTheme(theme); setDraft(structuredClone(theme)); note('ok', t('settings.theme.applied')); };
+  const apply = (theme: Theme) => { activateTheme(theme); loadDraft(structuredClone(theme)); note('ok', t('settings.theme.applied')); };
 
   /** Drop any active custom theme — back to the built-in Ember palette. */
-  const useDefault = () => { deactivateTheme(); setDraft(null); note('ok', t('settings.theme.defaultApplied')); };
+  const useDefault = () => { deactivateTheme(); loadDraft(null); note('ok', t('settings.theme.defaultApplied')); };
 
   const exportTheme = async (theme: Theme) => {
     setBusy(true);
@@ -313,7 +409,7 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ onClose }) => {
       const lib = [...loadLibrary(), clean];
       saveLibrary(lib);
       setLibrary(lib);
-      setDraft(structuredClone(clean));
+      loadDraft(structuredClone(clean));
       setTab('edit');
       note('ok', v.warnings.length ? t('settings.theme.importedWarn') : t('settings.theme.imported'));
     } catch { note('err', t('settings.theme.importFailed')); }
@@ -330,6 +426,61 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ onClose }) => {
 
   const swatchOf = (theme: Theme) =>
     theme.dark['--color-accent-primary'] || theme.light['--color-accent-primary'] || 'var(--color-accent-primary)';
+
+  // Inspect mode: hover highlights any app element, click maps it to the token
+  // coloring it and jumps there. Capture-phase listeners so the click never
+  // reaches the app; clicks inside the dock pass through so the UI stays usable.
+  useEffect(() => {
+    if (!inspecting) { setInspectRect(null); return; }
+    // The dock (expanded panel OR the collapsed reopen tab) must stay interactive.
+    const inDock = (el: Element | null) => !!el && !!el.closest('.ted, .ted-reopen');
+    const onMove = (e: PointerEvent) => {
+      const el = e.target as Element | null;
+      if (inDock(el) || !el) { setInspectRect(null); return; }
+      const r = el.getBoundingClientRect();
+      setInspectRect({ x: r.left, y: r.top, w: r.width, h: r.height });
+    };
+    // Swallow the whole press (down + up + click) on app elements so nothing —
+    // focus, text-selection, a pointerdown-activated control — reacts while
+    // inspecting; only the click actually maps + jumps.
+    const swallow = (e: Event) => {
+      const el = e.target as Element | null;
+      if (inDock(el) || !el) return;
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    const onClick = (e: MouseEvent) => {
+      const el = e.target as Element | null;
+      if (inDock(el) || !el) return; // dock clicks work normally
+      e.preventDefault();
+      e.stopPropagation();
+      const token = tokenForElement(el);
+      setInspecting(false);
+      if (token) {
+        setEditMode('advanced');
+        setOnlyChanged(false); // else an un-overridden hit is filtered out of view
+        setSearch(token);
+        setTab('edit');
+        note('ok', `${t('settings.theme.inspectFound')} ${token}`);
+      } else {
+        note('err', t('settings.theme.inspectNone'));
+      }
+    };
+    document.body.classList.add('te-inspecting');
+    window.addEventListener('pointermove', onMove, true);
+    window.addEventListener('pointerdown', swallow, true);
+    window.addEventListener('mousedown', swallow, true);
+    window.addEventListener('click', onClick, true);
+    return () => {
+      document.body.classList.remove('te-inspecting');
+      window.removeEventListener('pointermove', onMove, true);
+      window.removeEventListener('pointerdown', swallow, true);
+      window.removeEventListener('mousedown', swallow, true);
+      window.removeEventListener('click', onClick, true);
+      setInspectRect(null);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inspecting]);
 
   // Collapsed → a small edge tab that re-opens the panel (the draft stays applied
   // to :root, so the app remains recolored while the panel is tucked away).
@@ -359,6 +510,7 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ onClose }) => {
   // ── token control renderers (shared by Simple + Advanced) ──────────────────
   const applyBothTitle = t('settings.theme.applyBoth');
   const eyedropperTitle = t('settings.theme.eyedropper');
+  const resetTitle = t('settings.theme.reset');
   const sliderTitles = { h: t('settings.theme.hsl.h'), s: t('settings.theme.hsl.s'), l: t('settings.theme.hsl.l'), a: t('settings.theme.hsl.a') };
 
   // A base value can legitimately be un-sanitizable (a var()-referencing gradient,
@@ -371,7 +523,8 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ onClose }) => {
     return (
       <ColorField key={token} label={labelNode} value={v} valid={tokenValid(token, v)} format={format}
         onChange={(nv) => setToken(token, nv)} onApplyBoth={(nv) => setTokenBoth(token, nv)}
-        applyBothTitle={applyBothTitle} eyedropperTitle={eyedropperTitle} sliderTitles={sliderTitles} />
+        onReset={hasOverride(token) ? () => resetToken(token) : undefined}
+        applyBothTitle={applyBothTitle} eyedropperTitle={eyedropperTitle} resetTitle={resetTitle} sliderTitles={sliderTitles} />
     );
   };
 
@@ -383,6 +536,11 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ onClose }) => {
         <span className="te-token-label">{labelNode}</span>
         <input type="text" className={`te-token-text ${valid ? '' : 'te-invalid'}`} value={v} spellCheck={false}
           onChange={(e) => setToken(token, e.target.value)} />
+        {hasOverride(token) && (
+          <button type="button" className="cf-icon" title={resetTitle} aria-label={resetTitle} onClick={() => resetToken(token)}>
+            <Icon name="rotate-ccw" size={13} />
+          </button>
+        )}
       </label>
     );
   };
@@ -403,6 +561,28 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ onClose }) => {
   const advancedGroups = ADVANCED_GROUPS
     .map((g) => ({ ...g, tokens: g.tokens.filter(matchesFilter) }))
     .filter((g) => g.tokens.length > 0);
+
+  const adaptLabel = variant === 'light' ? t('settings.theme.adaptFromLight') : t('settings.theme.adaptFromDark');
+  const toolbar = (
+    <div className="te-toolbar">
+      <button type="button" className="te-tool" onClick={undo} disabled={!undoStack.length} title={t('settings.theme.undo')} aria-label={t('settings.theme.undo')}>
+        <Icon name="rotate-ccw" size={14} />
+      </button>
+      <button type="button" className="te-tool" onClick={redo} disabled={!redoStack.length} title={t('settings.theme.redo')} aria-label={t('settings.theme.redo')}>
+        <Icon name="rotate-cw" size={14} />
+      </button>
+      <span className="te-tool-sep" />
+      <button type="button" className={`te-tool te-tool--wide ${inspecting ? 'active' : ''}`} onClick={() => setInspecting((v) => !v)} title={t('settings.theme.inspectHint')}>
+        <Icon name="crosshair" size={14} /> {t('settings.theme.inspect')}
+      </button>
+      <button type="button" className="te-tool te-tool--wide" onClick={generateFromBase} title={t('settings.theme.generateHint')}>
+        <Icon name="zap" size={14} /> {t('settings.theme.generate')}
+      </button>
+      <button type="button" className="te-tool te-tool--wide" onClick={adaptToOther} title={adaptLabel}>
+        <Icon name={variant === 'light' ? 'moon' : 'sun'} size={14} /> {adaptLabel}
+      </button>
+    </div>
+  );
 
   const modeToggleAndContrast = (
     <>
@@ -432,6 +612,10 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ onClose }) => {
   );
 
   return (
+    <>
+      {inspecting && inspectRect && (
+        <div className="te-inspect-box" style={{ left: inspectRect.x, top: inspectRect.y, width: inspectRect.w, height: inspectRect.h }} />
+      )}
     <aside className="ted" data-side={side} style={{ width }} role="region" aria-label={t('settings.theme.editorTitle')}>
       <div className="ted-resize" onPointerDown={onResizeDown} role="separator" aria-orientation="vertical" />
 
@@ -441,7 +625,7 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ onClose }) => {
           <button type="button" title={t('settings.theme.dockSide')} aria-label={t('settings.theme.dockSide')} onClick={flipSide}>
             <Icon name={side === 'right' ? 'chevron-left' : 'chevron-right'} size={16} />
           </button>
-          <button type="button" title={t('settings.theme.collapse')} aria-label={t('settings.theme.collapse')} onClick={() => setCollapsed(true)}>
+          <button type="button" title={t('settings.theme.collapse')} aria-label={t('settings.theme.collapse')} onClick={() => { setInspecting(false); setCollapsed(true); }}>
             <Icon name="minimize" size={16} />
           </button>
           <button type="button" title={t('common.close')} aria-label={t('common.close')} onClick={handleClose} disabled={busy}>
@@ -503,7 +687,7 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ onClose }) => {
                 <label className="te-field te-field--name">
                   <span>{t('settings.theme.name')}</span>
                   <input type="text" value={draft.name} maxLength={60}
-                    onChange={(e) => setDraft((d) => (d ? { ...d, name: e.target.value } : d))} />
+                    onChange={(e) => { const name = e.target.value; editDraft((d) => ({ ...d, name }), 'name'); }} />
                 </label>
                 <div className="te-field">
                   <span>{t('settings.theme.variant')}</span>
@@ -520,6 +704,7 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ onClose }) => {
                 </button>
               </div>
 
+              {toolbar}
               {modeToggleAndContrast}
 
               {editMode === 'simple' ? (
@@ -637,6 +822,7 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ onClose }) => {
         </Button>
       </footer>
     </aside>
+    </>
   );
 };
 
