@@ -37,8 +37,15 @@ export const SettingRow: React.FC<{
   control: React.ReactNode;
   /** Widen the control column for multi-field controls (e.g. path + browse). */
   wide?: boolean;
-}> = ({ label, description, icon, control, wide }) => (
-  <div className="stg-row">
+  /**
+   * Put the control on its OWN full-width line under the label. For controls
+   * that are a layout in their own right (the theme preview cards): the side
+   * column is ~300px at most, which is not enough for them, so side-by-side
+   * either crushes them or stacks them into a lonely vertical strip.
+   */
+  stack?: boolean;
+}> = ({ label, description, icon, control, wide, stack }) => (
+  <div className={`stg-row${stack ? ' stg-row--stack' : ''}`}>
     <div className="stg-row-info">
       <div className="stg-row-label">
         {icon && <Icon name={icon} size={15} />}

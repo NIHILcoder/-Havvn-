@@ -94,6 +94,22 @@
 }
 .stg-row-ctl.wide { min-width: 300px; }
 
+/* Control on its own full-width line under the label — for controls that are a
+   layout in their own right (the theme preview cards). The side column tops out
+   at 300px, which can't hold them: they either crush or collapse into a lonely
+   vertical strip beside a mostly-empty label column. */
+.stg-row--stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+.stg-row--stack .stg-row-ctl {
+  min-width: 0;
+  width: 100%;
+  justify-content: stretch;
+}
+.stg-row--stack .stg-row-ctl > * { flex: 1 1 auto; min-width: 0; }
+
 /* === Number field === */
 .stg-num {
   display: inline-flex;

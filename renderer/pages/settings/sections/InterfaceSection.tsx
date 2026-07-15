@@ -101,7 +101,7 @@ export const InterfaceSection: React.FC = () => {
         <SettingRow
           label={t('settings.theme')}
           description={t('settings.theme.desc')}
-          wide
+          stack
           control={<ThemeSelector currentTheme={ctx.theme} onThemeChange={ctx.handleThemeChange} />}
         />
         <SettingRow
