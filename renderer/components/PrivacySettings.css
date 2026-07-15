@@ -63,6 +63,12 @@
   min-width: 0;
 }
 .pv-cell--wide { grid-column: 1 / -1; }
+
+/* Two cells stop being readable in a squeezed settings column (the dock pushes
+   it narrow without changing the viewport) — drop to one. See shell.css `stg`. */
+@container stg (max-width: 420px) {
+  .pv-dash-grid { grid-template-columns: minmax(0, 1fr); }
+}
 .pv-cell-label {
   display: flex;
   align-items: center;

@@ -14,6 +14,16 @@
   flex-direction: column;
   min-width: 0;
   position: relative;
+  /* Query container for everything in the settings column. The content column is
+     far narrower than the window (sidebar 260 + nav rail 236 eat ~500px), and the
+     theme-editor dock pushes it narrower still WITHOUT changing the viewport — so
+     viewport @media can't see the real width and the rows/grids inside would
+     crush (label wrapping one word per line, cards clipped). Descendants query
+     `stg` instead. Safe: .stg-main is already position:relative (so .stg-save's
+     containing block is unchanged) and holds no position:fixed descendants —
+     .settings-alert is a sibling under .stg-page. */
+  container-type: inline-size;
+  container-name: stg;
 }
 
 .stg-head {

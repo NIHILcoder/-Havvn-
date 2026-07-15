@@ -362,7 +362,28 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* === Responsive: stack the row so nothing is ever squeezed === */
+/* === Responsive: stack the row so nothing is ever squeezed ===
+   Driven by the settings COLUMN's width (container `stg`, see shell.css), not the
+   window: the column is ~500px narrower than the viewport, and the theme-editor
+   dock squeezes it further without changing the viewport at all — so a @media
+   rule fires far too late and the label gets crushed to one word per line.
+   A row needs ~label 200px + control 190px (300px when .wide) + gap, so stack
+   below 560px. The @media rule stays as a floor for genuinely tiny windows. */
+@container stg (max-width: 560px) {
+  .stg-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    min-height: 0;
+  }
+  .stg-row-ctl,
+  .stg-row-ctl.wide {
+    min-width: 0;
+    justify-content: flex-start;
+  }
+  .stg-path { justify-content: flex-start; }
+}
+
 @media (max-width: 860px) {
   .stg-row {
     flex-direction: column;

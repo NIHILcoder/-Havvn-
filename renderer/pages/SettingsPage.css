@@ -942,6 +942,14 @@
   gap: 12px;
 }
 
+/* Each engine card needs ~220px to read; two of them + the gap need ~460px of
+   COLUMN (not window — see shell.css `stg`). Without this the pair stayed 1fr 1fr
+   inside a ~280px column, overflowing it: the second card got clipped and the
+   page grew a horizontal scrollbar. */
+@container stg (max-width: 480px) {
+  .engine-select { grid-template-columns: 1fr; }
+}
+
 @media (max-width: 640px) {
   .engine-select { grid-template-columns: 1fr; }
 }
