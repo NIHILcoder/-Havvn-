@@ -1323,7 +1323,8 @@
 }
 
 .field-textarea.tracker-textarea {
-  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+  /* Was a hardcoded stack, so it ignored the theme's mono font. */
+  font-family: var(--font-family-mono);
   font-size: 12px;
   line-height: 1.6;
 }

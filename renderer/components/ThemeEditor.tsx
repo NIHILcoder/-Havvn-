@@ -51,13 +51,19 @@ const CONTRAST_PAIRS: [string, string][] = [
 ];
 const shortToken = (name: string): string => name.replace(/^--color-/, '').replace(/^--/, '');
 
+/** One thing the inspector can offer to edit at the clicked spot. */
+interface InspectCandidate { token: string; kind: 'bg' | 'border' | 'text'; css: string; }
+
 /**
- * Inspector heuristic: match an element's used background / text / border color
- * to the whitelisted color token whose currently-applied `:root` value resolves
- * to the same RGB. Background wins over text over border. Returns the token or
- * null. Impure (reads the live DOM) — kept module-level so the component stays lean.
+ * Inspector: collect every whitelisted color token in play at the clicked spot,
+ * walking from the clicked element UP through its ancestors. A click always
+ * lands on the DEEPEST element — usually the text span — so matching only that
+ * would offer the text colour and make a folder's outline or the logo
+ * unreachable. Each level contributes its background, its border (only when one
+ * is actually drawn) and its text colour; the nearest match for a token wins.
+ * Impure (reads the live DOM) — module-level to keep the component lean.
  */
-function tokenForElement(el: Element): string | null {
+function tokenCandidatesFor(el: Element): InspectCandidate[] {
   const rootCS = getComputedStyle(document.documentElement);
   const byRgb = new Map<string, string>(); // "r,g,b" -> first token with that resolved value
   for (const tk of TOKEN_WHITELIST) {
@@ -70,14 +76,28 @@ function tokenForElement(el: Element): string | null {
     const key = `${p.r},${p.g},${p.b}`;
     if (!byRgb.has(key)) byRgb.set(key, tk);
   }
-  const cs = getComputedStyle(el);
-  for (const used of [cs.backgroundColor, cs.color, cs.borderTopColor]) {
+
+  const out: InspectCandidate[] = [];
+  const seen = new Set<string>();
+  const add = (used: string, kind: InspectCandidate['kind']) => {
     const p = parseColor(used);
-    if (!p || p.a === 0) continue;
-    const hit = byRgb.get(`${p.r},${p.g},${p.b}`);
-    if (hit) return hit;
+    if (!p || p.a === 0) return; // transparent paints nothing
+    const token = byRgb.get(`${p.r},${p.g},${p.b}`);
+    if (!token || seen.has(token)) return;
+    seen.add(token);
+    out.push({ token, kind, css: toRgbString(p) });
+  };
+
+  let depth = 0;
+  for (let e: Element | null = el; e && e !== document.body && depth < 10; e = e.parentElement, depth++) {
+    const cs = getComputedStyle(e);
+    add(cs.backgroundColor, 'bg');
+    // Only when a border is actually drawn — otherwise every element reports a
+    // border colour and would match a token it never paints.
+    if (parseFloat(cs.borderTopWidth) > 0) add(cs.borderTopColor, 'border');
+    add(cs.color, 'text');
   }
-  return null;
+  return out;
 }
 
 // Dock geometry + persistence.
@@ -180,6 +200,9 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ onClose }) => {
   const [redoStack, setRedoStack] = useState<Theme[]>([]);
   const [inspecting, setInspecting] = useState(false);
   const [inspectRect, setInspectRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  // When a click matches several layers (text vs the block's fill vs its border),
+  // ask which one instead of silently guessing.
+  const [pick, setPick] = useState<{ x: number; y: number; items: InspectCandidate[] } | null>(null);
   // Coalesces rapid same-target edits (a slider drag) into ONE undo step.
   const coalesceRef = useRef<{ key: string; time: number }>({ key: '', time: 0 });
   // Custom-font upload: hidden file input + the picked file's name for display.
@@ -585,6 +608,20 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ onClose }) => {
   const swatchOf = (theme: Theme) =>
     theme.dark['--color-accent-primary'] || theme.light['--color-accent-primary'] || 'var(--color-accent-primary)';
 
+  /** Open a token the inspector resolved: Advanced, filtered down to it. */
+  const jumpToToken = (token: string) => {
+    setPick(null);
+    setEditMode('advanced');
+    setOnlyChanged(false); // else an un-overridden hit is filtered out of view
+    setSearch(token);
+    setTab('edit');
+    note('ok', `${t('settings.theme.inspectFound')} ${token}`);
+    // The pick click focused the MAIN window — bring the popped-out editor
+    // (where the jumped-to token now shows) back to front.
+    const w = popoutRef.current;
+    if (w && !w.closed) w.focus();
+  };
+
   // Inspect mode: hover highlights any app element, click maps it to the token
   // coloring it and jumps there. Capture-phase listeners so the click never
   // reaches the app; clicks inside the dock pass through so the UI stays usable.
@@ -612,21 +649,18 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ onClose }) => {
       if (inDock(el) || !el) return; // dock clicks work normally
       e.preventDefault();
       e.stopPropagation();
-      const token = tokenForElement(el);
+      const items = tokenCandidatesFor(el);
       setInspecting(false);
-      if (token) {
-        setEditMode('advanced');
-        setOnlyChanged(false); // else an un-overridden hit is filtered out of view
-        setSearch(token);
-        setTab('edit');
-        note('ok', `${t('settings.theme.inspectFound')} ${token}`);
-      } else {
-        note('err', t('settings.theme.inspectNone'));
-      }
-      // The pick click focused the MAIN window — bring the popped-out editor
-      // (where the jumped-to token now shows) back to front.
-      const w = popoutRef.current;
-      if (w && !w.closed) w.focus();
+      if (!items.length) { note('err', t('settings.theme.inspectNone')); return; }
+      // One match → go straight there. Several (text + the block's fill + its
+      // border) → let the user say which layer they meant.
+      if (items.length === 1) jumpToToken(items[0].token);
+      else setPick({
+        // Keep the menu on screen when the click lands near an edge.
+        x: Math.max(8, Math.min(e.clientX, window.innerWidth - 300)),
+        y: Math.max(8, Math.min(e.clientY, window.innerHeight - (60 + items.length * 34))),
+        items,
+      });
     };
     document.body.classList.add('te-inspecting');
     window.addEventListener('pointermove', onMove, true);
@@ -1023,6 +1057,21 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ onClose }) => {
     <>
       {inspecting && inspectRect && (
         <div className="te-inspect-box" style={{ left: inspectRect.x, top: inspectRect.y, width: inspectRect.w, height: inspectRect.h }} />
+      )}
+      {pick && (
+        <>
+          <div className="te-pick-catch" onClick={() => setPick(null)} />
+          <div className="te-pick" style={{ left: pick.x, top: pick.y }} role="menu">
+            <div className="te-pick-title">{t('settings.theme.pickLayer')}</div>
+            {pick.items.map((it) => (
+              <button key={it.token} type="button" className="te-pick-item" role="menuitem" onClick={() => jumpToToken(it.token)}>
+                <span className="te-pick-sw" style={{ background: it.css }} />
+                <span className="te-pick-kind">{t(`settings.theme.layer.${it.kind}`)}</span>
+                <code className="te-pick-token">{it.token}</code>
+              </button>
+            ))}
+          </div>
+        </>
       )}
       {popout && !popout.closed ? createPortal(editorNode, popout.document.body) : editorNode}
     </>

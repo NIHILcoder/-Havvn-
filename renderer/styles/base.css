@@ -13,6 +13,15 @@
   padding: 0;
 }
 
+/* Form controls do NOT inherit the font from body — the UA gives them the OS
+   font instead. Without this, only components that happened to spell out
+   font-family followed the theme, so a custom font left the sidebar buttons and
+   half the settings controls in the system face. font-family only (not the `font`
+   shorthand): sizes/weights stay as each component set them. */
+button, input, select, textarea, optgroup {
+  font-family: inherit;
+}
+
 html, body {
   height: 100%;
   width: 100%;

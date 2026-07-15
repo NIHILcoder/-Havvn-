@@ -420,6 +420,16 @@ export const EDITABLE_TOKENS: readonly EditableGroup[] = [
   { id: 'font', labelKey: 'settings.theme.group.font', kind: 'font', tokens: [
     { token: '--font-family', labelKey: 'settings.theme.token.font' },
   ] },
+  { id: 'fontSize', labelKey: 'settings.theme.group.fontSize', kind: 'length', tokens: [
+    { token: '--font-size-xs', labelKey: 'settings.theme.token.fsXs' },
+    { token: '--font-size-sm', labelKey: 'settings.theme.token.fsSm' },
+    { token: '--font-size-base', labelKey: 'settings.theme.token.fsBase' },
+    { token: '--font-size-md', labelKey: 'settings.theme.token.fsMd' },
+    { token: '--font-size-lg', labelKey: 'settings.theme.token.fsLg' },
+    { token: '--font-size-xl', labelKey: 'settings.theme.token.fsXl' },
+    { token: '--font-size-2xl', labelKey: 'settings.theme.token.fs2xl' },
+    { token: '--font-size-3xl', labelKey: 'settings.theme.token.fs3xl' },
+  ] },
   { id: 'radius', labelKey: 'settings.theme.group.radius', kind: 'length', tokens: [
     { token: '--radius-sm', labelKey: 'settings.theme.token.radiusSm' },
     { token: '--radius-md', labelKey: 'settings.theme.token.radiusMd' },
