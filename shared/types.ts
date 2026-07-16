@@ -90,8 +90,9 @@ export interface ShareInfo {
 
 // ── Friend swarms / private rooms (Phase 3) ────────────────────────────────
 // A "room" is a serverless private group: members share an invite code, derive
-// a shared key from it, find each other via a tracker rendezvous (topicHash),
-// gossip an add-only file manifest over encrypted WebRTC data channels, and
+// a shared key from it, find each other via a tracker rendezvous id derived
+// from that key, gossip an add-only file manifest over encrypted WebRTC data
+// channels, and
 // auto-distribute the files P2P (same WebTorrent swarm infra as share links).
 
 /** One file in a room's shared, add-only manifest. Keyed by infoHash. */
@@ -193,7 +194,7 @@ export interface RoomState {
   name: string;
   code: string;          // the secret invite code
   folder: string;        // local shared folder path
-  topicHash: string;     // sha1 rendezvous topic derived from the code
+  topicHash: string;     // internal signature domain separator, sha1(code) — NOT the tracker rendezvous (that is key-derived and never sent here)
   createdAt: number;
   ownerId: string;       // memberId of the room owner ('' until learned)
   canManage: boolean;    // this install is the owner (may kick/rekey)
