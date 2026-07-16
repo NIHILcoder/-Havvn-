@@ -138,6 +138,15 @@ const RoomsPage: React.FC<RoomsPageProps> = ({ focusRoomId, onFocusHandled, onRo
     return off;
   }, []);
 
+  // The VPN kill-switch suspends/resumes all room networking; refetch the list
+  // so its `suspended` flag (and the paused notice below) update at once instead
+  // of waiting for a poll.
+  useEffect(() => {
+    const offDrop = window.api.onVpnDropped(() => { void refreshList(); });
+    const offUp = window.api.onVpnRestored(() => { void refreshList(); });
+    return () => { offDrop(); offUp(); };
+  }, [refreshList]);
+
   // Load detail when selection changes. A dead id (room left elsewhere, stale
   // "online now" entry) clears the selection so the auto-select effect can
   // recover instead of stranding the page on a permanent loading state.
@@ -378,7 +387,15 @@ const RoomsPage: React.FC<RoomsPageProps> = ({ focusRoomId, onFocusHandled, onRo
           {/* Room detail — the room list lives in the sidebar rail */}
           <section className="room-detail">
             {!room ? (
-              <div className="page-loading">{t('common.loading')}</div>
+              rooms.some((r) => r.suspended) ? (
+                <div className="room-suspended">
+                  <Icon name="shield" size={28} />
+                  <p className="room-suspended-title">{t('rooms.suspended.title')}</p>
+                  <p className="room-suspended-body">{t('rooms.suspended.body')}</p>
+                </div>
+              ) : (
+                <div className="page-loading">{t('common.loading')}</div>
+              )
             ) : (
               <RoomDetail
                 room={room}

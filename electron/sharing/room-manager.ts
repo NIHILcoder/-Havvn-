@@ -41,6 +41,10 @@ export class RoomManager {
   private reqSeq = 0;
   private ipcWired = false;
   private cache = new Map<string, RoomState>();
+  // Set by the VPN kill-switch: while true, no room may (re)join the network —
+  // every lazy reactivation funnels through reactivate(), so gating it there
+  // closes every re-leak path at once.
+  private networkSuspended = false;
 
   constructor() {
     // Renderer-facing liveness channels live HERE (not ipc/handlers.ts): they
@@ -192,9 +196,9 @@ export class RoomManager {
   private async ensureWindow(): Promise<BrowserWindow> {
     this.wireIpc();
     if (this.win && !this.win.isDestroyed()) {
-      if (this.ready) return this.win;
+      if (this.ready) return this.readied(this.win);
       await new Promise<void>((res) => this.readyWaiters.push(res));
-      return this.win;
+      return this.readied(this.win);
     }
     this.ready = false;
     const preload = path.join(__dirname, 'room-engine.js');
@@ -219,6 +223,19 @@ export class RoomManager {
     await win.loadURL('about:blank');
     if (!this.ready) await new Promise<void>((res) => this.readyWaiters.push(res));
     log.info('Room window ready');
+    return this.readied(win);
+  }
+
+  /**
+   * Hand back a ready engine window, re-asserting the kill-switch gate first: a
+   * window spawned (or re-spawned after a crash) DURING a VPN outage must start
+   * suspended, or a 'join' that raced the manager flag would bring up networking
+   * on the real IP. Fire-and-forget — the engine sets its flag synchronously and
+   * this send precedes the caller's command (IPC preserves order), so the gate is
+   * up before any join is processed.
+   */
+  private readied(win: BrowserWindow): BrowserWindow {
+    if (this.networkSuspended) win.webContents.send('room-cmd', { type: 'netSuspend', reqId: ++this.reqSeq });
     return win;
   }
 
@@ -297,7 +314,15 @@ export class RoomManager {
     return profile;
   }
 
+  /** Refuse any fresh join while the VPN kill-switch has rooms suspended —
+   *  createRoom/joinRoom drive the engine's 'join' directly, bypassing the
+   *  reactivate() gate, so they must check here too or they'd start leaking. */
+  private assertNotSuspended(): void {
+    if (this.networkSuspended) throw new Error('Rooms are paused: the VPN is down. Reconnect it first.');
+  }
+
   async createRoom(name: string, e2e = false): Promise<RoomState> {
+    this.assertNotSuspended();
     const roomId = uuidv4();
     const code = generateRoomCode(e2e); // E2E rooms carry the marker in the code itself
     const folder = path.join(await this.roomsBase(), slugify(name) + '-' + roomId.slice(0, 6));
@@ -316,6 +341,7 @@ export class RoomManager {
   }
 
   async joinRoom(rawCode: string): Promise<RoomState> {
+    this.assertNotSuspended();
     const code = normalizeCode(rawCode);
     if (!code) throw new Error('Empty room code');
     // Already joined this code? Return the existing room.
@@ -338,6 +364,13 @@ export class RoomManager {
   }
 
   private async reactivate(r: db.PersistedRoom): Promise<RoomState> {
+    // The VPN is down (kill-switch). Never rejoin the network — hand back the
+    // last-known state if we have it, otherwise fail closed.
+    if (this.networkSuspended) {
+      const cached = this.cache.get(r.roomId);
+      if (cached) return cached;
+      throw new Error('Rooms are paused: the VPN is down (kill-switch)');
+    }
     const { type, payload } = await this.joinPayload(r.roomId, r.name, r.code, r.folder, r.ownerId, r.e2e, r.secret, r.e2eCfg);
     const state = await this.call<RoomState>(type, { payload });
     state.createdAt = r.createdAt;
@@ -388,6 +421,7 @@ export class RoomManager {
         fileCount: s ? s.files.length : 0,
         createdAt: r.createdAt,
         e2e: r.e2e ?? false,
+        suspended: this.networkSuspended,
       };
     });
   }
@@ -562,6 +596,44 @@ export class RoomManager {
    *  the engine flips on/off from its current state and gossips the change). */
   async reactFile(roomId: string, fileId: string, emoji: string): Promise<{ ok: boolean }> {
     return this.call<{ ok: boolean }>('reactFile', { roomId, fileId, emoji }, 8000);
+  }
+
+  /**
+   * VPN kill-switch tripped (VPN dropped): stop every room from seeding,
+   * announcing or holding a peer wire, so no room leaks the real IP while
+   * unprotected. The flag is set FIRST so any lazy reactivation (open a room,
+   * add a file) fails closed instead of quietly rejoining. If the engine window
+   * isn't even running there is nothing seeding — just set the flag (and don't
+   * spawn the engine merely to suspend it).
+   */
+  async suspendNetworking(): Promise<void> {
+    if (this.networkSuspended) return;
+    this.networkSuspended = true;
+    log.warn('VPN dropped — suspending all room networking');
+    // Only if the engine window already exists — never spawn it merely to
+    // suspend (nothing is seeding if it was never started). ensureWindow (inside
+    // call) waits for readiness, so a drop during engine startup still tears down
+    // every room that finishes joining.
+    if (this.win && !this.win.isDestroyed()) {
+      try { await this.call('netSuspend', {}, 8000); } catch (e) { log.warn('netSuspend failed', { err: String(e) }); }
+    }
+    this.cache.clear();
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) this.mainWindow.webContents.send('rooms:netSuspended', { suspended: true });
+  }
+
+  /** VPN restored: lift the freeze and re-join every room from the persisted
+   *  state (the same path as startup). */
+  async resumeNetworking(): Promise<void> {
+    if (!this.networkSuspended) return;
+    this.networkSuspended = false;
+    log.info('VPN restored — resuming room networking');
+    // Lift the ENGINE's gate first (if the window survived the outage) so the
+    // re-joins below are allowed through; a fresh window starts un-suspended.
+    if (this.win && !this.win.isDestroyed()) {
+      try { await this.call('netResume', {}, 8000); } catch (e) { log.warn('netResume failed', { err: String(e) }); }
+    }
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) this.mainWindow.webContents.send('rooms:netSuspended', { suspended: false });
+    await this.restoreAll();
   }
 
   /** Re-join all persisted rooms on startup so swarms reconnect automatically. */

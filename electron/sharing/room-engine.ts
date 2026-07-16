@@ -196,6 +196,12 @@ interface Room {
 // two rooms sharing identical content stop colliding on one infoHash).
 const clients = new Map<string, any>();  // roomId → WebTorrent client
 const rooms = new Map<string, Room>();
+// VPN kill-switch: while true, NO room may bring up networking. This is the
+// authoritative gate — the manager's flag is only a fast-fail hint and is
+// race-prone (a 'join' can reach us AFTER 'netSuspend' via an await interleave
+// or the engine-window boot ordering). The engine processes room-cmd messages
+// serially, so once this is set, every later 'join' is refused until 'netResume'.
+let netSuspended = false;
 let wireSeq = 0;
 // Debug handles for the hidden window's console/CDP — rooms and clients are
 // module-scoped and otherwise unreachable when diagnosing a live install.
@@ -208,6 +214,13 @@ function kbpsToLimit(kbps: number): number {
 }
 
 function ensureClient(room: Room): any {
+  // Kill-switch chokepoint: NEVER construct a WebTorrent client while suspended,
+  // or for a room already torn down. An async command that yielded before
+  // netSuspend ran (e.g. an in-flight addFiles loop) still holds a live `room`
+  // reference; without this, its next seed would build a fresh client keyed to a
+  // deleted roomId — one that suspendAllNetworking can never find to tear down,
+  // leaking on the real IP for the whole outage.
+  if (netSuspended || !rooms.has(room.roomId)) throw new Error('Room networking is suspended (VPN kill-switch)');
   let c = clients.get(room.roomId);
   if (!c) {
     c = new WebTorrent({
@@ -1501,6 +1514,31 @@ function applyLocalRekey(room: Room, newCode: string, kickedId: string, kickedNa
   pushState(room, true);
 }
 
+/**
+ * VPN kill-switch: the VPN dropped, so tear down ALL room networking at once —
+ * every per-room WebTorrent client (stops seeding + tracker announces), every
+ * rendezvous tracker, every peer wire — so nothing keeps exposing the real IP to
+ * a swarm. Rooms are dropped from memory; the manager revives them from the
+ * persisted state (the same path as startup) once the VPN is back. Immediate and
+ * synchronous (no deferred 'bye' like leaveRoom — the network is already gone).
+ */
+function suspendAllNetworking(): void {
+  let n = 0;
+  for (const room of Array.from(rooms.values())) {
+    try { room.tracker?.stop(); room.tracker?.destroy(); } catch { /* ignore */ }
+    room.tracker = null;
+    for (const wire of room.wires.values()) { try { wire.peer.destroy(); } catch { /* ignore */ } }
+    room.wires.clear();
+    const c = clients.get(room.roomId);
+    clients.delete(room.roomId);
+    try { c?.destroy(); } catch { /* ignore */ }
+    room.started = false;
+    rooms.delete(room.roomId);
+    n++;
+  }
+  log('VPN kill-switch: suspended networking for ' + n + ' room(s)');
+}
+
 /** We were removed by the owner: surface it in the UI, stop announcing, and drop
  *  every wire so we don't linger in the swarm the room just rotated away from. */
 function markKicked(room: Room, byName: string): void {
@@ -1544,6 +1582,10 @@ function kickMember(room: Room, memberId: string): void {
 // ── Room lifecycle ───────────────────────────────────────────────────────────
 function startRoom(p: { roomId: string; name: string; code: string; folder: string;
   self: { memberId: string; name: string; avatarSeed: string; pub: string; priv: string }; useTurn: boolean; turnServers?: any[]; tombstones?: Record<string, number>; manifest?: PersistedRoomFile[]; folders?: RoomFolder[]; folderTombs?: Record<string, number>; ownerId?: string; mutes?: string[]; history?: RoomEvent[]; chat?: RoomChatMessage[]; reacts?: Record<string, Record<string, string[]>>; identities?: Record<string, string>; e2e?: boolean; secret?: string; e2eCfg?: E2ECfg | null; cacheDir?: string; autoFetch?: boolean; upKbps?: number; downKbps?: number }): RoomState {
+  // Authoritative kill-switch gate: refuse to bring up ANY room networking while
+  // the VPN is down, no matter how this join raced past the manager's flag. The
+  // manager clears this via 'netResume' before it re-joins on VPN restore.
+  if (netSuspended) throw new Error('Rooms are paused: the VPN is down (kill-switch)');
   let room = rooms.get(p.roomId);
   if (room) return buildState(room);
 
@@ -1886,6 +1928,8 @@ ipcRenderer.on('room-cmd', async (_e, msg: any) => {
     else if (type === 'deleteFolder') data = deleteFolder(msg.roomId, msg.folderId);
     else if (type === 'assignFile') data = assignFile(msg.roomId, msg.fileId, msg.folderId ?? null);
     else if (type === 'leave') { leaveRoom(msg.roomId); data = { ok: true }; }
+    else if (type === 'netSuspend') { netSuspended = true; suspendAllNetworking(); data = { ok: true }; }
+    else if (type === 'netResume') { netSuspended = false; data = { ok: true }; }
     else if (type === 'profile') { updateProfile(msg.payload || {}); data = { ok: true }; }
     else if (type === 'releaseFile') { releaseFile(msg.roomId, msg.fileId); data = { ok: true }; }
     else if (type === 'removeFile') {

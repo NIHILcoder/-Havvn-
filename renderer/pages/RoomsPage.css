@@ -1307,3 +1307,19 @@
 }
 .room-kicked-banner span { flex: 1; }
 .room-kicked-banner svg { flex-shrink: 0; }
+
+/* VPN kill-switch: rooms suspended (no networking until the VPN returns). */
+.room-suspended {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 32px;
+  text-align: center;
+  color: var(--color-text-tertiary);
+}
+.room-suspended svg { color: var(--color-warning); }
+.room-suspended-title { margin: 4px 0 0; font-size: var(--font-size-md); font-weight: var(--font-weight-semibold); color: var(--color-text-primary); }
+.room-suspended-body { margin: 0; max-width: 42ch; font-size: var(--font-size-sm); line-height: 1.5; }

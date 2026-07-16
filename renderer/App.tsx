@@ -61,7 +61,7 @@ const AppContent: React.FC = () => {
   // Torrent/magnet handed to us by the OS — passed to DownloadsPage to open the add dialog
   const [openTorrentUri, setOpenTorrentUri] = useState<string | null>(null);
   // VPN kill-switch warning banner (set when the guard auto-pauses on VPN drop)
-  const [vpnAlert, setVpnAlert] = useState<{ paused: number; publicIP?: string } | null>(null);
+  const [vpnAlert, setVpnAlert] = useState<{ paused: number; rooms?: boolean; publicIP?: string } | null>(null);
   // Engine VPN-bind banner (bound address vanished — sockets dead until VPN returns)
   const [vpnBindAlert, setVpnBindAlert] = useState(false);
   // In-flight on-completion countdown (sleep/shutdown/quit) — cancellable modal
@@ -488,6 +488,7 @@ const AppContent: React.FC = () => {
               {vpnAlert.paused > 0
                 ? `${vpnAlert.paused} ${t('app.banner.torrentsPausedIp')}`
                 : t('app.banner.vpnDown')}
+              {vpnAlert.rooms ? ` ${t('app.banner.roomsPaused')}` : ''}
               {vpnAlert.publicIP ? ` ${t('app.banner.currentIp')} ${vpnAlert.publicIP}.` : ''}
               {' '}{t('app.banner.vpnReconnect')}
             </AlertBanner>

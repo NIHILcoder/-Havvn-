@@ -24,6 +24,7 @@ import { logger } from './logger';
 import { showOsNotification } from './os-notify';
 import * as db from '../db/store';
 import { getTorrentManager } from '../torrent';
+import { getRoomManager } from '../sharing/room-manager';
 import { t } from '../i18n';
 
 const log = logger.child('VPNGuard');
@@ -78,6 +79,16 @@ export async function restartGuardFromConfig(): Promise<void> {
   const bindChanged = bind !== bindOn;
   killSwitchOn = killSwitch;
   bindOn = bind;
+  // Kill-switch turned OFF: the user opted out of protection, so un-freeze any
+  // rooms the switch had suspended — otherwise they stay dark forever (the guard
+  // that would revive them on VPN-restore is now gone). Idempotent: no-op if
+  // nothing is suspended. Also clear the trip latch so it re-arms cleanly if
+  // re-enabled.
+  if (killSwitchChanged && !killSwitch) {
+    tripped = false;
+    lastVpnActive = null;
+    try { await getRoomManager().resumeNetworking(); } catch (e) { log.error('Room resume on kill-switch disable failed', { error: e instanceof Error ? e.message : String(e) }); }
+  }
   if (!killSwitchOn && !bindOn) {
     log.info('VPN guard disabled');
     return;
@@ -95,9 +106,12 @@ export async function restartGuardFromConfig(): Promise<void> {
     bindLost = false;
     pendingRebindIp = null;
   }
-  timer = setInterval(() => { void tick(); }, CHECK_INTERVAL_MS);
+  // Never let two ticks overlap: a slow detectVPN() could otherwise let a later
+  // tick's resume run before an earlier tick's suspend finishes, leaving a room
+  // in the wrong state. runTick serializes them.
+  timer = setInterval(() => { void runTick(); }, CHECK_INTERVAL_MS);
   // Run one check shortly after enabling
-  setTimeout(() => { void tick(); }, 2_000);
+  setTimeout(() => { void runTick(); }, 2_000);
 }
 
 export function stopVpnGuard(): void {
@@ -105,6 +119,14 @@ export function stopVpnGuard(): void {
     clearInterval(timer);
     timer = null;
   }
+}
+
+let tickRunning = false;
+/** Serialize ticks so suspend/resume can never interleave out of order. */
+async function runTick(): Promise<void> {
+  if (tickRunning) return;
+  tickRunning = true;
+  try { await tick(); } finally { tickRunning = false; }
 }
 
 async function tick(): Promise<void> {
@@ -136,28 +158,50 @@ async function tickKillSwitch(): Promise<void> {
   );
 
   const result = await detectVPN();
+  // The kill-switch could have been disabled WHILE this tick awaited detectVPN()
+  // (restartGuardFromConfig runs on a settings change and already resumed rooms +
+  // reset the latches). A stale tick must not act on that reset state and
+  // re-suspend rooms with no timer left to ever revive them.
+  if (!killSwitchOn) return;
   const vpnActive = result.isVPNActive;
 
   // VPN dropped: was active (or known) and now inactive, with active torrents
-  if (lastVpnActive !== false && !vpnActive && hasActive && !tripped) {
+  // Rooms seed over their OWN WebTorrent clients in a separate engine window, so
+  // pausing torrents alone still leaks the real IP through every active room —
+  // check for room activity too, not just downloads.
+  const hasRooms = (() => { try { return db.getPersistedRooms().length > 0; } catch { return false; } })();
+
+  if (lastVpnActive !== false && !vpnActive && (hasActive || hasRooms) && !tripped) {
     tripped = true;
     const count = await manager.pauseAllActive();
-    log.warn('VPN dropped — auto-paused all torrents', { paused: count });
+    // The kill-switch may have been disabled DURING pauseAllActive() (a manual
+    // toggle racing this drop). If so, don't suspend rooms — the disable path
+    // already ran resumeNetworking() as a no-op (nothing was suspended yet) and
+    // cleared the timer, so suspending here would freeze rooms with nothing left
+    // to ever revive them. Torrents already paused is harmless (manual resume).
+    if (!killSwitchOn) return;
+    // Fail closed: also tear down every room's networking (the kill-switch used
+    // to cover only the torrent engine).
+    try { await getRoomManager().suspendNetworking(); } catch (e) { log.error('Room suspend on VPN drop failed', { error: e instanceof Error ? e.message : String(e) }); }
+    log.warn('VPN dropped — auto-paused all torrents + suspended rooms', { paused: count });
     showOsNotification(
       t('notify.vpnLost.title'),
       count > 0
         ? t(count === 1 ? 'notify.vpnLost.bodyOne' : 'notify.vpnLost.bodyMany', { count })
-        : t('notify.vpnLost.bodyNone'),
+        : hasRooms ? t('notify.vpnLost.bodyRooms') : t('notify.vpnLost.bodyNone'),
       { critical: true },
     );
-    sendToRenderer('app:vpnDropped', { paused: count, publicIP: result.details.publicIP });
+    sendToRenderer('app:vpnDropped', { paused: count, rooms: hasRooms, publicIP: result.details.publicIP });
   }
 
   // VPN restored: clear the tripped latch so a future drop trips again.
-  // Resume stays manual — we only inform the renderer.
+  // Torrent resume stays MANUAL (the user decides when it's safe), but rooms
+  // auto-revive — the VPN is confirmed back here, so it's safe, and a room left
+  // dark with no obvious "reconnect" is worse than a paused download.
   if (vpnActive && tripped) {
     tripped = false;
-    log.info('VPN restored — kill-switch re-armed (resume is manual)');
+    try { await getRoomManager().resumeNetworking(); } catch (e) { log.error('Room resume on VPN restore failed', { error: e instanceof Error ? e.message : String(e) }); }
+    log.info('VPN restored — torrents stay paused (manual), rooms revived');
     sendToRenderer('app:vpnRestored', {});
   }
 

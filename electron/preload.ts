@@ -458,8 +458,8 @@ const api: IpcApi = {
     regenToken: () => ipcRenderer.invoke('webRemote:regenToken'),
   },
 
-  onVpnDropped: (callback: (info: { paused: number; publicIP?: string }) => void): (() => void) => {
-    const handler = (_e: IpcRendererEvent, info: { paused: number; publicIP?: string }) => callback(info);
+  onVpnDropped: (callback: (info: { paused: number; rooms?: boolean; publicIP?: string }) => void): (() => void) => {
+    const handler = (_e: IpcRendererEvent, info: { paused: number; rooms?: boolean; publicIP?: string }) => callback(info);
     ipcRenderer.on('app:vpnDropped', handler);
     return () => { ipcRenderer.removeListener('app:vpnDropped', handler); };
   },

@@ -228,6 +228,9 @@ export interface RoomSummary {
   createdAt: number;
   /** End-to-end encrypted room — sharing makes an encrypted on-disk copy. */
   e2e?: boolean;
+  /** Networking torn down by the VPN kill-switch (VPN dropped) — nothing is
+   *  seeding or announcing until the VPN returns. */
+  suspended?: boolean;
 }
 
 /** This install's identity in rooms. */
@@ -931,7 +934,7 @@ export interface IpcApi {
     setEnabled: (enabled: boolean) => Promise<{ enabled: boolean; running: boolean; url: string | null; port: number }>;
     regenToken: () => Promise<{ enabled: boolean; running: boolean; url: string | null; port: number }>;
   };
-  onVpnDropped: (callback: (info: { paused: number; publicIP?: string }) => void) => () => void;
+  onVpnDropped: (callback: (info: { paused: number; rooms?: boolean; publicIP?: string }) => void) => () => void;
   onVpnRestored: (callback: () => void) => () => void;
   // Engine VPN-bind lifecycle: lost = bound address vanished (sockets dead),
   // rebound = engine restarted onto a new VPN IP, restored = same IP came back.
