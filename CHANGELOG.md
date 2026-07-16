@@ -4,6 +4,32 @@ All notable changes to Havvn (formerly TorrentHunt) are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [2.15.0] - 2026-07-15
+
+Rooms privacy hardening. If you rely on the VPN kill-switch or share in rooms,
+this one matters.
+
+### Fixed
+- **The VPN kill-switch now covers rooms, not just downloads.** Rooms seed over
+  their own connections, so a VPN drop used to pause your torrents while every
+  room kept sharing from your real IP. Now a drop tears down all room networking
+  too, and rooms reconnect automatically once the VPN is back.
+- **A room's invite code can no longer be recovered from the trackers.** The id
+  a room announced on the public trackers was a plain hash of the (short) invite
+  code, so a tracker operator could work backwards to the code — and the room
+  key. That id is now derived through the same slow key function, closing the
+  shortcut.
+
+### Changed
+- **New rooms are end-to-end encrypted by default.** A default room used to send
+  its files in plaintext to the public swarm; now they're encrypted unless you
+  deliberately turn E2E off (with a clear warning when you do).
+
+### Compatibility
+- Because of the rendezvous change, a room created in 2.15.0 won't find peers
+  still on 2.14.x until everyone updates. The invite codes and all your data are
+  unchanged — two updated peers connect normally.
+
 ## [2.14.2] - 2026-07-15
 
 Windows and panels stay where you put them.
