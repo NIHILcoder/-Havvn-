@@ -233,14 +233,22 @@ describe('sanitizeVoiceSettings', () => {
     expect(sanitizeVoiceSettings({ inputDeviceId: '' }).inputDeviceId).toBeNull();
     expect(sanitizeVoiceSettings({ inputDeviceId: 12 }).inputDeviceId).toBeNull();
     expect(sanitizeVoiceSettings({ inputDeviceId: 'x'.repeat(300) }).inputDeviceId).toBeNull(); // oversized
-    const s = sanitizeVoiceSettings({ echoCancellation: false, noiseSuppression: 'yes', autoGainControl: undefined });
+    const s = sanitizeVoiceSettings({ echoCancellation: false, autoGainControl: undefined });
     expect(s.echoCancellation).toBe(false);   // explicit false honored
-    expect(s.noiseSuppression).toBe(true);    // anything but false → on
-    expect(s.autoGainControl).toBe(true);
+    expect(s.autoGainControl).toBe(true);      // anything but false → on
+  });
+
+  it('clamps the noise-suppression mode, defaulting to enhanced', () => {
+    expect(defaultVoiceSettings().noiseSuppressionMode).toBe('enhanced');
+    expect(sanitizeVoiceSettings({ noiseSuppressionMode: 'off' }).noiseSuppressionMode).toBe('off');
+    expect(sanitizeVoiceSettings({ noiseSuppressionMode: 'standard' }).noiseSuppressionMode).toBe('standard');
+    expect(sanitizeVoiceSettings({ noiseSuppressionMode: 'enhanced' }).noiseSuppressionMode).toBe('enhanced');
+    expect(sanitizeVoiceSettings({ noiseSuppressionMode: 'bogus' }).noiseSuppressionMode).toBe('enhanced'); // unknown → default
+    expect(sanitizeVoiceSettings({ noiseSuppressionMode: true }).noiseSuppressionMode).toBe('enhanced');    // old boolean shape → default
   });
 
   it('keeps a passthrough round-trip stable', () => {
-    const custom = { ...defaultVoiceSettings(), inputGain: 1.5, vadThreshold: 30, outputDeviceId: 'spk-1', echoCancellation: false };
+    const custom = { ...defaultVoiceSettings(), inputGain: 1.5, vadThreshold: 30, outputDeviceId: 'spk-1', echoCancellation: false, noiseSuppressionMode: 'standard' as const };
     expect(sanitizeVoiceSettings(custom)).toEqual(custom);
   });
 });

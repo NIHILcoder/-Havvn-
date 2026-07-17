@@ -16,7 +16,9 @@
  * the presence/negotiation machinery.
  */
 
-import type { VoiceSettings } from '../../shared/types';
+import type { VoiceSettings, NoiseSuppressionMode } from '../../shared/types';
+import { RNNOISE_WASM_BASE64 } from './voice/rnnoise-wasm';
+import { RNNOISE_WORKLET_SOURCE } from './voice/rnnoise-worklet';
 
 export type SignalKind = 'offer' | 'answer' | 'ice';
 
@@ -32,9 +34,13 @@ export function defaultVoiceSettings(): VoiceSettings {
     masterVolume: 1,
     vadThreshold: 14,
     echoCancellation: true,
-    noiseSuppression: true,
+    noiseSuppressionMode: 'enhanced',
     autoGainControl: true,
   };
+}
+
+function sanitizeNsMode(v: unknown): NoiseSuppressionMode {
+  return v === 'off' || v === 'standard' || v === 'enhanced' ? v : 'enhanced';
 }
 
 /** Clamp untrusted (renderer-supplied) settings into safe bounds. */
@@ -54,14 +60,22 @@ export function sanitizeVoiceSettings(raw: unknown): VoiceSettings {
     masterVolume: num(r.masterVolume, 0, 1, d.masterVolume),
     vadThreshold: num(r.vadThreshold, 1, 128, d.vadThreshold),
     echoCancellation: r.echoCancellation !== false,
-    noiseSuppression: r.noiseSuppression !== false,
+    noiseSuppressionMode: sanitizeNsMode(r.noiseSuppressionMode),
     autoGainControl: r.autoGainControl !== false,
   };
 }
 
-/** The knobs that require a fresh getUserMedia (vs live-adjustable ones). */
+/** Should the browser's built-in noise suppression be requested? Only in 'standard'
+ *  mode — 'enhanced' uses RNNoise (double-processing hurts) and 'off' uses neither. */
+function browserNs(s: VoiceSettings): boolean {
+  return s.noiseSuppressionMode === 'standard';
+}
+
+/** The knobs that require a fresh getUserMedia (vs live-adjustable ones). The NS mode
+ *  is here because it changes the browser noiseSuppression constraint AND the graph
+ *  topology (RNNoise node in/out), both reconciled through the recapture path. */
 function captureKey(s: VoiceSettings): string {
-  return JSON.stringify([s.inputDeviceId, s.echoCancellation, s.noiseSuppression, s.autoGainControl]);
+  return JSON.stringify([s.inputDeviceId, s.echoCancellation, browserNs(s), s.autoGainControl, s.noiseSuppressionMode]);
 }
 
 /** Loopback (engine → visible renderer) signaling kinds for the screen-watch
@@ -483,9 +497,12 @@ export class VoiceSession {
   private vadOpen = false;           // local VAD currently detecting speech
   private localStream: MediaStream | null = null; // PROCESSED (post-gain) stream — its track is sent to peers, gated
   private rawStream: MediaStream | null = null;   // physical mic capture feeding the pipeline (pre-gain)
-  private audioCtx: AudioContext | null = null;   // capture pipeline: source → gain → destination
+  private audioCtx: AudioContext | null = null;   // capture pipeline: source → [rnnoise] → gain → destination
   private srcNode: MediaStreamAudioSourceNode | null = null;
   private gainNode: GainNode | null = null;
+  private rnnoiseNode: AudioWorkletNode | null = null; // RNNoise NS worklet ('enhanced' mode), inserted src→rnnoise→gain
+  private rnnoiseModuleAdded = false;             // audioWorklet.addModule('rnnoise') done for the CURRENT audioCtx
+  private rnnoiseWarned = false;                   // already toasted "enhanced NS unavailable" this session (don't spam)
   private curCaptureKey = '';                     // captureKey() the current rawStream was REQUESTED with
   private usingFallback = false;                   // the preferred input device was absent — running on the default
   private captureBroken = false;                   // recapture failed with NO device at all — retry on the next devicechange
@@ -525,7 +542,7 @@ export class VoiceSession {
   private async captureMic(s: VoiceSettings): Promise<{ stream: MediaStream; warning?: string }> {
     const base = {
       echoCancellation: s.echoCancellation,
-      noiseSuppression: s.noiseSuppression,
+      noiseSuppression: browserNs(s), // browser DSP only in 'standard'; 'enhanced' uses RNNoise, 'off' uses neither
       autoGainControl: s.autoGainControl,
     };
     if (s.inputDeviceId) {
@@ -537,21 +554,95 @@ export class VoiceSession {
     return { stream, warning: s.inputDeviceId ? 'Selected microphone is unavailable — using the system default.' : undefined };
   }
 
-  /** Build (or rebuild) the capture pipeline: raw mic → gain → sent stream. On Web
-   *  Audio failure the raw stream is sent directly (gain then has no effect). */
-  private buildPipeline(raw: MediaStream, s: VoiceSettings): MediaStream {
+  /** Lazily add the RNNoise worklet module to the CURRENT AudioContext and create the
+   *  node, handing it the WASM bytes. Returns null (→ caller falls back to 'standard')
+   *  if the worklet/WASM can't load. RNNoise wants 48kHz — the context is built at
+   *  48kHz, so no per-node resampling. */
+  private async ensureRnnoiseNode(): Promise<AudioWorkletNode | null> {
+    if (!this.audioCtx) return null;
+    if (this.rnnoiseNode) return this.rnnoiseNode;
     try {
-      this.audioCtx = new AudioContext();
+      if (!this.rnnoiseModuleAdded) {
+        const url = URL.createObjectURL(new Blob([RNNOISE_WORKLET_SOURCE], { type: 'application/javascript' }));
+        try { await this.audioCtx.audioWorklet.addModule(url); } finally { URL.revokeObjectURL(url); }
+        this.rnnoiseModuleAdded = true;
+      }
+      const node = new AudioWorkletNode(this.audioCtx, 'rnnoise', {
+        numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
+        channelCount: 1, channelCountMode: 'explicit', channelInterpretation: 'speakers',
+      });
+      // If the WASM fails to instantiate INSIDE the worklet, the processor passes
+      // audio through untouched (working but unsuppressed) — warn so it isn't silent.
+      node.port.onmessage = (e: MessageEvent) => {
+        if ((e.data as { type?: string })?.type === 'error') {
+          this.a.log('rnnoise worklet init error: ' + String((e.data as { message?: string }).message));
+          this.a.warn('Enhanced noise suppression failed to start — using none.');
+        }
+      };
+      // Decode the base64 WASM (Buffer exists in the engine preload) and post a fresh
+      // copy (not transferred — we may re-init on a later context).
+      const bytes = Uint8Array.from(Buffer.from(RNNOISE_WASM_BASE64, 'base64'));
+      node.port.postMessage({ type: 'wasm', bytes });
+      this.rnnoiseNode = node;
+      return node;
+    } catch (e) {
+      this.a.log('rnnoise worklet load failed: ' + String(e));
+      return null;
+    }
+  }
+
+  /** Wire src → [rnnoise?] → gain for the given NS mode, keeping the SAME gain→dest
+   *  edge so the sent track (dest.stream) never changes → no renegotiation. Disconnects
+   *  the source's old fan-out first. RNNoise unavailability silently degrades to a
+   *  direct src→gain (browser 'standard' NS is separately requested at capture time). */
+  private async connectGraph(mode: NoiseSuppressionMode): Promise<void> {
+    if (!this.audioCtx || !this.srcNode || !this.gainNode) return;
+    try { this.srcNode.disconnect(); } catch { /* ignore */ }
+    if (this.rnnoiseNode) { try { this.rnnoiseNode.disconnect(); } catch { /* ignore */ } }
+    let rnnoiseFailed = false;
+    if (mode === 'enhanced') {
+      const node = await this.ensureRnnoiseNode();
+      // ensureRnnoiseNode awaits addModule — a leave() may have torn the graph down
+      // meanwhile; bail if so (the caller re-checks active too).
+      if (node && this.audioCtx && this.srcNode && this.gainNode) {
+        this.srcNode.connect(node);
+        node.connect(this.gainNode);
+        this.rnnoiseWarned = false; // a later failure should warn again
+        return;
+      }
+      if (!this.audioCtx || !this.srcNode || !this.gainNode) return; // torn down mid-await
+      rnnoiseFailed = true;
+    }
+    // 'off' / 'standard' / enhanced-fallback: straight through. NOTE: on the enhanced
+    // fallback there is NO browser NS either (captureMic requested it off), so the
+    // honest message is "none", not "standard". Warn once per session (a persistently
+    // failing addModule would otherwise re-warn on every capture-key change).
+    this.srcNode.connect(this.gainNode);
+    if (rnnoiseFailed && !this.rnnoiseWarned) {
+      this.rnnoiseWarned = true;
+      this.a.warn('Enhanced noise suppression is unavailable — noise suppression is off.');
+    }
+  }
+
+  /** Build the capture pipeline: raw mic → [rnnoise] → gain → sent stream. Async
+   *  because 'enhanced' must await audioWorklet.addModule. On Web Audio failure the raw
+   *  stream is sent directly (gain then has no effect). AudioContext is pinned to 48kHz
+   *  for RNNoise (Chromium resamples the mic input to the context rate). */
+  private async buildPipeline(raw: MediaStream, s: VoiceSettings): Promise<MediaStream> {
+    try {
+      this.audioCtx = new AudioContext({ sampleRate: 48000 });
+      this.rnnoiseNode = null;
+      this.rnnoiseModuleAdded = false;
       void this.audioCtx.resume().catch(() => { /* ignore */ });
       this.srcNode = this.audioCtx.createMediaStreamSource(raw);
       this.gainNode = this.audioCtx.createGain();
       this.gainNode.gain.value = s.inputGain;
       const dest = this.audioCtx.createMediaStreamDestination();
-      this.srcNode.connect(this.gainNode);
       this.gainNode.connect(dest);
+      await this.connectGraph(s.noiseSuppressionMode);
       return dest.stream;
     } catch {
-      this.audioCtx = null; this.srcNode = null; this.gainNode = null;
+      this.audioCtx = null; this.srcNode = null; this.gainNode = null; this.rnnoiseNode = null;
       return raw;
     }
   }
@@ -575,7 +666,7 @@ export class VoiceSession {
     this.usingFallback = !!warning;
     this.watchRawTrack(); // a mid-call unplug ends the track — recapture instead of going silent
     this.masterVolume = s.masterVolume;
-    this.localStream = this.buildPipeline(this.rawStream, s);
+    this.localStream = await this.buildPipeline(this.rawStream, s);
     this.active = true;
     // muted/deafened deliberately PERSIST across leave/rejoin within the session
     // (Discord convention — leaving muted and hopping back shouldn't hot-mic you).
@@ -631,7 +722,9 @@ export class VoiceSession {
     this.rawStream?.getTracks().forEach((t) => t.stop());
     this.rawStream = null;
     try { this.srcNode?.disconnect(); } catch { /* ignore */ }
-    this.srcNode = null; this.gainNode = null;
+    try { this.rnnoiseNode?.disconnect(); } catch { /* ignore */ }
+    try { this.rnnoiseNode?.port.close(); } catch { /* ignore */ }
+    this.srcNode = null; this.gainNode = null; this.rnnoiseNode = null; this.rnnoiseModuleAdded = false; this.rnnoiseWarned = false;
     try { this.audioCtx?.close(); } catch { /* ignore */ }
     this.audioCtx = null;
     this.curCaptureKey = '';
@@ -709,9 +802,16 @@ export class VoiceSession {
     this.rawStream = fresh;
     this.watchRawTrack();
     if (this.audioCtx && this.gainNode) {
+      // Re-source and re-wire the graph for the current NS mode, keeping the SAME
+      // gainNode + dest (so the sent track / localStream is unchanged → no
+      // renegotiation), only inserting/removing the RNNoise node as the mode requires.
+      // Disconnect the OUTGOING source first — connectGraph disconnects this.srcNode,
+      // which we're about to overwrite, so it can't reach the old node.
       try { this.srcNode?.disconnect(); } catch { /* ignore */ }
       this.srcNode = this.audioCtx.createMediaStreamSource(fresh);
-      this.srcNode.connect(this.gainNode);
+      await this.connectGraph(s.noiseSuppressionMode);
+      // connectGraph may have awaited addModule; a leave() could have run meanwhile.
+      if (!this.active) { fresh.getTracks().forEach((t) => t.stop()); old?.getTracks().forEach((t) => t.stop()); return; }
     } else {
       // No-pipeline fallback (Web Audio failed at join): the raw track IS the sent
       // track — swap it on every live sender and rebuild the VAD on the new track.
@@ -1095,7 +1195,9 @@ export class MicTester {
     if (!navigator.mediaDevices?.getUserMedia) {
       throw new Error('Microphone unavailable (the room engine is not a secure context).');
     }
-    const base = { echoCancellation: s.echoCancellation, noiseSuppression: s.noiseSuppression, autoGainControl: s.autoGainControl };
+    // The meter reflects the mic BEFORE the enhanced (RNNoise) stage — it uses the
+    // same browser constraints the pipeline would (browser NS only in 'standard').
+    const base = { echoCancellation: s.echoCancellation, noiseSuppression: browserNs(s), autoGainControl: s.autoGainControl };
     let stream: MediaStream;
     try {
       stream = s.inputDeviceId

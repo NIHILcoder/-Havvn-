@@ -4,7 +4,7 @@
  * processing subset (VoiceSettings) is pushed to the engine window on every
  * change, and the manager re-asserts it after an engine respawn.
  */
-import type { VoiceInputMode, VoiceSettings } from '../../shared/types';
+import type { VoiceInputMode, VoiceSettings, NoiseSuppressionMode } from '../../shared/types';
 
 export type VoicePrefs = {
   inputMode: VoiceInputMode;
@@ -17,7 +17,7 @@ export type VoicePrefs = {
   masterVolume: number;      // 0..1
   vadThreshold: number;      // 1..128 (0-255 avg magnitude scale)
   echoCancellation: boolean;
-  noiseSuppression: boolean;
+  noiseSuppressionMode: NoiseSuppressionMode; // off / standard (browser) / enhanced (RNNoise)
   autoGainControl: boolean;
 };
 
@@ -44,9 +44,18 @@ export function loadVoicePrefs(): VoicePrefs {
     masterVolume: clamp(p.masterVolume, 0, 1, 1),
     vadThreshold: clamp(p.vadThreshold, 1, 128, 14),
     echoCancellation: p.echoCancellation !== false,
-    noiseSuppression: p.noiseSuppression !== false,
+    noiseSuppressionMode: loadNsMode(p),
     autoGainControl: p.autoGainControl !== false,
   };
+}
+
+/** Read the NS mode, migrating the pre-2.20 boolean `noiseSuppression`: true → the new
+ *  default 'enhanced' (an upgrade to RNNoise), false → 'off'. Absent → 'enhanced'. */
+function loadNsMode(p: Record<string, unknown>): NoiseSuppressionMode {
+  const m = p.noiseSuppressionMode;
+  if (m === 'off' || m === 'standard' || m === 'enhanced') return m;
+  if (typeof p.noiseSuppression === 'boolean') return p.noiseSuppression ? 'enhanced' : 'off';
+  return 'enhanced';
 }
 
 export function saveVoicePrefs(p: VoicePrefs): void {
@@ -63,7 +72,7 @@ export function toVoiceSettings(p: VoicePrefs): VoiceSettings {
     masterVolume: p.masterVolume,
     vadThreshold: p.vadThreshold,
     echoCancellation: p.echoCancellation,
-    noiseSuppression: p.noiseSuppression,
+    noiseSuppressionMode: p.noiseSuppressionMode,
     autoGainControl: p.autoGainControl,
   };
 }

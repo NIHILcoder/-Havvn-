@@ -14,7 +14,7 @@ import { Toggle } from './Toggle';
 import { Icon } from './Icon';
 import { useTranslation } from '../utils/i18nContext';
 import { VoicePrefs, loadVoicePrefs, saveVoicePrefs, keyLabel, toVoiceSettings } from '../utils/voicePrefs';
-import type { VoiceDeviceInfo, VoiceInputMode } from '../../shared/types';
+import type { VoiceDeviceInfo, VoiceInputMode, NoiseSuppressionMode } from '../../shared/types';
 import './VoiceSettingsModal.css';
 
 // The meter's full-scale value (0-255 avg magnitude; speech averages ~10-50, so a
@@ -83,7 +83,7 @@ export const VoiceSettingsModal: React.FC<{ onClose: () => void }> = ({ onClose 
     // Only CAPTURE-affecting knobs restart the test; gain/VAD are applied to the
     // displayed bar client-side (the meter is raw pre-gain), so they don't recapture.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [testing, prefs.inputDeviceId, prefs.echoCancellation, prefs.noiseSuppression, prefs.autoGainControl]);
+  }, [testing, prefs.inputDeviceId, prefs.echoCancellation, prefs.noiseSuppressionMode, prefs.autoGainControl]);
 
   // Capture the next key press to rebind push-to-talk (Escape cancels).
   useEffect(() => {
@@ -119,6 +119,11 @@ export const VoiceSettingsModal: React.FC<{ onClose: () => void }> = ({ onClose 
     { id: 'always' as VoiceInputMode, label: t('rooms.voice.modeAlways') },
     { id: 'vad' as VoiceInputMode, label: t('rooms.voice.modeVad') },
     { id: 'ptt' as VoiceInputMode, label: t('rooms.voice.modePtt') },
+  ]), [t]);
+  const nsModes = useMemo(() => ([
+    { id: 'off' as NoiseSuppressionMode, label: t('rooms.voice.nsOff') },
+    { id: 'standard' as NoiseSuppressionMode, label: t('rooms.voice.nsStandard') },
+    { id: 'enhanced' as NoiseSuppressionMode, label: t('rooms.voice.nsEnhanced') },
   ]), [t]);
 
   // Portal to <body>: the opener (voice panel) lives inside the room's
@@ -240,9 +245,18 @@ export const VoiceSettingsModal: React.FC<{ onClose: () => void }> = ({ onClose 
           <span className="vsm-label">{t('rooms.voice.echoCancellation')}</span>
           <Toggle size="small" checked={prefs.echoCancellation} onChange={(v) => update({ echoCancellation: v })} ariaLabel={t('rooms.voice.echoCancellation')} />
         </div>
-        <div className="vsm-row">
+        <div className="vsm-field">
           <span className="vsm-label">{t('rooms.voice.noiseSuppression')}</span>
-          <Toggle size="small" checked={prefs.noiseSuppression} onChange={(v) => update({ noiseSuppression: v })} ariaLabel={t('rooms.voice.noiseSuppression')} />
+          <div className="vsm-modes">
+            {nsModes.map((m) => (
+              <button
+                key={m.id}
+                className={`vsm-mode${prefs.noiseSuppressionMode === m.id ? ' active' : ''}`}
+                onClick={() => update({ noiseSuppressionMode: m.id })}
+              >{m.label}</button>
+            ))}
+          </div>
+          {prefs.noiseSuppressionMode === 'enhanced' && <span className="vsm-hint">{t('rooms.voice.nsHint')}</span>}
         </div>
         <div className="vsm-row">
           <span className="vsm-label">{t('rooms.voice.autoGainControl')}</span>

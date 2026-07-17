@@ -112,3 +112,7 @@
   line-height: 1.4;
   color: var(--color-text-tertiary);
 }
+
+/* A stacked field (label above a control) — used for the noise-suppression chips
+   inside the Processing section, which otherwise holds inline label+toggle rows. */
+.vsm-field { display: flex; flex-direction: column; gap: 6px; padding: 4px 0; }

@@ -4,6 +4,16 @@ All notable changes to Havvn (formerly TorrentHunt) are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [2.20.0] - 2026-07-17
+
+### Added
+- **Neural noise suppression for voice.** Microphone noise suppression now has three
+  modes — Off, Standard, and Enhanced. Enhanced uses an on-device neural network
+  (RNNoise) that is far cleaner against keyboard clatter, fans, and background voices
+  than the standard filter, for a little more CPU. It runs entirely locally — nothing
+  leaves your machine — and you can switch modes mid-call without dropping the
+  connection. Enhanced is the new default; existing installs are upgraded to it.
+
 ## [2.19.0] - 2026-07-17
 
 Voice grows up: pick your devices, share your screen, and talk with a global

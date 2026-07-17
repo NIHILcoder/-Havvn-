@@ -272,6 +272,10 @@ export interface RoomVoiceState {
 /** Global (all-rooms) voice hardware/processing settings, applied engine-side.
  *  Device ids are from the ENGINE window's enumeration — deviceId is salted
  *  per-origin, so ids from the main renderer would not match. */
+/** Noise-suppression engine: off, the browser's built-in DSP, or the RNNoise neural
+ *  network (WASM AudioWorklet in the capture pipeline). */
+export type NoiseSuppressionMode = 'off' | 'standard' | 'enhanced';
+
 export interface VoiceSettings {
   inputDeviceId: string | null;   // null = system default
   outputDeviceId: string | null;  // null = system default
@@ -279,7 +283,7 @@ export interface VoiceSettings {
   masterVolume: number;           // output master, 0..1 (multiplied into per-user volume)
   vadThreshold: number;           // voice-activity open threshold (0-255 avg magnitude)
   echoCancellation: boolean;
-  noiseSuppression: boolean;
+  noiseSuppressionMode: NoiseSuppressionMode;
   autoGainControl: boolean;
 }
 
