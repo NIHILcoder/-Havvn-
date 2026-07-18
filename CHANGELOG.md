@@ -4,6 +4,34 @@ All notable changes to Havvn (formerly TorrentHunt) are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [2.23.0] - 2026-07-18
+
+Rooms grow a real file hierarchy, and members get faces.
+
+### Added
+- **Sections: two-level file organization.** The files zone now has top-level
+  sections with subfolders inside them ("New section" in the header, a
+  new-subfolder button on every section). Files drag onto either level,
+  folders move between sections (or back to the top), and every menu shows the
+  full "Section / Folder" path. Older clients in the same room simply keep
+  seeing the flat list — and their edits can't flatten anyone's tree.
+- **Auto-download inheritance.** Every section and folder has the
+  inherit → off → on cycle; a folder with no explicit setting follows its
+  section, then the room toggle — the tooltip shows the effective state. A
+  section-level "on" catch-up pulls inheriting subfolders too.
+- **Custom avatars.** Upload a photo (center-cropped, recompressed locally,
+  hard-capped for P2P) — it travels to peers as a SIGNED profile message, so
+  nobody can wear someone else's face. Falls back to identicons everywhere,
+  and peers validate declared image dimensions so a crafted pixel-bomb can't
+  exhaust anyone's memory.
+- **Name colors and status lines.** Pick a name color (palette or custom) and
+  a short status; both show in chat, the people rail, voice tiles and the
+  profile card.
+- **Profile cards.** Click any member (rail or chat, including the detached
+  chat window) for a card: avatar, colored name, status, presence, share
+  count — with mute/kick where they apply.
+- **Two new identicon styles** (pixel field and orbit) in the avatar picker.
+
 ## [2.22.1] - 2026-07-18
 
 Visual fixes from first-run feedback on 2.22.
