@@ -192,7 +192,21 @@
 }
 .room-rail-people-list .room-members { max-height: none; }
 
-/* Chat card fills its column: header → log → composer. */
+/* Rail-width fit: 5 voice buttons must fit a 200-240px column — shrink them and
+   let the control row wrap under the title instead of clipping. */
+.room-col-rail .room-voice { padding: var(--space-2); border-radius: var(--radius-md); }
+.room-col-rail .room-voice-head { flex-wrap: wrap; row-gap: 4px; }
+.room-col-rail .room-voice-btn { width: 26px; height: 26px; }
+.room-col-rail .room-voice-ctl { gap: 3px; }
+.room-col-rail .room-voice-join { padding: 4px 10px; font-size: 11px; }
+/* The member "have" count reads cryptic — give it a helper cursor (title attr). */
+.room-member-have { cursor: help; }
+
+/* Stage tab switcher: compact (the shared Tabs sizing is for full-page tabs). */
+.room-col-stage .tabs-container { margin-bottom: var(--space-2); }
+.room-col-stage .tab-button { padding: 6px 12px; font-size: 12px; gap: 6px; }
+
+/* Chat card fills its column: zone tabs → log → composer. */
 .room-chat-section {
   flex: 1 1 auto;
   min-height: 0;
@@ -200,6 +214,108 @@
 }
 .room-chat-section .room-chat { flex: 1; min-height: 0; }
 .room-chat-section .room-chat-log { flex: 1; max-height: none; }
+
+/* Chat-zone tabs (Chat / History) — compact, matching the room's 11px chrome. */
+.room-chat-zone-tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+.room-zone-tab {
+  padding: 4px 10px 6px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+}
+.room-zone-tab:hover { color: var(--color-text-secondary); }
+.room-zone-tab.active { color: var(--color-text-primary); border-bottom-color: var(--color-accent-primary); }
+.room-zone-history { overflow-y: auto; }
+.room-history-zone { display: flex; flex-direction: column; }
+
+/* Detach chat into its own window: toggle at the right edge of the zone tabs. */
+.room-zone-popout {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px; height: 24px;
+  border: none; border-radius: 5px;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+}
+.room-zone-popout:hover { background: var(--color-bg-tertiary); color: var(--color-text-primary); }
+/* The zone rendered INSIDE the pop-out window fills it edge to edge. */
+.room-chat-popped {
+  height: 100vh;
+  box-sizing: border-box;
+  border-radius: 0;
+  border: none;
+}
+/* Docked placeholder while the chat lives in its own window. */
+.room-chat-placeholder-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+
+/* Multiline composer: auto-grows with content up to ~6 lines. */
+.room-chat-input {
+  resize: none;
+  line-height: 1.45;
+  max-height: 132px;
+  overflow-y: auto;
+  font-family: var(--font-family);
+}
+
+/* Fenced code inside a bubble: monospace, indentation preserved, own scroll.
+   Explicit color — .mine bubbles invert their text color to bg-primary, which
+   would otherwise render code invisible (color == background). */
+.room-chat-code {
+  display: block;
+  margin: 4px 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border-subtle);
+  color: var(--color-text-primary);
+  font-family: var(--font-family-mono, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+  overflow-x: auto;
+  tab-size: 4;
+}
+.room-chat-bubble { position: relative; }
+.room-chat-copy {
+  position: absolute;
+  top: 4px; right: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px; height: 22px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 5px;
+  background: var(--color-bg-secondary);
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+.room-chat-bubble:hover .room-chat-copy { opacity: 1; }
+.room-chat-copy:hover { color: var(--color-text-primary); }
 
 /* MEDIUM: squeeze rail + chat, keep all three columns. Must set the PROPERTY, not
    the vars — the vars are set inline (higher cascade origin) and would win. */
@@ -234,6 +350,12 @@
   .room-chat-section .room-chat { flex: initial; }
   .room-chat-section .room-chat-log { flex: initial; max-height: 360px; min-height: 160px; }
 }
+
+/* The DETACHED chat window is ~420px wide, so the cloned stylesheet's 980px
+   mobile block above always matches inside it and would cap the log at 360px.
+   Re-assert the fill layout for the popped zone (source order beats the block). */
+.room-chat-popped, .room-chat-popped .room-chat { flex: 1 1 auto; min-height: 0; }
+.room-chat-popped .room-chat-log { flex: 1; max-height: none; min-height: 0; }
 
 /* ── Chat header: title + member strip toggle ──────────────────────────── */
 .room-chat-head {
@@ -431,6 +553,78 @@
 }
 .room-folder-act:hover { color: var(--color-text-primary); background: var(--color-bg-hover); }
 .room-folder-act.danger:hover { color: var(--color-danger, #ef4444); }
+
+/* ── Files: chips, view popover, compact density, type icons, hover actions ── */
+.room-files-total { font-weight: 500; letter-spacing: normal; text-transform: none; }
+.room-file-chips { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.room-file-chip {
+  padding: 3px 9px;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-full);
+  background: transparent;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: color var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast);
+}
+.room-file-chip:hover { color: var(--color-text-primary); }
+.room-file-chip.active {
+  background: color-mix(in srgb, var(--color-accent-primary) 14%, transparent);
+  border-color: var(--color-accent-primary);
+  color: var(--color-accent-primary);
+}
+.room-view-wrap { position: relative; }
+.room-view-pop {
+  position: absolute;
+  top: calc(100% + 6px); right: 0;
+  z-index: 30;
+  min-width: 200px;
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-secondary);
+  box-shadow: var(--shadow-lg, 0 8px 24px rgba(0,0,0,0.35));
+}
+.room-view-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12px; color: var(--color-text-secondary); }
+.room-file-kind { flex-shrink: 0; margin-right: 6px; vertical-align: -2px; }
+.room-file-kind.kind-video { color: var(--color-accent-primary); }
+.room-file-kind.kind-audio { color: var(--color-success, #22c55e); }
+.room-file-kind.kind-other { color: var(--color-text-tertiary); }
+.room-file-mark { background: color-mix(in srgb, var(--color-accent-primary) 30%, transparent); color: inherit; border-radius: 2px; }
+.room-file-acts { display: inline-flex; gap: 2px; flex-shrink: 0; opacity: 0; transition: opacity var(--transition-fast); }
+.room-file:hover .room-file-acts, .room-file:focus-within .room-file-acts { opacity: 1; }
+.room-file-act {
+  display: grid; place-items: center; width: 28px; height: 28px;
+  border: none; border-radius: var(--radius-sm);
+  background: transparent; color: var(--color-text-secondary);
+  cursor: pointer;
+}
+.room-file-act:hover { background: var(--color-bg-hover); color: var(--color-text-primary); }
+.room-file-act-fetch { color: var(--color-accent-primary); }
+@media (hover: none) { .room-file-acts { opacity: 1; } }
+/* Compact density: tighter rows, no peer avatars cluster. */
+.room-files-compact .room-file { padding: 3px 0; gap: var(--space-2); }
+.room-files-compact .room-file-owner { display: none; }
+.room-files-compact .room-file-peers { display: none; }
+.room-files-compact .room-file-sub { min-height: 16px; }
+/* Collapsible folder header: the label is a button now. */
+.room-folder-toggle { background: transparent; border: none; padding: 0; cursor: pointer; text-align: left; color: inherit; font: inherit; }
+.room-folder-chevron { flex-shrink: 0; color: var(--color-text-tertiary); }
+
+/* Per-folder auto-fetch cycle: inherit (dim) → always on (accent) → off (struck). */
+.room-folder-fetch { position: relative; }
+.room-folder-fetch.on { color: var(--color-accent-primary); }
+.room-folder-fetch.off { color: var(--color-text-tertiary); }
+.room-folder-fetch.off::after {
+  content: '';
+  position: absolute;
+  left: 5px; right: 5px; top: 50%;
+  height: 1.5px;
+  background: var(--color-error);
+  transform: rotate(-45deg);
+  pointer-events: none;
+}
 .room-folder-empty {
   padding: 8px 6px; font-size: 0.74rem; color: var(--color-text-tertiary); text-align: center;
 }
@@ -461,25 +655,9 @@
 .room-folder-color.active { border-color: var(--color-text-primary); }
 .room-folder-editor-actions { display: flex; justify-content: flex-end; gap: 6px; }
 
-/* Per-file "move to folder" menu */
+/* room-file-move-wrap survives for the theme-gallery preview mock; the old
+   per-row move MENU itself was replaced by the right-click context menu. */
 .room-file-move-wrap { position: relative; display: inline-flex; }
-.room-file-move-menu {
-  position: absolute; top: calc(100% + 4px); right: 0; z-index: 20;
-  display: flex; flex-direction: column; gap: 1px; min-width: 170px; max-height: 260px;
-  overflow-y: auto; padding: 4px;
-  background: var(--color-bg-elevated, var(--color-bg-secondary));
-  border: 1px solid var(--color-border-default); border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg, 0 12px 32px rgba(0,0,0,0.4));
-}
-.room-file-move-item {
-  display: flex; align-items: center; gap: 6px; width: 100%;
-  padding: 6px 8px; font-size: 0.76rem; text-align: left;
-  color: var(--color-text-secondary); background: transparent;
-  border: none; border-radius: var(--radius-sm); cursor: pointer;
-}
-.room-file-move-item span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.room-file-move-item:hover { background: var(--color-bg-hover); color: var(--color-text-primary); }
-.room-file-move-item.on { color: var(--color-accent-primary); }
 .room-file[draggable="true"] { cursor: grab; }
 
 /* Auto-download toggle in the files card header */
@@ -1061,8 +1239,6 @@
 }
 .rooms-input:focus { outline: none; border-color: var(--color-border-focus); box-shadow: var(--shadow-focus); }
 .rooms-input-code { font-family: var(--font-family-mono); letter-spacing: 0.02em; }
-
-.room-history-modal { max-height: min(56vh, 460px); overflow-y: auto; }
 
 /* Leave-room dialog: two stacked option cards (keep files / delete files) */
 .rooms-leave { display: flex; flex-direction: column; gap: var(--space-2); }

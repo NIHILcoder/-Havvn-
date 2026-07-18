@@ -521,18 +521,21 @@ async function createWindow(): Promise<void> {
   const isDev = process.env.NODE_ENV === 'development';
   const allowedOrigin = isDev ? 'http://localhost:3000' : 'file://';
 
+  // Pop-out panels: about:blank child windows the renderer scripts directly
+  // (same-origin DOM portal — no navigation, no remote content), so the user can
+  // drag them to a second monitor. Allowed strictly by frameName.
+  const POPOUTS: Record<string, Electron.BrowserWindowConstructorOptions> = {
+    'havvn-theme-editor': { width: 480, height: 900, minWidth: 360, minHeight: 480 },
+    'havvn-room-chat': { width: 420, height: 640, minWidth: 320, minHeight: 420 },
+    'havvn-voice-settings': { width: 540, height: 760, minWidth: 420, minHeight: 520 },
+  };
   mainWindow.webContents.setWindowOpenHandler(({ url, frameName }) => {
-    // The theme editor's pop-out panel: an about:blank child window the renderer
-    // scripts directly (same-origin DOM portal — no navigation, no remote
-    // content), so the user can drag the editor to a second monitor.
-    if (frameName === 'havvn-theme-editor' && (url === 'about:blank' || url === '')) {
+    const opts = POPOUTS[frameName];
+    if (opts && (url === 'about:blank' || url === '')) {
       return {
         action: 'allow',
         overrideBrowserWindowOptions: {
-          width: 480,
-          height: 900,
-          minWidth: 360,
-          minHeight: 480,
+          ...opts,
           autoHideMenuBar: true,
           backgroundColor: '#141519',
           title: 'Havvn',

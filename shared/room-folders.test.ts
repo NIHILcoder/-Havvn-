@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  mergeFolderUpsert, applyFolderDelete, applyAssignment, groupFilesByFolder, sanitizeFolderIcon, FOLDER_ICONS,
+  mergeFolderUpsert, applyFolderDelete, applyAssignment, groupFilesByFolder, sanitizeFolderIcon, FOLDER_ICONS, wantAutoFetch,
 } from './room-folders';
 import type { RoomFile, RoomFolder } from './types';
 
@@ -123,5 +123,29 @@ describe('groupFilesByFolder', () => {
   it('no folders → single Uncategorized bucket (or none when empty)', () => {
     expect(groupFilesByFolder([file('1')], [])).toEqual([{ folder: null, files: [expect.objectContaining({ fileId: '1' })] }]);
     expect(groupFilesByFolder([], [])).toEqual([]);
+  });
+});
+
+describe('wantAutoFetch', () => {
+  it('inherits the room toggle when there is no override', () => {
+    expect(wantAutoFetch(true, {}, 'a')).toBe(true);
+    expect(wantAutoFetch(false, {}, 'a')).toBe(false);
+    expect(wantAutoFetch(true, undefined, 'a')).toBe(true);
+  });
+  it('a per-folder override beats the room toggle both ways', () => {
+    expect(wantAutoFetch(true, { a: false }, 'a')).toBe(false);
+    expect(wantAutoFetch(false, { a: true }, 'a')).toBe(true);
+  });
+  it('uncategorized (no folderId) always inherits the room toggle', () => {
+    expect(wantAutoFetch(true, { a: false }, undefined)).toBe(true);
+    expect(wantAutoFetch(false, { a: true }, null)).toBe(false);
+    expect(wantAutoFetch(false, { a: true }, '')).toBe(false);
+  });
+  it('an override for a DIFFERENT folder does not leak', () => {
+    expect(wantAutoFetch(true, { b: false }, 'a')).toBe(true);
+    expect(wantAutoFetch(false, { b: true }, 'a')).toBe(false);
+  });
+  it('only a literal true forces fetching on (garbage-safe)', () => {
+    expect(wantAutoFetch(false, { a: 1 as unknown as boolean }, 'a')).toBe(false);
   });
 });

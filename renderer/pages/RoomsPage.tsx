@@ -8,14 +8,19 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import Hls from 'hls.js';
 import toast from 'react-hot-toast';
 import { RoomState, RoomSummary, RoomProfile, RoomFile, RoomFolder, RoomMember } from '../../shared/types';
-import { Button, Icon, IconName, EmptyState, Identicon, QRCode, TransferPickerModal, Toggle, PlayerControls, Modal, useConfirm, VoiceSettingsModal, ScreenSourcePicker, ScreenView, Tabs } from '../components';
+import { Button, Icon, IconName, EmptyState, Identicon, QRCode, TransferPickerModal, Toggle, PlayerControls, Modal, useConfirm, VoiceSettingsModal, ScreenSourcePicker, ScreenView, Tabs, DropdownMenu } from '../components';
 import { VoicePrefs, VOICE_PREFS_EVENT, loadVoicePrefs, saveVoicePrefs, toVoiceSettings } from '../utils/voicePrefs';
 import { loadRoomLayout, saveRoomLayout, RAIL_MIN, RAIL_MAX, CHAT_MIN, CHAT_MAX } from '../utils/roomLayout';
+import { usePopout } from '../utils/popout';
+import { RoomFilesPrefs, loadRoomFilesPrefs, saveRoomFilesPrefs, loadRoomSort, saveRoomSort, loadCollapsedFolders, saveCollapsedFolders, clearRoomFilesPrefs } from '../utils/roomFilesPrefs';
+import { ContextMenu } from '../components/ContextMenu';
 import { avatarCandidates } from '../components/Identicon';
 import { groupFilesByFolder, FOLDER_ICONS } from '../../shared/room-folders';
+import { parseChatSegments, isCopyworthy } from '../../shared/chat-format';
 import { classifyMediaKind } from '../../shared/media';
 import { formatBytes, formatSpeed } from '../utils/format-helpers';
 import { useTranslation } from '../utils/i18nContext';
@@ -251,6 +256,7 @@ const RoomsPage: React.FC<RoomsPageProps> = ({ focusRoomId, onFocusHandled, onRo
     if (!roomId) return;
     setDialog(null);
     setBusy(true);
+    clearRoomFilesPrefs(roomId); // per-room sort/collapsed entries would accrue forever
     try {
       await window.api.rooms.leave(roomId, deleteFiles);
       await refreshList();
@@ -620,10 +626,41 @@ const RoomFilesPanel: React.FC<FilesPanelProps> = ({ room, onAddFiles, onCreateF
   const [pickTransfer, setPickTransfer] = useState(false);
   // Client-side file filter/sort + bulk selection (all room-local, no engine calls).
   const [fileQuery, setFileQuery] = useState('');
-  const [sortKey, setSortKey] = useState<'added' | 'name' | 'size' | 'status'>('added');
+  const [sortKey, setSortKeyRaw] = useState<'added' | 'name' | 'size' | 'status'>(() => loadRoomSort(room.roomId));
+  const setSortKey = (k: typeof sortKey) => { setSortKeyRaw(k); saveRoomSort(room.roomId, k); };
   const [typeFilter, setTypeFilter] = useState<'all' | 'video' | 'audio' | 'other'>('all');
+  const [onlyMine, setOnlyMine] = useState(false);
+  const [onlyMissing, setOnlyMissing] = useState(false);
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // View prefs (density / reactions / type icons) + per-room collapsed folders.
+  const [viewPrefs, setViewPrefs] = useState<RoomFilesPrefs>(loadRoomFilesPrefs);
+  const [viewOpen, setViewOpen] = useState(false);
+  const viewWrapRef = useRef<HTMLDivElement>(null);
+  const updateView = (patch: Partial<RoomFilesPrefs>) => {
+    setViewPrefs((p) => { const next = { ...p, ...patch }; saveRoomFilesPrefs(next); return next; });
+  };
+  // The view popover closes like every other floating surface: outside click / Escape.
+  useEffect(() => {
+    if (!viewOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (viewWrapRef.current && !viewWrapRef.current.contains(e.target as Node)) setViewOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setViewOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [viewOpen]);
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => loadCollapsedFolders(room.roomId));
+  const toggleCollapsed = (key: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      saveCollapsedFolders(room.roomId, next);
+      return next;
+    });
+  };
+  const selfId = room.members.find((m) => m.isSelf)?.memberId;
   const statusRank = useCallback((f: RoomFile) => {
     const tr = room.transfers?.[f.fileId];
     if (tr?.haveLocally) return 0;
@@ -636,13 +673,15 @@ const RoomFilesPanel: React.FC<FilesPanelProps> = ({ room, onAddFiles, onCreateF
     let arr = room.files;
     if (q) arr = arr.filter((f) => f.name.toLowerCase().includes(q));
     if (typeFilter !== 'all') arr = arr.filter((f) => classifyMediaKind(f.name) === typeFilter);
+    if (onlyMine) arr = arr.filter((f) => f.addedBy === selfId);
+    if (onlyMissing) arr = arr.filter((f) => !room.transfers?.[f.fileId]?.haveLocally);
     return [...arr].sort((a, b) => {
       if (sortKey === 'name') return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
       if (sortKey === 'size') return (b.size || 0) - (a.size || 0);
       if (sortKey === 'status') return statusRank(a) - statusRank(b) || (b.addedAt || 0) - (a.addedAt || 0);
       return (b.addedAt || 0) - (a.addedAt || 0); // 'added' = newest first
     });
-  }, [room.files, fileQuery, typeFilter, sortKey, statusRank]);
+  }, [room.files, room.transfers, fileQuery, typeFilter, onlyMine, onlyMissing, selfId, sortKey, statusRank]);
   const toggleSelect = useCallback((fileId: string) => {
     setSelected((prev) => { const next = new Set(prev); if (next.has(fileId)) next.delete(fileId); else next.add(fileId); return next; });
   }, []);
@@ -674,7 +713,11 @@ const RoomFilesPanel: React.FC<FilesPanelProps> = ({ room, onAddFiles, onCreateF
     setUpDraft(String(room.upKbps || ''));
     setDownDraft(String(room.downKbps || ''));
     setFileQuery(''); // the filter belongs to one room's list, not the next
-    setSortKey('added'); setTypeFilter('all'); setSelecting(false); setSelected(new Set());
+    setSortKeyRaw(loadRoomSort(room.roomId)); // per-room remembered sort
+    setTypeFilter('all'); setOnlyMine(false); setOnlyMissing(false);
+    setSelecting(false); setSelected(new Set());
+    setCollapsed(loadCollapsedFolders(room.roomId));
+    setViewOpen(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [room.roomId]);
   const commitLimits = () => {
@@ -710,25 +753,84 @@ const RoomFilesPanel: React.FC<FilesPanelProps> = ({ room, onAddFiles, onCreateF
       if (!Array.from(e.dataTransfer.types).includes(FILE_DND_TYPE)) return;
       e.preventDefault(); e.stopPropagation();
       setDragOverKey(null);
-      const fileId = e.dataTransfer.getData(FILE_DND_TYPE);
-      if (fileId) onAssignFile(fileId, folderId);
+      // Payload is one-or-more fileIds ('\n'-joined — a multi-selection drag).
+      // Skip files already in the target folder (a same-section drop is a no-op).
+      const target = folderId || null;
+      const ids = e.dataTransfer.getData(FILE_DND_TYPE).split('\n').filter(Boolean)
+        .filter((id) => (room.files.find((f) => f.fileId === id)?.folderId ?? null) !== target);
+      if (ids.length > 1) assignMany(ids, folderId);
+      else if (ids[0]) onAssignFile(ids[0], folderId);
     },
   });
+
+  // Dragging a SELECTED row moves the whole selection; any other row moves alone.
+  const getDragIds = useCallback((fileId: string): string[] => (
+    selecting && selected.has(fileId) ? Array.from(selected) : [fileId]
+  ), [selecting, selected]);
+
+  const assignMany = (fileIds: string[], folderId: string | null) => {
+    window.api.rooms.assignFiles(room.roomId, fileIds, folderId)
+      .then(onShared)
+      .catch((e) => toast.error(String(e instanceof Error ? e.message : e)));
+  };
+
+  // Cycle a folder's auto-fetch override: inherit → OFF → always → inherit.
+  // OFF comes first so marking a big folder as skipped never transits through ON
+  // (which would instantly bulk-download the whole folder with no cancel).
+  const cycleFolderFetch = (folderId: string) => {
+    const cur = room.folderFetch?.[folderId];
+    const next = cur === undefined ? false : cur === false ? true : null;
+    window.api.rooms.setFolderAutoFetch(room.roomId, folderId, next)
+      .then(onShared)
+      .catch((e) => toast.error(String(e instanceof Error ? e.message : e)));
+  };
 
   const renderFolderFiles = (files: RoomFile[]) => (
     files.map((f) => (
       <RoomFileRow
         key={f.fileId} file={f} room={room} onWatch={onWatch} onAssignFile={onAssignFile}
         selecting={selecting} selected={selected.has(f.fileId)} onToggleSelect={toggleSelect}
+        getDragIds={getDragIds} viewPrefs={viewPrefs} highlightQuery={fileQuery}
       />
     ))
   );
 
   return (
-    <div className="room-section">
+    <div className={`room-section${viewPrefs.density === 'compact' ? ' room-files-compact' : ''}`}>
       <div className="room-section-title-row">
-        <div className="room-section-title">{t('rooms.sharedFiles')} · {room.files.length}</div>
+        <div className="room-section-title">
+          {t('rooms.sharedFiles')} · {room.files.length}
+          {room.files.length > 0 && (
+            <span className="room-files-total"> · {formatBytes(room.files.reduce((s, f) => s + (f.size || 0), 0))}</span>
+          )}
+        </div>
         <div className="room-section-title-actions">
+          <div className="room-view-wrap" ref={viewWrapRef}>
+            <button
+              type="button"
+              className={`room-newfolder-btn${viewOpen ? ' active' : ''}`}
+              title={t('rooms.view')}
+              onClick={() => setViewOpen((v) => !v)}
+            >
+              <Icon name="filter" size={13} /> {t('rooms.view')}
+            </button>
+            {viewOpen && (
+              <div className="room-view-pop">
+                <div className="room-view-row">
+                  <span>{t('rooms.viewCompact')}</span>
+                  <Toggle size="small" checked={viewPrefs.density === 'compact'} onChange={(v) => updateView({ density: v ? 'compact' : 'cozy' })} ariaLabel={t('rooms.viewCompact')} />
+                </div>
+                <div className="room-view-row">
+                  <span>{t('rooms.viewReactions')}</span>
+                  <Toggle size="small" checked={viewPrefs.showReactions} onChange={(v) => updateView({ showReactions: v })} ariaLabel={t('rooms.viewReactions')} />
+                </div>
+                <div className="room-view-row">
+                  <span>{t('rooms.viewTypeIcons')}</span>
+                  <Toggle size="small" checked={viewPrefs.typeIcons} onChange={(v) => updateView({ typeIcons: v })} ariaLabel={t('rooms.viewTypeIcons')} />
+                </div>
+              </div>
+            )}
+          </div>
           <button
             type="button"
             className="room-newfolder-btn"
@@ -772,12 +874,24 @@ const RoomFilesPanel: React.FC<FilesPanelProps> = ({ room, onAddFiles, onCreateF
             <option value="size">{t('rooms.sort.size')}</option>
             <option value="status">{t('rooms.sort.status')}</option>
           </select>
-          <select className="room-file-select" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as typeof typeFilter)} aria-label={t('rooms.filter.all')}>
-            <option value="all">{t('rooms.filter.all')}</option>
-            <option value="video">{t('rooms.filter.video')}</option>
-            <option value="audio">{t('rooms.filter.audio')}</option>
-            <option value="other">{t('rooms.filter.other')}</option>
-          </select>
+          <span className="room-file-chips">
+            {([['all', t('rooms.filter.all')], ['video', t('rooms.filter.video')], ['audio', t('rooms.filter.audio')], ['other', t('rooms.filter.other')]] as const).map(([k, label]) => (
+              <button
+                key={k}
+                type="button"
+                className={`room-file-chip${typeFilter === k ? ' active' : ''}`}
+                onClick={() => setTypeFilter(k)}
+              >
+                {label}
+              </button>
+            ))}
+            <button type="button" className={`room-file-chip${onlyMine ? ' active' : ''}`} onClick={() => setOnlyMine((v) => !v)}>
+              {t('rooms.filter.mine')}
+            </button>
+            <button type="button" className={`room-file-chip${onlyMissing ? ' active' : ''}`} onClick={() => setOnlyMissing((v) => !v)}>
+              {t('rooms.filter.missing')}
+            </button>
+          </span>
           <button type="button" className="room-file-select-btn" onClick={() => setSelecting(true)}>
             <Icon name="check-circle" size={13} /> {t('rooms.select')}
           </button>
@@ -789,6 +903,19 @@ const RoomFilesPanel: React.FC<FilesPanelProps> = ({ room, onAddFiles, onCreateF
           <span className="room-file-bulk-count">{t('rooms.selectedCount').replace('{n}', String(selected.size))}</span>
           <button type="button" className="room-file-select-btn" onClick={() => setSelected(new Set(visibleFiles.map((f) => f.fileId)))}>{t('rooms.selectAll')}</button>
           <button type="button" className="room-file-select-btn" onClick={() => setSelected(new Set())}>{t('rooms.clearSelection')}</button>
+          {hasFolders && (
+            <DropdownMenu
+              renderTrigger={({ toggle }) => (
+                <button type="button" className="room-file-select-btn" disabled={selected.size === 0} onClick={toggle}>
+                  <Icon name="folder" size={13} /> {t('rooms.moveToFolder')}
+                </button>
+              )}
+              items={[
+                ...folders.map((f) => ({ key: f.id, label: f.name, onSelect: () => { assignMany(Array.from(selected), f.id); setSelected(new Set()); setSelecting(false); } })),
+                { key: '', label: t('rooms.folder.uncategorized'), onSelect: () => { assignMany(Array.from(selected), null); setSelected(new Set()); setSelecting(false); } },
+              ]}
+            />
+          )}
           <button
             type="button" className="room-file-bulk-del" disabled={selected.size === 0}
             onClick={async () => {
@@ -840,6 +967,8 @@ const RoomFilesPanel: React.FC<FilesPanelProps> = ({ room, onAddFiles, onCreateF
           {grouped.map((g) => {
             const key = g.folder?.id ?? 'uncategorized';
             const editing = !!g.folder && editFolderId === g.folder.id;
+            // A live search force-expands so matches are never hidden.
+            const isCollapsed = !fileQuery.trim() && collapsed.has(key);
             return (
               <div key={key} className={`room-folder-section${dragOverKey === key ? ' dragover' : ''}`} {...sectionDropProps(g.folder?.id ?? null, key)}>
                 {editing && g.folder ? (
@@ -850,12 +979,23 @@ const RoomFilesPanel: React.FC<FilesPanelProps> = ({ room, onAddFiles, onCreateF
                   />
                 ) : (
                   <div className="room-folder-header">
-                    <span className="room-folder-label">
+                    <button type="button" className="room-folder-label room-folder-toggle" onClick={() => toggleCollapsed(key)} title={isCollapsed ? t('rooms.folder.expand') : t('rooms.folder.collapse')}>
+                      <Icon name={isCollapsed ? 'chevron-right' : 'chevron-down'} size={13} className="room-folder-chevron" />
                       <FolderIcon folder={g.folder} />
                       <span className="room-folder-title">{g.folder ? g.folder.name : t('rooms.folder.uncategorized')}</span>
                       <span className="room-folder-count">{g.files.length}</span>
-                    </span>
+                    </button>
                     <span className="room-folder-acts">
+                      {g.folder && (() => {
+                        const ov = room.folderFetch?.[g.folder.id];
+                        const state = ov === true ? 'on' : ov === false ? 'off' : 'inherit';
+                        const label = state === 'on' ? t('rooms.folder.fetchOn') : state === 'off' ? t('rooms.folder.fetchOff') : t('rooms.folder.fetchInherit');
+                        return (
+                          <button className={`room-folder-act room-folder-fetch ${state}`} title={label} onClick={() => cycleFolderFetch(g.folder!.id)}>
+                            <Icon name="download" size={13} />
+                          </button>
+                        );
+                      })()}
                       <button className="room-folder-act" title={t('rooms.folder.addHere')} onClick={() => onAddFiles(g.folder?.id)}>
                         <Icon name="file-plus" size={13} />
                       </button>
@@ -878,7 +1018,7 @@ const RoomFilesPanel: React.FC<FilesPanelProps> = ({ room, onAddFiles, onCreateF
                     </span>
                   </div>
                 )}
-                {g.files.length > 0 ? (
+                {isCollapsed ? null : g.files.length > 0 ? (
                   <div className="room-files">{renderFolderFiles(g.files)}</div>
                 ) : !editing ? (
                   <div className="room-folder-empty">{t('rooms.folder.empty')}</div>
@@ -1079,8 +1219,6 @@ const RoomDetail: React.FC<DetailProps> = ({ room, onAddFiles, onDropFiles, onCr
     setRenaming(false);
     if (n && n !== room.name) window.api.rooms.rename(room.roomId, n).catch((e) => toast.error(String(e instanceof Error ? e.message : e)));
   };
-  // Activity log lives in its own modal (opened from the title bar).
-  const [showActivity, setShowActivity] = useState(false);
   // The Stage shows Files by default and swaps to the inline watch player or
   // screen viewer. Single-slot: opening one supersedes the other. Both the file-row
   // Watch and the voice LIVE-badge feed this.
@@ -1192,7 +1330,6 @@ const RoomDetail: React.FC<DetailProps> = ({ room, onAddFiles, onDropFiles, onCr
           <Button variant="ghost" size="sm" onClick={onCopyCode} icon={<Icon name="copy" size={14} />}>{t('rooms.code')}</Button>
           <Button variant="ghost" size="sm" onClick={onInvite} icon={<Icon name="share-2" size={14} />}>{t('rooms.invite')}</Button>
           <Button variant="ghost" size="sm" onClick={onOpenFolder} icon={<Icon name="folder-open" size={14} />}>{t('rooms.folder')}</Button>
-          <Button variant="ghost" size="sm" onClick={() => setShowActivity(true)} icon={<Icon name="activity" size={14} />}>{t('rooms.history')}</Button>
           <Button variant="danger" size="sm" onClick={onLeave} disabled={busy} icon={<Icon name="x" size={14} />}>{t('rooms.leave')}</Button>
         </div>
       </div>
@@ -1236,24 +1373,6 @@ const RoomDetail: React.FC<DetailProps> = ({ room, onAddFiles, onDropFiles, onCr
         />
         <RoomChat room={room} />
       </div>
-
-      {showActivity && (
-        <Modal title={t('rooms.history')} icon="activity" size="lg" onClose={() => setShowActivity(false)}>
-          {room.history.length === 0 ? (
-            <div className="room-files-empty">{t('rooms.historyEmpty')}</div>
-          ) : (
-            <div className="room-history room-history-modal">
-              {room.history.slice().reverse().map((ev) => (
-                <div key={ev.id} className="room-history-item">
-                  <span className="room-history-actor">{ev.actorName}</span>
-                  <span className="room-history-text">{eventText(t, ev)}</span>
-                  <span className="room-history-time">{shortTime(ev.at)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </Modal>
-      )}
     </div>
   );
 };
@@ -1497,7 +1616,7 @@ const RoomMembersList: React.FC<{ room: RoomState }> = ({ room }) => {
             {m.isSelf ? (m.name && m.name !== 'You' ? m.name : t('rooms.you')) : m.name}
             {m.relayed && <Icon name="network" size={11} className="room-member-relay" />}
           </span>
-          <span className="room-member-have">
+          <span className="room-member-have" title={m.muted ? undefined : t('rooms.memberHaveHint').replace('{n}', String(m.have.length)).replace('{total}', String(room.files.length))}>
             {m.muted ? t('rooms.muted') : `${m.have.length}/${room.files.length}`}
           </span>
           {!m.isSelf && (
@@ -1539,19 +1658,60 @@ const RoomMembersList: React.FC<{ room: RoomState }> = ({ room }) => {
 // ── Room chat panel ───────────────────────────────────────────────────────
 // Pure text chat — the room's persistent right region. People + voice live in the
 // left rail (RoomPeopleRail); this card is just log + typing indicator + composer.
+// One chat message body, split into text / fenced-code segments, with a copy
+// button for anything multiline (pasted scripts etc.).
+const RoomChatBody: React.FC<{ text: string; copyLabel: string; copiedLabel: string }> = ({ text, copyLabel, copiedLabel }) => {
+  const segments = useMemo(() => parseChatSegments(text), [text]);
+  const copy = (e: React.MouseEvent) => {
+    // Use the clicked element's OWN realm: in the detached chat window the main
+    // document is unfocused and ITS clipboard would reject ('not focused').
+    const win = (e.currentTarget as HTMLElement).ownerDocument.defaultView ?? window;
+    win.navigator.clipboard.writeText(
+      // Copy the CODE when the message is a single fence, else the whole body.
+      segments.length === 1 && segments[0].kind === 'code' ? segments[0].text : text,
+    ).then(() => toast.success(copiedLabel)).catch((err) => toast.error(String(err instanceof Error ? err.message : err)));
+  };
+  return (
+    <span className="room-chat-bubble">
+      {segments.map((s, i) => s.kind === 'code'
+        ? <pre key={i} className="room-chat-code">{s.text}</pre>
+        : <span key={i} className="room-chat-text">{s.text}</span>)}
+      {isCopyworthy(text) && (
+        <button type="button" className="room-chat-copy" onClick={copy} title={copyLabel}>
+          <Icon name="copy" size={12} />
+        </button>
+      )}
+    </span>
+  );
+};
+
 const RoomChat: React.FC<{ room: RoomState }> = ({ room }) => {
   const { t } = useTranslation();
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  const [zoneTab, setZoneTab] = useState<'chat' | 'history'>('chat');
+  const { popout, openPopout, closePopout } = usePopout('havvn-room-chat', t('rooms.chat'));
   const selfId = room.members.find((m) => m.isSelf)?.memberId;
   const messages = room.chat || [];
   const listRef = useRef<HTMLDivElement>(null);
+  const composeRef = useRef<HTMLTextAreaElement>(null);
 
-  // Keep the view pinned to the newest message as the log grows.
+  // Keep the view pinned to the newest message as the log grows. `popout` is a
+  // dep because detach/reattach REMOUNTS the log DOM in the other document
+  // (fresh node, scrollTop=0) without messages.length changing.
   useEffect(() => {
     const el = listRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages.length]);
+  }, [messages.length, zoneTab, popout]);
+
+  // Auto-grow the composer with its content (bounded by CSS max-height).
+  const autosize = () => {
+    const el = composeRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  };
+  useEffect(autosize, [text, popout]);
 
   // Typing liveness. Outbound: at most one ping per 2.5s while composing (the
   // engine rate-limits the broadcast further). Inbound: mirror the engine's
@@ -1589,9 +1749,64 @@ const RoomChat: React.FC<{ room: RoomState }> = ({ room }) => {
     finally { setSending(false); }
   };
 
-  return (
-    <div className="room-section room-chat-section">
-      <div className="room-section-title">{t('rooms.chat')}</div>
+  // Tab inserts an indent at the caret (scripts!) instead of moving focus.
+  const onComposeKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.nativeEvent.isComposing) return; // IME: Enter confirms the composition, not send
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); return; }
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const el = e.currentTarget;
+      const { selectionStart: s, selectionEnd: en } = el;
+      const next = text.slice(0, s) + '\t' + text.slice(en);
+      if (next.length <= 2000) {
+        setText(next);
+        // Restore the caret via the textarea's OWN window — the main window's rAF
+        // is throttled while it is minimized behind a detached chat.
+        const win = el.ownerDocument.defaultView ?? window;
+        win.requestAnimationFrame(() => { el.selectionStart = el.selectionEnd = s + 1; });
+      }
+    }
+  };
+
+  const zone = (
+    <div className={`room-section room-chat-section${popout ? ' room-chat-popped' : ''}`}>
+      <div className="room-chat-zone-tabs">
+        {(['chat', 'history'] as const).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            className={`room-zone-tab${zoneTab === tab ? ' active' : ''}`}
+            onClick={() => setZoneTab(tab)}
+          >
+            {tab === 'chat' ? t('rooms.chat') : t('rooms.history')}
+          </button>
+        ))}
+        <button
+          type="button"
+          className="room-zone-popout"
+          title={popout ? t('rooms.chatPopIn') : t('rooms.chatPopOut')}
+          onClick={() => { if (popout) closePopout(); else openPopout(); }}
+        >
+          <Icon name={popout ? 'minimize' : 'external-link'} size={13} />
+        </button>
+      </div>
+      {zoneTab === 'history' ? (
+        <div className="room-chat room-zone-history">
+          {room.history.length === 0 ? (
+            <div className="room-files-empty">{t('rooms.historyEmpty')}</div>
+          ) : (
+            <div className="room-history room-history-zone">
+              {room.history.slice().reverse().map((ev) => (
+                <div key={ev.id} className="room-history-item">
+                  <span className="room-history-actor">{ev.actorName}</span>
+                  <span className="room-history-text">{eventText(t, ev)}</span>
+                  <span className="room-history-time">{shortTime(ev.at)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
       <div className="room-chat">
         <div className="room-chat-log" ref={listRef}>
           {messages.length === 0 ? (
@@ -1604,7 +1819,7 @@ const RoomChat: React.FC<{ room: RoomState }> = ({ room }) => {
                   {!mine && <Identicon seed={m.avatarSeed} size={28} />}
                   <div className="room-chat-bubble-wrap">
                     {!mine && <span className="room-chat-author">{m.name || '?'}</span>}
-                    <span className="room-chat-bubble">{m.text}</span>
+                    <RoomChatBody text={m.text} copyLabel={t('rooms.chatCopy')} copiedLabel={t('rooms.chatCopied')} />
                     <span className="room-chat-time">{shortTime(m.at)}</span>
                   </div>
                 </div>
@@ -1625,27 +1840,65 @@ const RoomChat: React.FC<{ room: RoomState }> = ({ room }) => {
           )}
         </div>
         <div className="room-chat-compose">
-          <input
-            className="rooms-input"
+          <textarea
+            ref={composeRef}
+            className="rooms-input room-chat-input"
             placeholder={t('rooms.chatPlaceholder')}
             value={text}
             maxLength={2000}
+            rows={1}
             onChange={(e) => { setText(e.target.value); pingTyping(e.target.value); }}
-            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+            onKeyDown={onComposeKeyDown}
           />
           <Button variant="primary" size="sm" onClick={send} loading={sending} disabled={!text.trim()} icon={<Icon name="send" size={14} />}>
             {t('rooms.chatSend')}
           </Button>
         </div>
       </div>
+      )}
     </div>
+  );
+
+  // Detached: the whole zone (tabs + log + composer) portals into the pop-out
+  // window; the docked column shows a slim placeholder with a restore action.
+  // Same React tree either way — chat state and subscriptions are unaffected.
+  if (popout && !popout.closed) {
+    return (
+      <>
+        <div className="room-section room-chat-section room-chat-placeholder">
+          <div className="room-section-title">{t('rooms.chat')}</div>
+          <div className="room-chat-placeholder-body">
+            <Icon name="external-link" size={18} />
+            <span>{t('rooms.chatDetached')}</span>
+            <Button variant="ghost" size="sm" onClick={closePopout}>{t('rooms.chatPopIn')}</Button>
+          </div>
+        </div>
+        {createPortal(zone, popout.document.body)}
+      </>
+    );
+  }
+  return zone;
+};
+
+// Highlight the search match inside a file name (case-insensitive, first hit).
+const highlightName = (name: string, query: string): React.ReactNode => {
+  const q = query.trim().toLowerCase();
+  if (!q) return name;
+  const i = name.toLowerCase().indexOf(q);
+  if (i < 0) return name;
+  return (
+    <>
+      {name.slice(0, i)}
+      <mark className="room-file-mark">{name.slice(i, i + q.length)}</mark>
+      {name.slice(i + q.length)}
+    </>
   );
 };
 
-const RoomFileRow: React.FC<{ file: RoomFile; room: RoomState; onWatch: (file: RoomFile) => void; onAssignFile: (fileId: string, folderId: string | null) => void; selecting?: boolean; selected?: boolean; onToggleSelect?: (fileId: string) => void }> = ({ file, room, onWatch, onAssignFile, selecting = false, selected = false, onToggleSelect }) => {
+const RoomFileRow: React.FC<{ file: RoomFile; room: RoomState; onWatch: (file: RoomFile) => void; onAssignFile: (fileId: string, folderId: string | null) => void; selecting?: boolean; selected?: boolean; onToggleSelect?: (fileId: string) => void; getDragIds?: (fileId: string) => string[]; viewPrefs?: RoomFilesPrefs; highlightQuery?: string }> = ({ file, room, onWatch, onAssignFile, selecting = false, selected = false, onToggleSelect, getDragIds, viewPrefs, highlightQuery }) => {
   const { t } = useTranslation();
   const { confirm } = useConfirm();
-  const [moveOpen, setMoveOpen] = useState(false);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const folders = room.folders ?? [];
   const tr = room.transfers[file.fileId];
   const owner = room.members.find((m) => m.memberId === file.addedBy);
@@ -1676,9 +1929,15 @@ const RoomFileRow: React.FC<{ file: RoomFile; room: RoomState; onWatch: (file: R
   return (
     <div
       className={`room-file ${selecting ? 'selecting' : ''} ${selected ? 'selected' : ''}`}
-      draggable={folders.length > 0 && !selecting}
-      onDragStart={(e) => { e.dataTransfer.setData(FILE_DND_TYPE, file.fileId); e.dataTransfer.effectAllowed = 'move'; }}
+      draggable={folders.length > 0}
+      onDragStart={(e) => {
+        // A selected row drags the whole selection ('\n'-joined ids).
+        const ids = getDragIds?.(file.fileId) ?? [file.fileId];
+        e.dataTransfer.setData(FILE_DND_TYPE, ids.join('\n'));
+        e.dataTransfer.effectAllowed = 'move';
+      }}
       onClick={selecting ? () => onToggleSelect?.(file.fileId) : undefined}
+      onContextMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY }); }}
     >
       {selecting && (
         <input
@@ -1690,7 +1949,15 @@ const RoomFileRow: React.FC<{ file: RoomFile; room: RoomState; onWatch: (file: R
         <Identicon seed={owner?.avatarSeed || file.addedBy} size={30} />
       </div>
       <div className="room-file-main">
-        <div className="room-file-name" title={file.name}>{file.name}</div>
+        <div className="room-file-name" title={file.name}>
+          {viewPrefs?.typeIcons !== false && (() => {
+            const kind = classifyMediaKind(file.name);
+            const archive = /\.(zip|7z|rar|tar|gz)$/i.test(file.name);
+            const icon: IconName = kind === 'video' ? 'film' : kind === 'audio' ? 'music' : archive ? 'archive' : 'file';
+            return <Icon name={icon} size={13} className={`room-file-kind kind-${kind}`} />;
+          })()}
+          {highlightQuery ? highlightName(file.name, highlightQuery) : file.name}
+        </div>
         <div className="room-file-sub">
           <span>{formatBytes(file.size)}</span>
           <span className="room-file-dot">·</span>
@@ -1727,6 +1994,7 @@ const RoomFileRow: React.FC<{ file: RoomFile; room: RoomState; onWatch: (file: R
               <span className="room-file-speed">{formatSpeed(tr.downSpeed)}</span>
             </>
           )}
+          {viewPrefs?.showReactions !== false && (
           <span className="room-file-reacts">
             {FILE_REACT_EMOJIS.map((emoji) => {
               const ids = reacts?.[emoji] || [];
@@ -1746,6 +2014,7 @@ const RoomFileRow: React.FC<{ file: RoomFile; room: RoomState; onWatch: (file: R
               );
             })}
           </span>
+          )}
         </div>
         {downloading && (
           <div className="room-file-progress">
@@ -1753,67 +2022,78 @@ const RoomFileRow: React.FC<{ file: RoomFile; room: RoomState; onWatch: (file: R
           </div>
         )}
       </div>
-      {canWatch && (
-        <button
-          className="room-file-open room-file-watch"
-          onClick={() => onWatch(file)}
-          title={t('rooms.watchHint')}
-        >
-          <Icon name="play" size={14} /> {t('rooms.watch')}
-        </button>
-      )}
-      {haveLocally && (
-        <button
-          className="room-file-open"
-          onClick={() => window.api.rooms.openFile(room.roomId, file.fileId)}
-          title={t('rooms.openFileHint')}
-        >
-          <Icon name="external-link" size={14} /> {t('rooms.openFile')}
-        </button>
-      )}
-      {awaitingFetch && (
-        <button
-          className="room-file-open room-file-fetch"
-          onClick={() => {
-            window.api.rooms.fetchFile(room.roomId, file.fileId)
-              .catch((e) => toast.error(String(e instanceof Error ? e.message : e)));
-          }}
-          title={t('rooms.fetchHint')}
-        >
-          <Icon name="download" size={14} /> {t('rooms.fetch')}
-        </button>
-      )}
-      {folders.length > 0 && (
-        <div className="room-file-move-wrap">
-          <button className="room-file-open" title={t('rooms.folder.moveTo')} onClick={() => setMoveOpen((v) => !v)}>
-            <Icon name="folder" size={14} />
+      <span className="room-file-acts">
+        {/* stopPropagation everywhere: in select mode the ROW's onClick toggles
+            selection — an action click must not also flip the checkbox. */}
+        {canWatch && (
+          <button className="room-file-act" onClick={(e) => { e.stopPropagation(); onWatch(file); }} title={t('rooms.watchHint')}>
+            <Icon name="play" size={14} />
           </button>
-          {moveOpen && (
-            <div className="room-file-move-menu">
-              {folders.map((fo) => (
-                <button key={fo.id} className={`room-file-move-item${file.folderId === fo.id ? ' on' : ''}`} onClick={() => { setMoveOpen(false); onAssignFile(file.fileId, fo.id); }}>
-                  <FolderIcon folder={fo} size={12} />
-                  <span>{fo.name}</span>
-                </button>
-              ))}
-              <button className={`room-file-move-item${!file.folderId ? ' on' : ''}`} onClick={() => { setMoveOpen(false); onAssignFile(file.fileId, null); }}>
-                <FolderIcon folder={null} size={12} />
-                <span>{t('rooms.folder.uncategorized')}</span>
-              </button>
-            </div>
-          )}
-        </div>
+        )}
+        {haveLocally && (
+          <button className="room-file-act" onClick={(e) => { e.stopPropagation(); window.api.rooms.openFile(room.roomId, file.fileId); }} title={t('rooms.openFileHint')}>
+            <Icon name="external-link" size={14} />
+          </button>
+        )}
+        {awaitingFetch && (
+          <button
+            className="room-file-act room-file-act-fetch"
+            onClick={(e) => {
+              e.stopPropagation();
+              window.api.rooms.fetchFile(room.roomId, file.fileId)
+                .catch((err) => toast.error(String(err instanceof Error ? err.message : err)));
+            }}
+            title={t('rooms.fetchHint')}
+          >
+            <Icon name="download" size={14} />
+          </button>
+        )}
+        <button
+          className="room-file-act"
+          title={t('rooms.fileMenu')}
+          onClick={(e) => {
+            e.stopPropagation();
+            const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            setMenu({ x: r.left, y: r.bottom + 4 });
+          }}
+        >
+          <Icon name="more-horizontal" size={14} />
+        </button>
+      </span>
+      {menu && createPortal(
+        // The wrapper stops clicks reaching the row's select-toggle through the
+        // React tree (portals propagate events by COMPONENT hierarchy, not DOM).
+        <div onClick={(e) => e.stopPropagation()} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          items={[
+            ...(canWatch ? [{ label: t('rooms.watch'), icon: 'play' as IconName, onClick: () => onWatch(file) }] : []),
+            ...(haveLocally ? [{ label: t('rooms.openFile'), icon: 'external-link' as IconName, onClick: () => { window.api.rooms.openFile(room.roomId, file.fileId); } }] : []),
+            ...(awaitingFetch ? [{ label: t('rooms.fetch'), icon: 'download' as IconName, onClick: () => { window.api.rooms.fetchFile(room.roomId, file.fileId).catch((e) => toast.error(String(e instanceof Error ? e.message : e))); } }] : []),
+            { label: t('rooms.copyName'), icon: 'copy' as IconName, onClick: () => { navigator.clipboard.writeText(file.name).catch(() => { /* ignore */ }); } },
+            ...(folders.length > 0 ? [
+              { label: '', onClick: () => { /* divider */ }, divider: true },
+              ...folders.filter((fo) => fo.id !== file.folderId).map((fo) => ({
+                label: `${t('rooms.folder.moveTo')}: ${fo.name}`, icon: 'folder' as IconName,
+                onClick: () => onAssignFile(file.fileId, fo.id),
+              })),
+              ...(file.folderId ? [{ label: `${t('rooms.folder.moveTo')}: ${t('rooms.folder.uncategorized')}`, icon: 'folder' as IconName, onClick: () => onAssignFile(file.fileId, null) }] : []),
+            ] : []),
+            { label: '', onClick: () => { /* divider */ }, divider: true },
+            {
+              label: t('rooms.deleteHint'), icon: 'trash' as IconName, danger: true,
+              onClick: async () => {
+                if (await confirm({ message: t('rooms.deleteConfirm'), danger: true }))
+                  window.api.rooms.removeFile(room.roomId, file.fileId).catch((e) => toast.error(String(e instanceof Error ? e.message : e)));
+              },
+            },
+          ]}
+        />
+        </div>,
+        document.body,
       )}
-      <button
-        className="room-file-del"
-        onClick={async () => {
-          if (await confirm({ message: t('rooms.deleteConfirm'), danger: true }))
-            window.api.rooms.removeFile(room.roomId, file.fileId).catch((e) => toast.error(String(e instanceof Error ? e.message : e)));
-        }}
-        title={t('rooms.deleteHint')}
-      >
-        <Icon name="trash" size={14} />
-      </button>
       <div className="room-file-status">
         {haveLocally ? (
           <span className="room-status seeding" title={t('rooms.haveLocal')}><Icon name="check-circle" size={16} /></span>

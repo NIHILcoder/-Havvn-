@@ -4,6 +4,34 @@ All notable changes to Havvn (formerly TorrentHunt) are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [2.22.0] - 2026-07-18
+
+The room, refined: detachable panels, a chat that understands code, and a far more
+capable files zone.
+
+### Added
+- **Detachable chat and voice settings.** Pop the chat — or the voice settings — out
+  into its own window and drag it to a second monitor. Everything keeps working
+  (typing, mic test, device pickers); one click brings it back.
+- **A chat built for sharing scripts.** The composer is multiline now (Shift+Enter
+  for a new line, Tab inserts an indent), pasted code keeps its formatting, and
+  triple-backtick fences render as proper code blocks with a copy button. The room's
+  activity history lives in a chat-side tab instead of a buried modal.
+- **Per-folder auto-download.** Each folder can force auto-download on or off,
+  overriding the room-wide toggle — subscribe to just the folders you care about.
+- **Multi-select file moves.** Select several files and drag them into a folder in
+  one motion (or use the new Move-to-folder button in the selection bar).
+- **A files zone that works like a file manager.** Right-click any file for its full
+  menu (watch, open, download, move, copy name, delete); rows are cleaner with
+  hover actions. Filter chips (type / mine / not downloaded), a view popover
+  (compact density, reactions, file-type icons), per-room sort memory, collapsible
+  folders that remember their state, search-match highlighting, and a total-size
+  readout.
+
+### Changed
+- The voice rail fits narrow widths properly and the Stage tab switcher is compact;
+  member file counts explain themselves on hover.
+
 ## [2.21.0] - 2026-07-18
 
 The room, rearranged for everything it now does.

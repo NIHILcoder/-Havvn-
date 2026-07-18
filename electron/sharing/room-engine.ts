@@ -28,7 +28,7 @@ import WebTorrent from 'webtorrent';
 import { deriveKey, topicHash, rendezvousId, randomPeerId, encrypt, decrypt, generateRoomCode, codeIsE2E, deriveMemberId, buildInvite } from './room-crypto';
 import { encryptFile, decryptFile } from './room-e2e';
 import { RoomFile, RoomFolder, RoomMember, RoomState, RoomTransfer, PersistedRoomFile, RoomEvent, RoomChatMessage, VoiceSettings, VoiceDeviceInfo } from '../../shared/types';
-import { mergeFolderUpsert, applyFolderDelete, applyAssignment, sanitizeFolderIcon } from '../../shared/room-folders';
+import { mergeFolderUpsert, applyFolderDelete, applyAssignment, sanitizeFolderIcon, wantAutoFetch } from '../../shared/room-folders';
 import { safeBaseName, safeDirSegment } from '../../shared/path-safety';
 import crypto from 'crypto';
 
@@ -211,6 +211,7 @@ interface Room {
   pendingTombs: Map<string, TombProof>;  // signed author-deletions for files we don't hold yet — applied if/when that file arrives (session-only, capped)
   revives: Map<string, number>;          // fileId → revAt of a VERIFIED revive we accepted; guards the revived file from re-deletion by an equal/older re-gossiped tombstone (session-only)
   autoFetch: boolean;                    // auto-download peers' files; false = wait for an explicit fetchFile
+  folderFetch: Record<string, boolean>;  // per-folder auto-fetch override (local pref; absent key = inherit autoFetch)
   upKbps: number;                        // per-room upload ceiling, KB/s (0 = unlimited)
   downKbps: number;                      // per-room download ceiling, KB/s (0 = unlimited)
   mutes: Set<string>;                    // locally-muted memberIds (per install)
@@ -489,6 +490,7 @@ function buildState(room: Room): RoomState {
     connected: room.started,
     peerCount: onlinePeers,
     autoFetch: room.autoFetch,
+    folderFetch: { ...room.folderFetch },
     upKbps: room.upKbps,
     downKbps: room.downKbps,
     kicked: room.kicked,
@@ -1037,6 +1039,10 @@ function clampFile(f: any): RoomFile | null {
   const name = safeBaseName(clampStr(f.name, MAX_STR));
   // A file with no usable (traversal-free) name can't be safely stored — drop it.
   if (!fileId || !magnetURI || !name) return null;
+  // fileId is an infoHash by construction — reject anything with whitespace or
+  // control chars (a crafted id with an embedded newline would corrupt multi-id
+  // encodings like the renderer's drag payload).
+  if (!/^\S+$/.test(fileId)) return null;
   return {
     fileId,
     name,
@@ -1302,6 +1308,9 @@ function onMessage(room: Room, wire: Wire, raw: any): void {
       if (msg.op === 'del') {
         if (applyFolderDelete(room.folders, room.folderTombstones, msg.id, msg.at)) {
           persistFolderDelete(room, msg.id, msg.at, !room.folders.has(msg.id));
+          // Its files fall back to Uncategorized — a lingering per-folder
+          // auto-fetch override would silently keep gating them forever.
+          dropFolderFetch(room, msg.id);
           pushState(room);
         }
       } else {
@@ -1320,6 +1329,12 @@ function onMessage(room: Room, wire: Wire, raw: any): void {
       if (file && applyAssignment(file, msg.folderId, msg.at)) {
         const tr = room.transfers.get(msg.fileId);
         persistManifest(room, file, tr?.localPath, tr?.cipherPath); // re-persist the whole file with its new folderId
+        // A live 'add' races its 'assign' (the folderId lands here, after the merge
+        // decided against fetching) — re-check the per-folder override now that the
+        // file's real folder is known. Landing in an auto-ON folder starts the pull.
+        if (!tr?.haveLocally && wantAutoFetch(room.autoFetch, room.folderFetch, file.folderId) && (!tr || tr.status === 'queued' || !tr.status)) {
+          ensureLocal(room, file);
+        }
         pushState(room);
       }
       break;
@@ -1716,7 +1731,9 @@ function mergeFile(room: Room, file: RoomFile): void {
     logEvent(room, { type: 'file-added', actorId: file.addedBy, actorName: file.addedByName || room.members.get(file.addedBy)?.name || '?', fileName: file.name });
     // Manual mode: list the file but don't fetch — the user pulls it with an
     // explicit fetchFile. (Our OWN shares go through mergeFileLocal instead.)
-    if (room.autoFetch) ensureLocal(room, file);
+    // Per-folder overrides apply when the folderId is known at merge time (hello
+    // backfill / restore); a live add races its 'assign', which re-checks below.
+    if (wantAutoFetch(room.autoFetch, room.folderFetch, file.folderId)) ensureLocal(room, file);
   }
 }
 
@@ -1922,7 +1939,7 @@ function restoreManifestFile(room: Room, pf: PersistedRoomFile): void {
       if (room.secret && !havePlain) void decryptOne(room, file, cipherPath);
       return;
     }
-    if (room.autoFetch) ensureLocal(room, file); // no cached ciphertext — re-download it
+    if (wantAutoFetch(room.autoFetch, room.folderFetch, file.folderId)) ensureLocal(room, file); // no cached ciphertext — re-download it
     return;
   }
 
@@ -1932,7 +1949,7 @@ function restoreManifestFile(room: Room, pf: PersistedRoomFile): void {
     catch (e) { log('manifest reseed failed: ' + String(e)); }
     return;
   }
-  if (room.autoFetch) ensureLocal(room, file); // not at the known path — seed-from-folder or re-download
+  if (wantAutoFetch(room.autoFetch, room.folderFetch, file.folderId)) ensureLocal(room, file); // not at the known path — seed-from-folder or re-download
 }
 
 function wireTorrentStats(room: Room, torrent: any): void {
@@ -2136,7 +2153,7 @@ function kickMember(room: Room, memberId: string): void {
 
 // ── Room lifecycle ───────────────────────────────────────────────────────────
 function startRoom(p: { roomId: string; name: string; code: string; folder: string;
-  self: { memberId: string; name: string; avatarSeed: string; pub: string; priv: string }; useTurn: boolean; turnServers?: any[]; tombstones?: Record<string, number>; tombSigs?: Record<string, { by: string; pub: string; sig: string }>; revives?: Record<string, number>; manifest?: PersistedRoomFile[]; folders?: RoomFolder[]; folderTombs?: Record<string, number>; ownerId?: string; ownerPin?: string; nameAt?: number; mutes?: string[]; history?: RoomEvent[]; chat?: RoomChatMessage[]; reacts?: Record<string, Record<string, string[]>>; identities?: Record<string, string>; e2e?: boolean; secret?: string; e2eCfg?: E2ECfg | null; cacheDir?: string; autoFetch?: boolean; upKbps?: number; downKbps?: number }): RoomState {
+  self: { memberId: string; name: string; avatarSeed: string; pub: string; priv: string }; useTurn: boolean; turnServers?: any[]; tombstones?: Record<string, number>; tombSigs?: Record<string, { by: string; pub: string; sig: string }>; revives?: Record<string, number>; manifest?: PersistedRoomFile[]; folders?: RoomFolder[]; folderTombs?: Record<string, number>; ownerId?: string; ownerPin?: string; nameAt?: number; mutes?: string[]; history?: RoomEvent[]; chat?: RoomChatMessage[]; reacts?: Record<string, Record<string, string[]>>; identities?: Record<string, string>; e2e?: boolean; secret?: string; e2eCfg?: E2ECfg | null; cacheDir?: string; autoFetch?: boolean; folderFetch?: Record<string, boolean>; upKbps?: number; downKbps?: number }): RoomState {
   // Authoritative kill-switch gate: refuse to bring up ANY room networking while
   // the VPN is down, no matter how this join raced past the manager's flag. The
   // manager clears this via 'netResume' before it re-joins on VPN restore.
@@ -2193,6 +2210,7 @@ function startRoom(p: { roomId: string; name: string; code: string; folder: stri
     // Clamped to not-future so no persisted value can outrank a real later deletion.
     revives: new Map(Object.entries(p.revives || {}).map(([k, v]) => [k, Math.min(Number(v) || 0, Date.now() + 60_000)])),
     autoFetch: p.autoFetch !== false, // absent = true (historical behavior)
+    folderFetch: (p.folderFetch && typeof p.folderFetch === 'object') ? { ...p.folderFetch } : {},
     upKbps: Math.max(0, Number(p.upKbps) || 0),
     downKbps: Math.max(0, Number(p.downKbps) || 0),
     mutes: new Set(p.mutes || []),
@@ -2304,9 +2322,20 @@ async function addFiles(roomId: string, paths: string[], opts?: { folderId?: str
   let added = 0;
   let firstError: string | null = null;
   const addedIds: string[] = [];
+  // Resolve the target folder BEFORE seeding so each broadcast 'add' already
+  // carries its folderId — receivers with a per-folder auto-fetch override need
+  // the folder known at merge time (the separate 'assign' below is a late
+  // belt-and-braces for reordered deliveries, not the primary signal).
+  let targetId = opts?.folderId;
+  if (!targetId && opts?.folderName && paths.length > 0) {
+    const existing = Array.from(room.folders.values()).find((f) => f.name === opts.folderName);
+    targetId = (existing ?? makeFolder(room, opts.folderName, 'folder', '')).id;
+  }
+  if (targetId && !room.folders.has(targetId)) targetId = undefined;
   for (const p of paths) {
     try {
       const file = await seedLocal(room, p);
+      if (targetId) applyAssignment(file, targetId, nextAt(file.folderAt ?? 0));
       // Re-sharing previously deleted content is an explicit revive: lift the
       // tombstone and stamp the add strictly after the deletion, so the 'add'
       // we broadcast (and our HELLOs) beat every peer's stored tombstone —
@@ -2344,24 +2373,19 @@ async function addFiles(roomId: string, paths: string[], opts?: { folderId?: str
   if (paths.length > 0 && added === 0) {
     throw new Error(firstError || 'No files could be shared');
   }
-  // Assign the files we JUST added to a target folder — done here (not by a
-  // renderer before/after diff) so a peer's concurrent add can't be swept in and
-  // an already-shared re-add still lands in the target. folderName resolves to an
-  // existing same-named folder (dedupe on re-share) or a new one.
-  if (addedIds.length > 0 && (opts?.folderId || opts?.folderName)) {
-    let targetId = opts.folderId;
-    if (!targetId && opts.folderName) {
-      const existing = Array.from(room.folders.values()).find((f) => f.name === opts.folderName);
-      targetId = (existing ?? makeFolder(room, opts.folderName, 'folder', '')).id;
-    }
-    if (targetId && room.folders.has(targetId)) {
-      for (const fid of addedIds) {
-        const file = room.files.get(fid);
-        if (file && applyAssignment(file, targetId, nextAt(file.folderAt ?? 0))) {
-          const tr = room.transfers.get(fid);
-          persistManifest(room, file, tr?.localPath, tr?.cipherPath);
-          broadcast(room, { t: 'assign', fileId: fid, folderId: targetId, at: file.folderAt as number, memberId: room.self.memberId });
-        }
+  // The files were stamped with their folder BEFORE the 'add' broadcast (above).
+  // Re-broadcast the assignment separately as well: an already-shared re-add whose
+  // 'add' was deduped by receivers still needs the (possibly new) folder to land.
+  if (addedIds.length > 0 && targetId) {
+    for (const fid of addedIds) {
+      const file = room.files.get(fid);
+      // A re-added file that predates this share keeps its own assignment history —
+      // move it to the target explicitly (applyAssignment no-ops when already there).
+      if (file && file.folderId !== targetId) applyAssignment(file, targetId, nextAt(file.folderAt ?? 0));
+      if (file && file.folderId === targetId && file.folderAt) {
+        const tr = room.transfers.get(fid);
+        persistManifest(room, file, tr?.localPath, tr?.cipherPath);
+        broadcast(room, { t: 'assign', fileId: fid, folderId: targetId, at: file.folderAt, memberId: room.self.memberId });
       }
     }
     pushState(room, true);
@@ -2425,22 +2449,35 @@ function deleteFolder(roomId: string, folderId: string): RoomState {
   // groupFilesByFolder. No per-file reassignment gossip needed.
   if (applyFolderDelete(room.folders, room.folderTombstones, folderId, at)) {
     persistFolderDelete(room, folderId, at, !room.folders.has(folderId));
+    dropFolderFetch(room, folderId); // a lingering override would gate Uncategorized files forever
     broadcast(room, { t: 'folder', op: 'del', id: folderId, at, memberId: room.self.memberId });
     pushState(room, true);
   }
   return buildState(room);
 }
 
+/** Remove a deleted folder's auto-fetch override (engine + persisted copy). */
+function dropFolderFetch(room: Room, folderId: string): void {
+  if (!(folderId in room.folderFetch)) return;
+  delete room.folderFetch[folderId];
+  try { ipcRenderer.send('room-folder-fetch-del', { roomId: room.roomId, folderId }); } catch { /* ignore */ }
+}
+
 function assignFile(roomId: string, fileId: string, folderId: string | null): RoomState {
   const room = rooms.get(roomId);
   if (!room) throw new Error('Room not active');
   const file = room.files.get(fileId);
+  if (file && (file.folderId ?? null) === (folderId || null)) return buildState(room); // already there
   if (!file) return buildState(room);
   const at = nextAt(file.folderAt ?? 0);
   if (applyAssignment(file, folderId, at)) {
     const tr = room.transfers.get(fileId);
     persistManifest(room, file, tr?.localPath, tr?.cipherPath);
     broadcast(room, { t: 'assign', fileId, folderId: folderId || '', at, memberId: room.self.memberId });
+    // Moving a not-yet-fetched file into an auto-ON folder starts the pull.
+    if (!tr?.haveLocally && wantAutoFetch(room.autoFetch, room.folderFetch, file.folderId) && (!tr || tr.status === 'queued' || !tr.status)) {
+      ensureLocal(room, file);
+    }
     pushState(room, true);
   }
   return buildState(room);
@@ -2714,15 +2751,58 @@ ipcRenderer.on('room-cmd', async (_e, msg: any) => {
       const r = rooms.get(msg.roomId);
       if (r) {
         r.autoFetch = msg.autoFetch !== false;
-        // Turning auto back ON pulls everything that was left unfetched.
+        // Turning auto back ON pulls everything that was left unfetched — except
+        // files in folders whose per-folder override forces fetching OFF.
         if (r.autoFetch) {
           for (const f of r.files.values()) {
-            if (!r.transfers.get(f.fileId)?.haveLocally) ensureLocal(r, f);
+            if (!r.transfers.get(f.fileId)?.haveLocally && wantAutoFetch(r.autoFetch, r.folderFetch, f.folderId)) ensureLocal(r, f);
           }
         }
         pushState(r, true);
       }
       data = { ok: true };
+    }
+    else if (type === 'setFolderAutoFetch') {
+      // Local per-folder override: true/false forces, null inherits the room
+      // toggle again. Newly effective ON pulls the folder's unfetched files.
+      const r = rooms.get(msg.roomId);
+      if (!r) throw new Error('Room not active');
+      const folderId = String(msg.folderId || '');
+      if (folderId) {
+        if (msg.mode === true || msg.mode === false) r.folderFetch[folderId] = msg.mode;
+        else delete r.folderFetch[folderId];
+        if (wantAutoFetch(r.autoFetch, r.folderFetch, folderId)) {
+          for (const f of r.files.values()) {
+            if (f.folderId === folderId && !r.transfers.get(f.fileId)?.haveLocally) ensureLocal(r, f);
+          }
+        }
+        pushState(r, true);
+      }
+      data = buildState(r);
+    }
+    else if (type === 'assignFiles') {
+      // Batched multi-file move (the drop of a multi-selection): one cmd, one
+      // refresh. Mirrors removeFiles; per-file it follows assignFile exactly.
+      const r = rooms.get(msg.roomId);
+      if (!r) throw new Error('Room not active');
+      const folderId: string | null = msg.folderId ?? null;
+      for (const rawId of (Array.isArray(msg.fileIds) ? msg.fileIds : [])) {
+        const fileId = String(rawId || '');
+        const file = fileId ? r.files.get(fileId) : undefined;
+        if (!file) continue;
+        if ((file.folderId ?? null) === (folderId || null)) continue; // already there — no broadcast/LWW bump
+        const at = nextAt(file.folderAt ?? 0);
+        if (applyAssignment(file, folderId, at)) {
+          const tr = r.transfers.get(fileId);
+          persistManifest(r, file, tr?.localPath, tr?.cipherPath);
+          broadcast(r, { t: 'assign', fileId, folderId: folderId || '', at, memberId: r.self.memberId });
+          if (!tr?.haveLocally && wantAutoFetch(r.autoFetch, r.folderFetch, file.folderId) && (!tr || tr.status === 'queued' || !tr.status)) {
+            ensureLocal(r, file);
+          }
+        }
+      }
+      pushState(r, true);
+      data = buildState(r);
     }
     else if (type === 'fetchFile') {
       const r = rooms.get(msg.roomId);

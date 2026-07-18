@@ -608,6 +608,14 @@ export function setupIpcHandlers(window: BrowserWindow): void {
   ipcMain.handle('rooms:assignFile', wrapHandler('rooms:assignFile',
     async (_event, roomId: string, fileId: string, folderId: string | null) => roomManager.assignFile(roomId, fileId, folderId ?? null)
   ));
+  ipcMain.handle('rooms:assignFiles', wrapHandler('rooms:assignFiles',
+    async (_event, roomId: string, fileIds: string[], folderId: string | null) =>
+      roomManager.assignFiles(roomId, Array.isArray(fileIds) ? fileIds : [], folderId ?? null)
+  ));
+  ipcMain.handle('rooms:setFolderAutoFetch', wrapHandler('rooms:setFolderAutoFetch',
+    async (_event, roomId: string, folderId: string, mode: boolean | null) =>
+      roomManager.setFolderAutoFetch(roomId, String(folderId || ''), mode === true ? true : mode === false ? false : null)
+  ));
 
   ipcMain.handle('rooms:setAutoFetch', wrapHandler('rooms:setAutoFetch',
     async (_event, roomId: string, autoFetch: boolean) => roomManager.setAutoFetch(roomId, !!autoFetch)

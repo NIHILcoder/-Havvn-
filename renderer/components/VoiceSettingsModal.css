@@ -116,3 +116,45 @@
 /* A stacked field (label above a control) — used for the noise-suppression chips
    inside the Processing section, which otherwise holds inline label+toggle rows. */
 .vsm-field { display: flex; flex-direction: column; gap: 6px; padding: 4px 0; }
+
+/* Detach button in the modal footer. */
+.vsm-detach {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.vsm-detach:hover { color: var(--color-text-primary); border-color: var(--color-border-strong); }
+
+/* Pop-out window chrome: slim header + scrollable body filling the OS window. */
+.vsm-popout {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+}
+.vsm-popout-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--color-border-subtle);
+  background: var(--color-bg-secondary);
+}
+.vsm-popout-title { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
+.vsm-popout-acts { display: inline-flex; gap: 4px; }
+.vsm-popout-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px;
+  border: none; border-radius: 6px;
+  background: transparent; color: var(--color-text-secondary);
+  cursor: pointer;
+}
+.vsm-popout-btn:hover { background: var(--color-bg-tertiary); color: var(--color-text-primary); }
+.vsm-popout-body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px; }

@@ -233,6 +233,9 @@ export interface RoomState {
   fileReacts?: Record<string, Record<string, string[]>>; // fileId → emoji → reacting memberIds
   memberProg?: Record<string, Record<string, number>>;   // memberId → fileId → coarse download % (0-100; a member's 'have' implies 100)
   voice: RoomVoiceState; // serverless mesh voice channel state (who's in the call, who's talking)
+  /** Per-folder auto-fetch overrides (local pref): folderId → forced on/off;
+   *  a folder with no entry inherits `autoFetch`. */
+  folderFetch?: Record<string, boolean>;
 }
 
 /** A participant currently in a room's voice channel. */
@@ -1107,6 +1110,8 @@ export interface IpcApi {
     updateFolder: (roomId: string, folderId: string, patch: { name?: string; icon?: string; color?: string }) => Promise<RoomState>;
     deleteFolder: (roomId: string, folderId: string) => Promise<RoomState>;
     assignFile: (roomId: string, fileId: string, folderId: string | null) => Promise<RoomState>;
+    assignFiles: (roomId: string, fileIds: string[], folderId: string | null) => Promise<RoomState>;
+    setFolderAutoFetch: (roomId: string, folderId: string, mode: boolean | null) => Promise<RoomState>;
     setMuted: (roomId: string, memberId: string, muted: boolean) => Promise<{ ok: boolean }>;
     setAutoFetch: (roomId: string, autoFetch: boolean) => Promise<{ ok: boolean }>;
     fetchFile: (roomId: string, fileId: string) => Promise<RoomState>;

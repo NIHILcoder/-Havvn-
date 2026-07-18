@@ -40,14 +40,18 @@ export const Select: React.FC<SelectProps> = ({
     if (el) {
       const r = el.getBoundingClientRect();
       const menuH = Math.min(options.length, 6) * 40 + 16; // rough menu height
-      const below = window.innerHeight - r.bottom;
+      // Measure against the select's OWN window — it may live in a pop-out.
+      const win = el.ownerDocument.defaultView ?? window;
+      const below = win.innerHeight - r.bottom;
       setDropUp(below < menuH && r.top > below);
     }
     setIsOpen(true);
   };
 
-  // Handle outside click to close dropdown
+  // Handle outside click to close dropdown. Listen on the select's OWN document —
+  // inside a pop-out window, main-document listeners never see its events.
   useEffect(() => {
+    const doc = selectRef.current?.ownerDocument ?? document;
     const handleClickOutside = (event: MouseEvent) => {
       if (selectRef.current && !selectRef.current.contains(event.target as Node)) {
         setIsOpen(false);
@@ -55,10 +59,10 @@ export const Select: React.FC<SelectProps> = ({
     };
 
     if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
+      doc.addEventListener('mousedown', handleClickOutside);
     }
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+      doc.removeEventListener('mousedown', handleClickOutside);
     };
   }, [isOpen]);
 

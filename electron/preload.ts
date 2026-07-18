@@ -664,6 +664,10 @@ const api: IpcApi = {
       ipcRenderer.invoke('rooms:deleteFolder', roomId, folderId),
     assignFile: (roomId: string, fileId: string, folderId: string | null): Promise<RoomState> =>
       ipcRenderer.invoke('rooms:assignFile', roomId, fileId, folderId),
+    assignFiles: (roomId: string, fileIds: string[], folderId: string | null): Promise<RoomState> =>
+      ipcRenderer.invoke('rooms:assignFiles', roomId, fileIds, folderId),
+    setFolderAutoFetch: (roomId: string, folderId: string, mode: boolean | null): Promise<RoomState> =>
+      ipcRenderer.invoke('rooms:setFolderAutoFetch', roomId, folderId, mode),
     setMuted: (roomId: string, memberId: string, muted: boolean): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke('rooms:setMuted', roomId, memberId, muted),
     setAutoFetch: (roomId: string, autoFetch: boolean): Promise<{ ok: boolean }> =>

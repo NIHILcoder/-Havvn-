@@ -85,6 +85,24 @@ export function applyAssignment(
   return true;
 }
 
+/**
+ * Should a file auto-download, honoring a per-folder override on top of the
+ * room-wide toggle? `folderFetch` maps folderId → forced on/off; a file whose
+ * folder has no entry (or that sits in Uncategorized) inherits `roomAutoFetch`.
+ * Pure — the engine gates every ensureLocal through this, and it unit-tests
+ * without a room.
+ */
+export function wantAutoFetch(
+  roomAutoFetch: boolean,
+  folderFetch: Record<string, boolean> | undefined,
+  folderId: string | null | undefined,
+): boolean {
+  if (folderId && folderFetch && Object.prototype.hasOwnProperty.call(folderFetch, folderId)) {
+    return folderFetch[folderId] === true;
+  }
+  return roomAutoFetch;
+}
+
 export interface FolderGroup {
   folder: RoomFolder | null;   // null = the Uncategorized bucket
   files: RoomFile[];

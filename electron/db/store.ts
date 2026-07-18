@@ -76,6 +76,7 @@ interface RoomsSchema {
   roomFolderTombstones: Record<string, Record<string, number>>; // roomId → (deleted folderId → deletedAt ms)
   roomHistory: Record<string, RoomEvent[]>;  // roomId → activity log (capped)
   roomMutes: Record<string, string[]>;       // roomId → locally-muted memberIds
+  roomFolderFetch: Record<string, Record<string, boolean>>; // roomId → (folderId → auto-fetch override; absent = inherit room autoFetch)
   roomChats: Record<string, RoomChatMessage[]>; // roomId → chat log (capped, text encrypted at rest)
   roomReacts: Record<string, Record<string, Record<string, string[]>>>; // roomId → fileId → emoji → memberIds (capped)
   roomIdentity: { pub: string; priv: string } | null; // this install's Ed25519 signing keypair (priv encrypted)
@@ -255,7 +256,7 @@ const searchStore = new Store<SearchSchema>({
 
 const roomsStore = new Store<RoomsSchema>({
   name: 'rooms',
-  defaults: { rooms: {}, roomProfile: null, roomTombstones: {}, roomTombstoneProofs: {}, roomRevives: {}, roomLastRead: {}, roomManifests: {}, roomFolders: {}, roomFolderTombstones: {}, roomHistory: {}, roomMutes: {}, roomChats: {}, roomReacts: {}, roomIdentity: null, roomIdentities: {} },
+  defaults: { rooms: {}, roomProfile: null, roomTombstones: {}, roomTombstoneProofs: {}, roomRevives: {}, roomLastRead: {}, roomManifests: {}, roomFolders: {}, roomFolderTombstones: {}, roomHistory: {}, roomMutes: {}, roomFolderFetch: {}, roomChats: {}, roomReacts: {}, roomIdentity: null, roomIdentities: {} },
 });
 
 const reputationStore = new Store<ReputationSchema>({
@@ -814,6 +815,28 @@ export function clearRoomMutes(roomId: string): void {
   const all = roomsStore.get('roomMutes') ?? {};
   delete all[roomId];
   roomsStore.set('roomMutes', all);
+}
+
+// === Per-folder auto-fetch overrides (per install, never broadcast) ===
+// folderId → forced on/off; a folder with no entry inherits the room's autoFetch.
+
+export function getRoomFolderFetch(roomId: string): Record<string, boolean> {
+  return (roomsStore.get('roomFolderFetch') ?? {})[roomId] ?? {};
+}
+
+/** mode === null clears the override (folder inherits the room toggle again). */
+export function setRoomFolderFetch(roomId: string, folderId: string, mode: boolean | null): void {
+  const all = roomsStore.get('roomFolderFetch') ?? {};
+  const map = { ...(all[roomId] ?? {}) };
+  if (mode === null) delete map[folderId]; else map[folderId] = mode;
+  all[roomId] = map;
+  roomsStore.set('roomFolderFetch', all);
+}
+
+export function clearRoomFolderFetch(roomId: string): void {
+  const all = roomsStore.get('roomFolderFetch') ?? {};
+  delete all[roomId];
+  roomsStore.set('roomFolderFetch', all);
 }
 
 // === Web remote token (lazily generated, persisted) ===

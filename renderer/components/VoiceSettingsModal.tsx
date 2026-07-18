@@ -14,6 +14,7 @@ import { Toggle } from './Toggle';
 import { Icon } from './Icon';
 import { useTranslation } from '../utils/i18nContext';
 import { VoicePrefs, loadVoicePrefs, saveVoicePrefs, keyLabel, toVoiceSettings } from '../utils/voicePrefs';
+import { usePopout } from '../utils/popout';
 import type { VoiceDeviceInfo, VoiceInputMode, NoiseSuppressionMode } from '../../shared/types';
 import './VoiceSettingsModal.css';
 
@@ -85,18 +86,33 @@ export const VoiceSettingsModal: React.FC<{ onClose: () => void }> = ({ onClose 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [testing, prefs.inputDeviceId, prefs.echoCancellation, prefs.noiseSuppressionMode, prefs.autoGainControl]);
 
-  // Capture the next key press to rebind push-to-talk (Escape cancels).
+  // Detach into an OS window (the content portals there; state stays here).
+  const { popout, openPopout, closePopout } = usePopout('havvn-voice-settings', t('rooms.voice.settings'));
+
+  // Escape in the pop-out steps back to the docked modal (parity with the Modal's
+  // own Escape). Skipped while capturing a PTT key — Escape cancels the capture.
+  useEffect(() => {
+    if (!popout || popout.closed) return;
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape' && !capturing) closePopout(); };
+    popout.addEventListener('keydown', h);
+    return () => { try { popout.removeEventListener('keydown', h); } catch { /* window gone */ } };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [popout, capturing]);
+
+  // Capture the next key press to rebind push-to-talk (Escape cancels). Listens
+  // on the window that actually HAS focus — when detached that's the pop-out.
   useEffect(() => {
     if (!capturing) return;
+    const target: Window = popout && !popout.closed ? popout : window;
     const h = (e: KeyboardEvent) => {
       e.preventDefault(); e.stopPropagation();
       setCapturing(false);
       if (e.code !== 'Escape') update({ pttKey: e.code });
     };
-    window.addEventListener('keydown', h, true);
-    return () => window.removeEventListener('keydown', h, true);
+    target.addEventListener('keydown', h, true);
+    return () => target.removeEventListener('keydown', h, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [capturing, prefs]);
+  }, [capturing, prefs, popout]);
 
   const deviceOptions = (kind: VoiceDeviceInfo['kind'], selected: string | null) => {
     // 'default'/'communications' are Chromium pseudo-devices — our null pref
@@ -126,10 +142,8 @@ export const VoiceSettingsModal: React.FC<{ onClose: () => void }> = ({ onClose 
     { id: 'enhanced' as NoiseSuppressionMode, label: t('rooms.voice.nsEnhanced') },
   ]), [t]);
 
-  // Portal to <body>: the opener (voice panel) lives inside the room's
-  // container-query subtree, whose containment would trap the fixed backdrop.
-  return createPortal(
-    <Modal onClose={onClose} title={t('rooms.voice.settings')} icon="headphones" size="md" bodyClassName="vsm-body">
+  const content = (
+    <>
       {/* Devices */}
       <div className="vsm-section">
         <div className="vsm-section-title">{t('rooms.voice.devices')}</div>
@@ -267,6 +281,44 @@ export const VoiceSettingsModal: React.FC<{ onClose: () => void }> = ({ onClose 
           <Toggle size="small" checked={prefs.chimes} onChange={(v) => update({ chimes: v })} ariaLabel={t('rooms.voice.chimes')} />
         </div>
       </div>
+    </>
+  );
+
+  // Detached: the content lives in its own OS window with a slim header; the
+  // React tree (and every IPC subscription) stays in the main renderer realm.
+  // Closing the OS window returns to the modal; the ✕ closes settings entirely.
+  if (popout && !popout.closed) {
+    return createPortal(
+      <div className="vsm-popout">
+        <div className="vsm-popout-head">
+          <span className="vsm-popout-title"><Icon name="headphones" size={14} /> {t('rooms.voice.settings')}</span>
+          <span className="vsm-popout-acts">
+            <button className="vsm-popout-btn" onClick={closePopout} title={t('rooms.voice.popIn')}>
+              <Icon name="minimize" size={13} />
+            </button>
+            <button className="vsm-popout-btn" onClick={() => { closePopout(); onClose(); }} title={t('common.close')}>
+              <Icon name="x" size={13} />
+            </button>
+          </span>
+        </div>
+        <div className="vsm-body vsm-popout-body">{content}</div>
+      </div>,
+      popout.document.body,
+    );
+  }
+
+  // Docked: portal to <body> — the opener (voice panel) lives inside the room's
+  // container-query subtree, whose containment would trap the fixed backdrop.
+  return createPortal(
+    <Modal
+      onClose={onClose} title={t('rooms.voice.settings')} icon="headphones" size="md" bodyClassName="vsm-body"
+      footer={
+        <button className="vsm-detach" onClick={openPopout} title={t('rooms.voice.popOut')}>
+          <Icon name="external-link" size={13} /> {t('rooms.voice.popOut')}
+        </button>
+      }
+    >
+      {content}
     </Modal>,
     document.body,
   );

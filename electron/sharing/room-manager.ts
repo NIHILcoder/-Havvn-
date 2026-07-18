@@ -119,6 +119,10 @@ export class RoomManager {
         this.mainWindow.webContents.send('rooms:voiceDevicesChanged');
       }
     });
+    // A folder was deleted — drop its persisted auto-fetch override too.
+    ipcMain.on('room-folder-fetch-del', (_e, payload: { roomId: string; folderId: string }) => {
+      try { if (payload?.roomId && payload?.folderId) db.setRoomFolderFetch(payload.roomId, payload.folderId, null); } catch { /* ignore */ }
+    });
     // Transient voice warning from the engine (e.g. a mid-call mic fell back).
     ipcMain.on('room-voice-warn', (_e, payload: { msg: string }) => {
       if (this.mainWindow && !this.mainWindow.isDestroyed()) {
@@ -408,6 +412,7 @@ export class RoomManager {
         cacheDir: this.encCacheDir(roomId),
         // Per-room preferences (absent → auto-download on, no speed limits).
         autoFetch: persisted?.autoFetch !== false,
+        folderFetch: db.getRoomFolderFetch(roomId),
         upKbps: persisted?.upKbps ?? 0,
         downKbps: persisted?.downKbps ?? 0,
       },
@@ -512,6 +517,7 @@ export class RoomManager {
     db.clearRoomFolders(roomId);
     db.clearRoomHistory(roomId);
     db.clearRoomMutes(roomId);
+    db.clearRoomFolderFetch(roomId);
     db.clearRoomChats(roomId);
     db.clearRoomLastRead(roomId);
     db.clearRoomReacts(roomId);
@@ -641,6 +647,17 @@ export class RoomManager {
   }
   assignFile(roomId: string, fileId: string, folderId: string | null): Promise<RoomState> {
     return this.folderCmd(roomId, 'assignFile', { fileId, folderId });
+  }
+  /** Batched multi-file move (mirrors removeFiles): one cmd, one state refresh. */
+  assignFiles(roomId: string, fileIds: string[], folderId: string | null): Promise<RoomState> {
+    const ids = (fileIds || []).filter((x) => typeof x === 'string' && x);
+    return this.folderCmd(roomId, 'assignFiles', { fileIds: ids, folderId });
+  }
+  /** Per-folder auto-fetch override (local pref): true/false forces, null inherits
+   *  the room-wide toggle again. Persisted, and re-applied on every (re)join. */
+  setFolderAutoFetch(roomId: string, folderId: string, mode: boolean | null): Promise<RoomState> {
+    db.setRoomFolderFetch(roomId, folderId, mode);
+    return this.folderCmd(roomId, 'setFolderAutoFetch', { folderId, mode });
   }
 
   // ── Voice ─────────────────────────────────────────────────────────────────
