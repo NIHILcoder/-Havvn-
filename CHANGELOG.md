@@ -4,6 +4,21 @@ All notable changes to Havvn (formerly TorrentHunt) are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [2.23.2] - 2026-07-19
+
+More polish from feedback on 2.23.1.
+
+### Fixed
+- **Folder "⋯" menu no longer gets clipped.** It renders above everything and
+  stays inside the window instead of being cut off by the files area's edge.
+  (The bulk selection's Move-to-folder menu is fixed the same way.)
+- **The Activity tab scrolls.** Its list shared the chat box's clipping and
+  couldn't scroll past the visible area.
+- **Avatar picker tiles fill their square** — the identicon no longer floats in
+  a thick gray frame.
+- **People rail breathing room** — names, avatars and the file counts no longer
+  hug the rail edges.
+
 ## [2.23.1] - 2026-07-19
 
 Fixes and simplification from first-run feedback on 2.23.
