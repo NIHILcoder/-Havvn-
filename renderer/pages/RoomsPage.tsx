@@ -12,7 +12,7 @@ import { createPortal } from 'react-dom';
 import Hls from 'hls.js';
 import toast from 'react-hot-toast';
 import { RoomState, RoomSummary, RoomProfile, RoomFile, RoomFolder, RoomMember } from '../../shared/types';
-import { Button, Icon, IconName, EmptyState, Identicon, Avatar, ProfileCard, QRCode, TransferPickerModal, Toggle, PlayerControls, Modal, useConfirm, VoiceSettingsModal, ScreenSourcePicker, ScreenView, Tabs, DropdownMenu } from '../components';
+import { Button, Icon, IconName, EmptyState, Identicon, Avatar, ProfileCard, QRCode, TransferPickerModal, Toggle, PlayerControls, Modal, useConfirm, VoiceSettingsModal, ScreenSourcePicker, ScreenView, Select, Tabs, DropdownMenu } from '../components';
 import { VoicePrefs, VOICE_PREFS_EVENT, loadVoicePrefs, saveVoicePrefs, toVoiceSettings } from '../utils/voicePrefs';
 import { loadRoomLayout, saveRoomLayout, RAIL_MIN, RAIL_MAX, CHAT_MIN, CHAT_MAX } from '../utils/roomLayout';
 import { usePopout } from '../utils/popout';
@@ -889,17 +889,6 @@ const RoomFilesPanel: React.FC<FilesPanelProps> = ({ room, onAddFiles, onCreateF
       .catch((e) => toast.error(String(e instanceof Error ? e.message : e)));
   };
 
-  // Cycle a folder's auto-fetch override: inherit → OFF → always → inherit.
-  // OFF comes first so marking a big folder as skipped never transits through ON
-  // (which would instantly bulk-download the whole folder with no cancel).
-  const cycleFolderFetch = (folderId: string) => {
-    const cur = room.folderFetch?.[folderId];
-    const next = cur === undefined ? false : cur === false ? true : null;
-    window.api.rooms.setFolderAutoFetch(room.roomId, folderId, next)
-      .then(onShared)
-      .catch((e) => toast.error(String(e instanceof Error ? e.message : e)));
-  };
-
   const renderFolderFiles = (files: RoomFile[]) => (
     files.map((f) => (
       <RoomFileRow
@@ -943,19 +932,9 @@ const RoomFilesPanel: React.FC<FilesPanelProps> = ({ room, onAddFiles, onCreateF
           <span className="room-folder-count">{count}</span>
         </button>
         <span className="room-folder-acts">
-          {folder && (() => {
-            const ov = room.folderFetch?.[folder.id];
-            const state = ov === true ? 'on' : ov === false ? 'off' : 'inherit';
-            const effective = wantAutoFetch(room.autoFetch, room.folderFetch, folder.id, (id) => folders.find((x) => x.id === id)?.parentId);
-            const label = state === 'on' ? t('rooms.folder.fetchOn')
-              : state === 'off' ? t('rooms.folder.fetchOff')
-              : `${t('rooms.folder.fetchInherit')} · ${effective ? t('rooms.folder.effOn') : t('rooms.folder.effOff')}`;
-            return (
-              <button className={`room-folder-act room-folder-fetch ${state}`} title={label} onClick={() => cycleFolderFetch(folder.id)}>
-                <Icon name="download" size={13} />
-              </button>
-            );
-          })()}
+          {/* Quick actions stay as buttons; everything secondary — including the
+              auto-download override (per the "one master toggle, the rest in a
+              menu" model) — lives in the ⋯ overflow so the header stays calm. */}
           <button className="room-folder-act" title={t('rooms.folder.addHere')} onClick={() => onAddFiles(folder?.id)}>
             <Icon name="file-plus" size={13} />
           </button>
@@ -971,40 +950,34 @@ const RoomFilesPanel: React.FC<FilesPanelProps> = ({ room, onAddFiles, onCreateF
               <Icon name="folder-plus" size={13} />
             </button>
           )}
-          {canMove && folder && (
-            <DropdownMenu
-              renderTrigger={({ toggle }) => (
-                <button className="room-folder-act" title={t('rooms.folder.moveToSection')} onClick={toggle}>
-                  <Icon name="arrow-right" size={13} />
-                </button>
-              )}
-              items={[
-                ...moveTargets.map((s) => ({ key: s.id, label: s.name, onSelect: () => onUpdateFolder(folder.id, { parentId: s.id }) })),
-                ...(folder.parentId ? [{ key: '', label: t('rooms.folder.toRoot'), onSelect: () => onUpdateFolder(folder.id, { parentId: null }) }] : []),
-              ]}
-            />
-          )}
-          {folder && (
-            <>
-              <button className="room-folder-act" title={t('rooms.folder.rename')} onClick={() => { setNewFolderOpen(false); setNewSubfolderFor(null); setEditFolderId(folder.id); }}>
-                <Icon name="edit-2" size={13} />
-              </button>
-              <button
-                className="room-folder-act danger"
-                title={t('rooms.folder.delete')}
-                onClick={async () => {
-                  // Count against the UNFILTERED manifest — the header count
-                  // reflects active search/filters and could read 0 while the
-                  // folder still holds files (the confirm must not be skipped).
-                  const realCount = room.files.filter((f) => f.folderId === folder.id).length;
-                  const msg = opts.childCount > 0 ? t('rooms.folder.deleteSectionConfirm') : t('rooms.folder.deleteConfirm');
-                  if ((realCount === 0 && opts.childCount === 0) || await confirm({ message: msg, danger: true })) onDeleteFolder(folder.id);
-                }}
-              >
-                <Icon name="trash" size={13} />
-              </button>
-            </>
-          )}
+          {folder && (() => {
+            const ov = room.folderFetch?.[folder.id];
+            const effective = wantAutoFetch(room.autoFetch, room.folderFetch, folder.id, (id) => folders.find((x) => x.id === id)?.parentId);
+            const check = (on: boolean) => (on ? <Icon name="check" size={13} /> : <span style={{ width: 13, display: 'inline-block' }} />);
+            const setFetch = (mode: boolean | null) => window.api.rooms.setFolderAutoFetch(room.roomId, folder.id, mode).then(onShared).catch((e) => toast.error(String(e instanceof Error ? e.message : e)));
+            return (
+              <DropdownMenu
+                renderTrigger={({ toggle }) => (
+                  <button className="room-folder-act" title={t('rooms.folder.more')} onClick={toggle}>
+                    <Icon name="more-horizontal" size={13} />
+                  </button>
+                )}
+                items={[
+                  { key: 'af-inherit', icon: check(ov === undefined), label: `${t('rooms.folder.fetchInherit')} · ${effective ? t('rooms.folder.effOn') : t('rooms.folder.effOff')}`, onSelect: () => setFetch(null) },
+                  { key: 'af-on', icon: check(ov === true), label: t('rooms.folder.fetchOn'), onSelect: () => setFetch(true) },
+                  { key: 'af-off', icon: check(ov === false), label: t('rooms.folder.fetchOff'), onSelect: () => setFetch(false) },
+                  ...(canMove ? moveTargets.map((s) => ({ key: `mv-${s.id}`, icon: <Icon name="arrow-right" size={13} />, label: `${t('rooms.folder.moveToSection')}: ${s.name}`, onSelect: () => onUpdateFolder(folder.id, { parentId: s.id }) })) : []),
+                  ...(canMove && folder.parentId ? [{ key: 'mv-root', icon: <Icon name="arrow-right" size={13} />, label: t('rooms.folder.toRoot'), onSelect: () => onUpdateFolder(folder.id, { parentId: null }) }] : []),
+                  { key: 'rename', icon: <Icon name="edit-2" size={13} />, label: t('rooms.folder.rename'), onSelect: () => { setNewFolderOpen(false); setNewSubfolderFor(null); setEditFolderId(folder.id); } },
+                  { key: 'delete', icon: <Icon name="trash" size={13} />, label: t('rooms.folder.delete'), onSelect: async () => {
+                    const realCount = room.files.filter((f) => f.folderId === folder.id).length;
+                    const msg = opts.childCount > 0 ? t('rooms.folder.deleteSectionConfirm') : t('rooms.folder.deleteConfirm');
+                    if ((realCount === 0 && opts.childCount === 0) || await confirm({ message: msg, danger: true })) onDeleteFolder(folder.id);
+                  } },
+                ]}
+              />
+            );
+          })()}
         </span>
       </div>
     );
@@ -1023,11 +996,12 @@ const RoomFilesPanel: React.FC<FilesPanelProps> = ({ room, onAddFiles, onCreateF
           <div className="room-view-wrap" ref={viewWrapRef}>
             <button
               type="button"
-              className={`room-newfolder-btn${viewOpen ? ' active' : ''}`}
+              className={`room-newfolder-btn icon-only${viewOpen ? ' active' : ''}`}
               title={t('rooms.view')}
+              aria-label={t('rooms.view')}
               onClick={() => setViewOpen((v) => !v)}
             >
-              <Icon name="filter" size={13} /> {t('rooms.view')}
+              <Icon name="filter" size={14} />
             </button>
             {viewOpen && (
               <div className="room-view-pop">
@@ -1048,19 +1022,21 @@ const RoomFilesPanel: React.FC<FilesPanelProps> = ({ room, onAddFiles, onCreateF
           </div>
           <button
             type="button"
-            className="room-newfolder-btn"
+            className="room-newfolder-btn icon-only"
             title={t('rooms.requestFile')}
+            aria-label={t('rooms.requestFile')}
             onClick={() => setRequesting((v) => !v)}
           >
-            <Icon name="help-circle" size={13} /> {t('rooms.requestFile')}
+            <Icon name="help-circle" size={14} />
           </button>
           <button
             type="button"
-            className="room-newfolder-btn"
+            className="room-newfolder-btn icon-only"
             title={t('rooms.folder.newSection')}
+            aria-label={t('rooms.folder.newSection')}
             onClick={() => { setEditFolderId(null); setNewSubfolderFor(null); setNewFolderOpen((v) => !v); }}
           >
-            <Icon name="plus" size={13} /> {t('rooms.folder.newSection')}
+            <Icon name="plus" size={14} />
           </button>
           <div className="room-autofetch" title={t('rooms.autoFetchHint')}>
             <Toggle size="small" checked={room.autoFetch} onChange={onToggleAutoFetch} label={t('rooms.autoFetch')} />
@@ -1083,12 +1059,17 @@ const RoomFilesPanel: React.FC<FilesPanelProps> = ({ room, onAddFiles, onCreateF
 
       {room.files.length > 1 && !selecting && (
         <div className="room-file-toolbar">
-          <select className="room-file-select" value={sortKey} onChange={(e) => setSortKey(e.target.value as typeof sortKey)} title={t('rooms.sort.label')} aria-label={t('rooms.sort.label')}>
-            <option value="added">{t('rooms.sort.added')}</option>
-            <option value="name">{t('rooms.sort.name')}</option>
-            <option value="size">{t('rooms.sort.size')}</option>
-            <option value="status">{t('rooms.sort.status')}</option>
-          </select>
+          <Select
+            className="room-file-select"
+            value={sortKey}
+            onChange={(v) => setSortKey(v as typeof sortKey)}
+            options={[
+              { value: 'added', label: t('rooms.sort.added') },
+              { value: 'name', label: t('rooms.sort.name') },
+              { value: 'size', label: t('rooms.sort.size') },
+              { value: 'status', label: t('rooms.sort.status') },
+            ]}
+          />
           <span className="room-file-chips">
             {([['all', t('rooms.filter.all')], ['video', t('rooms.filter.video')], ['audio', t('rooms.filter.audio')], ['other', t('rooms.filter.other')]] as const).map(([k, label]) => (
               <button
@@ -2333,6 +2314,7 @@ const RoomFileRow: React.FC<{ file: RoomFile; room: RoomState; onWatch: (file: R
           items={[
             ...(canWatch ? [{ label: t('rooms.watch'), icon: 'play' as IconName, onClick: () => onWatch(file) }] : []),
             ...(haveLocally ? [{ label: t('rooms.openFile'), icon: 'external-link' as IconName, onClick: () => { window.api.rooms.openFile(room.roomId, file.fileId); } }] : []),
+            ...(haveLocally ? [{ label: t('rooms.revealFile'), icon: 'folder' as IconName, onClick: () => { window.api.rooms.revealFile(room.roomId, file.fileId).catch((e) => toast.error(String(e instanceof Error ? e.message : e))); } }] : []),
             ...(awaitingFetch ? [{ label: t('rooms.fetch'), icon: 'download' as IconName, onClick: () => { window.api.rooms.fetchFile(room.roomId, file.fileId).catch((e) => toast.error(String(e instanceof Error ? e.message : e))); } }] : []),
             { label: t('rooms.copyName'), icon: 'copy' as IconName, onClick: () => { navigator.clipboard.writeText(file.name).catch(() => { /* ignore */ }); } },
             ...(folders.length > 0 ? [

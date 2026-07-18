@@ -1117,6 +1117,7 @@ export interface IpcApi {
     listShareableFiles: (downloadId: string) => Promise<{ files: Array<{ path: string; name: string; size: number }>; truncated: boolean; maxShare: number }>;
     openFolder: (roomId: string) => Promise<void>;
     openFile: (roomId: string, fileId: string) => Promise<void>;
+    revealFile: (roomId: string, fileId: string) => Promise<void>;
     watchFile: (roomId: string, fileId: string) => Promise<{ directUrl: string; hlsUrl: string; playerUrl: string; coverUrl?: string; direct: boolean; kind: string; name: string }>;
     broadcastSync: (roomId: string, payload: { fileId: string; action: string; position: number; rate?: number; playing?: boolean; together?: boolean; emoji?: string }) => Promise<{ ok: boolean }>;
     removeFile: (roomId: string, fileId: string) => Promise<{ ok: boolean }>;

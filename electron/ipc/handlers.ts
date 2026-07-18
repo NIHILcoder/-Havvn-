@@ -517,6 +517,10 @@ export function setupIpcHandlers(window: BrowserWindow): void {
     async (_event, roomId: string, fileId: string) => roomManager.openFile(roomId, fileId)
   ));
 
+  ipcMain.handle('rooms:revealFile', wrapHandler('rooms:revealFile',
+    async (_event, roomId: string, fileId: string) => roomManager.revealFile(roomId, fileId)
+  ));
+
   ipcMain.handle('rooms:watchFile', wrapHandler('rooms:watchFile',
     async (_event, roomId: string, fileId: string) => roomManager.watchFile(roomId, fileId)
   ));

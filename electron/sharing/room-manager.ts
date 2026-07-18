@@ -603,6 +603,22 @@ export class RoomManager {
   }
 
   /**
+   * Reveal a room file in the OS file manager (Explorer/Finder), selecting it.
+   * Unlike openFile this does NOT release the seed — the handle stays held, we
+   * only highlight the file in its folder.
+   */
+  async revealFile(roomId: string, fileId: string): Promise<void> {
+    const state = this.cache.get(roomId);
+    const file = state?.files.find((f) => f.fileId === fileId);
+    const folder = this.folderOf(roomId);
+    const tr = state?.transfers?.[fileId];
+    const abs = (tr?.localPath && fs.existsSync(tr.localPath)) ? tr.localPath
+      : (folder && file) ? path.join(folder, file.name) : null;
+    if (abs && fs.existsSync(abs)) shell.showItemInFolder(abs);
+    else if (folder) await shell.openPath(folder); // not on disk yet — open the room folder
+  }
+
+  /**
    * Resolve a downloaded room file on disk and publish it on the cast server,
    * returning ready media URLs for the in-app player.
    */

@@ -616,6 +616,7 @@ const api: IpcApi = {
       ipcRenderer.invoke('rooms:listShareableFiles', downloadId),
     openFolder: (roomId: string): Promise<void> => ipcRenderer.invoke('rooms:openFolder', roomId),
     openFile: (roomId: string, fileId: string): Promise<void> => ipcRenderer.invoke('rooms:openFile', roomId, fileId),
+    revealFile: (roomId: string, fileId: string): Promise<void> => ipcRenderer.invoke('rooms:revealFile', roomId, fileId),
     watchFile: (roomId: string, fileId: string): Promise<{ directUrl: string; hlsUrl: string; playerUrl: string; coverUrl?: string; direct: boolean; kind: string; name: string }> =>
       ipcRenderer.invoke('rooms:watchFile', roomId, fileId),
     broadcastSync: (roomId: string, payload: { fileId: string; action: string; position: number; rate?: number; playing?: boolean; together?: boolean; emoji?: string }): Promise<{ ok: boolean }> =>

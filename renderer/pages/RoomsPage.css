@@ -495,7 +495,7 @@
    Новая папка, sort select, filter chips, Выбрать, bulk buttons) is the SAME
    26px pill: one height, one radius, one type size. Individual rules below
    add only their accent/danger specifics. */
-.room-newfolder-btn, .room-file-chip, .room-file-select, .room-file-select-btn, .room-file-bulk-del {
+.room-newfolder-btn, .room-file-chip, .room-file-select-btn, .room-file-bulk-del {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -510,6 +510,9 @@
   cursor: pointer;
   transition: color var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast);
 }
+/* Icon-only variant (title-row actions): a compact square pill — the label
+   lives in the tooltip so the narrow files header never has to wrap text. */
+.room-newfolder-btn.icon-only { width: 26px; padding: 0; justify-content: center; gap: 0; }
 
 .room-newfolder-btn:hover { color: var(--color-accent-primary); border-color: var(--color-accent-primary); }
 .room-newfolder-btn.active {
@@ -625,19 +628,6 @@
 .room-folder-toggle { background: transparent; border: none; padding: 0; cursor: pointer; text-align: left; color: inherit; font: inherit; }
 .room-folder-chevron { flex-shrink: 0; color: var(--color-text-tertiary); }
 
-/* Per-folder auto-fetch cycle: inherit (dim) → always on (accent) → off (struck). */
-.room-folder-fetch { position: relative; }
-.room-folder-fetch.on { color: var(--color-accent-primary); }
-.room-folder-fetch.off { color: var(--color-text-tertiary); }
-.room-folder-fetch.off::after {
-  content: '';
-  position: absolute;
-  left: 5px; right: 5px; top: 50%;
-  height: 1.5px;
-  background: var(--color-error);
-  transform: rotate(-45deg);
-  pointer-events: none;
-}
 .room-folder-empty {
   padding: 8px 6px; font-size: 0.74rem; color: var(--color-text-tertiary); text-align: center;
 }
@@ -935,6 +925,20 @@
   margin-bottom: var(--space-2);
   flex-wrap: wrap;
 }
+/* Sort dropdown = the shared styled Select, sized down to the 26px pill row so
+   it matches the chips/buttons instead of the browser's native control. */
+/* Fixed, content-ish width — the container defaults to width:100%, which would
+   otherwise make the dropdown eat the whole toolbar row and push the chips down. */
+.room-file-select { width: 132px; flex: 0 0 auto; }
+.room-file-select .custom-select-trigger {
+  height: 26px;
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+}
+.room-file-select .custom-select-value { font-size: 12px; }
+
 /* Specifics on top of the shared 26px pill (rule near .room-newfolder-btn). */
 .room-file-select-btn:hover { color: var(--color-accent-primary); border-color: var(--color-accent-primary); }
 .room-file-select-btn:disabled { opacity: 0.5; cursor: default; }
@@ -1320,6 +1324,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Square tiles: the grid columns are 1fr (stretch wider than the fixed-height
+     identicon), so without this the tiles render as rectangles. */
+  aspect-ratio: 1;
   padding: 4px;
   background: var(--color-bg-primary);
   border: 1px solid var(--color-border);
