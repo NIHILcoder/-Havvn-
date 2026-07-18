@@ -7,7 +7,8 @@
  * so each call site keeps its existing look.
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 export interface DropdownMenuItem {
   key: string;
@@ -24,6 +25,12 @@ interface DropdownMenuProps {
   menuClassName?: string;
   /** Class for item buttons; pass '' for unstyled buttons skinned by the menu class. */
   itemClassName?: string;
+  /**
+   * Render the menu into document.body with fixed positioning instead of as an
+   * absolutely-positioned child. Needed when an ancestor clips overflow (e.g. a
+   * scroll area or a container-query subtree) — otherwise the menu is cut off.
+   */
+  portal?: boolean;
 }
 
 export const DropdownMenu: React.FC<DropdownMenuProps> = ({
@@ -31,16 +38,32 @@ export const DropdownMenu: React.FC<DropdownMenuProps> = ({
   items,
   menuClassName = 'dropdown-menu',
   itemClassName = 'dropdown-item',
+  portal = false,
 }) => {
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
 
   const toggle = useCallback(() => setOpen((o) => !o), []);
+
+  // Position the portaled menu below-right-aligned to the trigger, clamped to
+  // the viewport so it never spills off an edge (the clip #3 was fixing).
+  useLayoutEffect(() => {
+    if (!open || !portal || !wrapperRef.current) { setPos(null); return; }
+    const r = wrapperRef.current.getBoundingClientRect();
+    const mw = menuRef.current?.offsetWidth ?? 220;
+    const mh = menuRef.current?.offsetHeight ?? 240;
+    const x = Math.max(8, Math.min(r.right - mw, window.innerWidth - mw - 8));
+    const y = r.bottom + 4 + mh > window.innerHeight ? Math.max(8, r.top - mh - 4) : r.bottom + 4;
+    setPos({ x, y });
+  }, [open, portal, items.length]);
 
   useEffect(() => {
     if (!open) return;
     const onMouseDown = (e: MouseEvent) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+      const t = e.target as Node;
+      if (wrapperRef.current && !wrapperRef.current.contains(t) && menuRef.current && !menuRef.current.contains(t)) {
         setOpen(false);
       }
     };
@@ -60,28 +83,35 @@ export const DropdownMenu: React.FC<DropdownMenuProps> = ({
     };
   }, [open]);
 
+  const menu = open ? (
+    <div
+      ref={menuRef}
+      className={menuClassName}
+      role="menu"
+      style={portal ? { position: 'fixed', left: pos?.x ?? -9999, top: pos?.y ?? -9999, right: 'auto', marginTop: 0, visibility: pos ? 'visible' : 'hidden', zIndex: 1000 } : undefined}
+    >
+      {items.map((item) => (
+        <button
+          key={item.key}
+          type="button"
+          className={itemClassName || undefined}
+          role="menuitem"
+          onClick={() => {
+            setOpen(false);
+            item.onSelect();
+          }}
+        >
+          {item.icon}
+          <span>{item.label}</span>
+        </button>
+      ))}
+    </div>
+  ) : null;
+
   return (
     <div className="dropdown-wrapper" ref={wrapperRef}>
       {renderTrigger({ open, toggle })}
-      {open && (
-        <div className={menuClassName} role="menu">
-          {items.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              className={itemClassName || undefined}
-              role="menuitem"
-              onClick={() => {
-                setOpen(false);
-                item.onSelect();
-              }}
-            >
-              {item.icon}
-              <span>{item.label}</span>
-            </button>
-          ))}
-        </div>
-      )}
+      {portal ? (menu && createPortal(menu, document.body)) : menu}
     </div>
   );
 };

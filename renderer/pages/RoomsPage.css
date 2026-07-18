@@ -184,6 +184,7 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
+  padding: 0 var(--space-2); /* keep the label + count off the rail edges */
 }
 .room-rail-people-list {
   flex: 1 1 auto;
@@ -232,7 +233,9 @@
 }
 .room-zone-tab:hover { color: var(--color-text-secondary); }
 .room-zone-tab.active { color: var(--color-text-primary); border-bottom-color: var(--color-accent-primary); }
-.room-zone-history { overflow-y: auto; }
+/* The history list shares the .room-chat class (border/bg), whose overflow:hidden
+   would otherwise beat this at equal specificity — scope it up so it scrolls. */
+.room-chat-section .room-zone-history { overflow-y: auto; }
 .room-history-zone { display: flex; flex-direction: column; }
 
 /* Detach chat into its own window: toggle at the right edge of the zone tabs. */
@@ -684,7 +687,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: 7px 0;
+  padding: 7px var(--space-2); /* avatar + have-count shouldn't hug the rail edges */
   border-bottom: 1px solid var(--color-border-subtle);
   transition: opacity var(--transition-fast);
 }
@@ -1327,13 +1330,19 @@
   /* Square tiles: the grid columns are 1fr (stretch wider than the fixed-height
      identicon), so without this the tiles render as rectangles. */
   aspect-ratio: 1;
-  padding: 4px;
+  padding: 3px;
   background: var(--color-bg-primary);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   cursor: pointer;
+  overflow: hidden;
   transition: border-color var(--transition-fast), transform var(--transition-fast);
 }
+/* The identicon fills the tile (minus the thin 3px frame) — the fixed 44px SVG
+   left a wide gray border inside the stretched square. !important beats the
+   component's inline width/height; the svg follows its 100%-width span. */
+.rooms-avatar-option .identicon { width: 100% !important; height: 100% !important; }
+.rooms-avatar-option .identicon svg { width: 100%; height: 100%; }
 .rooms-avatar-option:hover { border-color: var(--color-border-hover); transform: translateY(-1px); }
 .rooms-avatar-option.active {
   border-color: var(--color-accent);

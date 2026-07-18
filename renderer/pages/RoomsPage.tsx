@@ -957,6 +957,7 @@ const RoomFilesPanel: React.FC<FilesPanelProps> = ({ room, onAddFiles, onCreateF
             const setFetch = (mode: boolean | null) => window.api.rooms.setFolderAutoFetch(room.roomId, folder.id, mode).then(onShared).catch((e) => toast.error(String(e instanceof Error ? e.message : e)));
             return (
               <DropdownMenu
+                portal
                 renderTrigger={({ toggle }) => (
                   <button className="room-folder-act" title={t('rooms.folder.more')} onClick={toggle}>
                     <Icon name="more-horizontal" size={13} />
@@ -1101,6 +1102,7 @@ const RoomFilesPanel: React.FC<FilesPanelProps> = ({ room, onAddFiles, onCreateF
           <button type="button" className="room-file-select-btn" onClick={() => setSelected(new Set())}>{t('rooms.clearSelection')}</button>
           {hasFolders && (
             <DropdownMenu
+              portal
               renderTrigger={({ toggle }) => (
                 <button type="button" className="room-file-select-btn" disabled={selected.size === 0} onClick={toggle}>
                   <Icon name="folder" size={13} /> {t('rooms.moveToFolder')}
