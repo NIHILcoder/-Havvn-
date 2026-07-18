@@ -537,6 +537,22 @@
   gap: var(--space-2);
   padding: 2px 4px 6px;
 }
+/* Nested subfolder card inside a section: indented, hairline-bordered, its own
+   drop target (innermost dragover wins via stopPropagation in the drop props). */
+.room-subfolder {
+  margin: 2px 0 6px 14px;
+  padding: 4px;
+  border: 1px solid var(--color-border-subtle);
+  border-left: 2px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+.room-subfolder.dragover {
+  border-color: var(--color-accent-primary);
+  background: color-mix(in srgb, var(--color-accent-primary) 8%, transparent);
+}
+.room-subfolder .room-folder-header { padding: 0 2px 4px; }
+.room-subfolder .room-folder-title { font-size: 0.78rem; }
 .room-folder-label { display: flex; flex: 1; align-items: center; gap: 6px; min-width: 0; }
 .room-folder-ic { display: inline-grid; flex-shrink: 0; place-items: center; color: var(--color-accent-primary); }
 .room-folder-ic-none { color: var(--color-text-tertiary); }
@@ -1177,6 +1193,18 @@
 /* ── Identicon ─────────────────────────────────────────────────────────── */
 .identicon { position: relative; display: inline-flex; flex-shrink: 0; line-height: 0; }
 .identicon svg { display: block; border-radius: inherit; }
+.avatar-img { display: block; object-fit: cover; background: var(--color-bg-tertiary); }
+/* Borderless button wrapper that makes an avatar clickable (profile card). */
+.room-member-open {
+  display: inline-flex;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 28%;
+}
+.room-member-open:hover { filter: brightness(1.12); }
 .identicon-ring { box-shadow: 0 0 0 2px var(--color-bg-primary), 0 0 0 4px var(--color-accent); border-radius: 28%; }
 .identicon-status {
   position: absolute;
@@ -1232,6 +1260,32 @@
 
 .rooms-profile-edit { display: flex; align-items: center; gap: var(--space-4); }
 .rooms-profile-edit .rooms-input { flex: 1; }
+.rooms-profile-fields { display: flex; flex: 1; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.rooms-profile-photo-row { display: flex; gap: var(--space-2); margin-top: var(--space-3); }
+/* Name-color palette: round swatches + a free-pick well. */
+.rooms-profile-colors { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: var(--space-2); }
+.rooms-color-swatch {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+  color: #fff;
+  padding: 0;
+}
+.rooms-color-swatch.none { background: var(--color-bg-tertiary); color: var(--color-text-tertiary); border-color: var(--color-border-default); }
+.rooms-color-swatch.active { border-color: var(--color-text-primary); }
+.rooms-color-custom {
+  width: 28px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+}
 
 /* Avatar picker */
 .rooms-avatar-pick-head {

@@ -47,6 +47,8 @@ export { ShareToRoomModal, TransferPickerModal } from './RoomShareModals';
 export { VoiceSettingsModal } from './VoiceSettingsModal';
 export { ScreenSourcePicker, ScreenView } from './ScreenShare';
 export { Identicon } from './Identicon';
+export { Avatar } from './Avatar';
+export { ProfileCard } from './ProfileCard';
 export { Modal, useEscape, useModalFocus } from './Modal';
 export type { ModalProps, ModalSize } from './Modal';
 export { ThemeEditor } from './ThemeEditor';

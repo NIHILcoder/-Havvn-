@@ -26,6 +26,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { encryptSecret, decryptSecret } from './secrets';
 import { deriveMemberId } from '../sharing/room-crypto';
+import { sanitizeProfileColor, sanitizeProfileStatus, sanitizeProfileImg } from '../../shared/profile';
 
 // === Per-file store schemas ===
 
@@ -758,6 +759,11 @@ export function importRoomIdentityBundle(bundle: unknown): { rooms: number } {
     memberId,
     name: typeof profile.name === 'string' ? profile.name : '',
     avatarSeed: typeof profile.avatarSeed === 'string' && profile.avatarSeed ? profile.avatarSeed : memberId,
+    // Rich-profile customization travels with the identity; each field
+    // re-validates through the same shared rules as the IPC boundary.
+    color: sanitizeProfileColor((profile as RoomProfile).color) ?? '',
+    status: sanitizeProfileStatus((profile as RoomProfile).status),
+    avatarImg: sanitizeProfileImg((profile as RoomProfile).avatarImg) ?? '',
   });
 
   const existing = roomsStore.get('rooms') ?? {};
@@ -1672,7 +1678,7 @@ export function getRoomProfile(): RoomProfile {
   return profile;
 }
 
-export function updateRoomProfile(updates: Partial<Pick<RoomProfile, 'name' | 'avatarSeed'>>): RoomProfile {
+export function updateRoomProfile(updates: Partial<Pick<RoomProfile, 'name' | 'avatarSeed' | 'color' | 'status' | 'avatarImg'>>): RoomProfile {
   const profile = getRoomProfile();
   const next: RoomProfile = { ...profile, ...updates };
   roomsStore.set('roomProfile', next);

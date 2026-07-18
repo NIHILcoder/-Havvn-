@@ -41,7 +41,20 @@ export function mergeFolderUpsert(
   // Only mutate once we've decided to apply — clearing the tombstone above and
   // THEN bailing would desync the in-memory map from the persisted one.
   if (deletedAt) tombs.delete(incoming.id);        // re-created after a deletion — revive
-  folders.set(incoming.id, { ...incoming });
+  // parentId semantics: an upsert WITHOUT the property comes from a client that
+  // doesn't know about hierarchy (pre-2.23 rename/recolor) — preserve the
+  // current membership instead of letting the whole-object LWW flatten the
+  // tree. An upsert WITH the property is an explicit placement, and explicit
+  // ROOT is stored as '' (NEVER undefined: JSON drops undefined-valued keys,
+  // so an undefined-rooted record would degrade back to "unknown" on every
+  // hello/disk round-trip and stale placements could no longer be corrected).
+  const next: RoomFolder = { ...incoming };
+  if (!Object.prototype.hasOwnProperty.call(incoming, 'parentId')) {
+    if (cur && Object.prototype.hasOwnProperty.call(cur, 'parentId')) next.parentId = cur.parentId;
+  } else if (!incoming.parentId || incoming.parentId === incoming.id) {
+    next.parentId = '';                            // '' → root; self-parent → root
+  }
+  folders.set(incoming.id, next);
   return true;
 }
 
@@ -86,19 +99,25 @@ export function applyAssignment(
 }
 
 /**
- * Should a file auto-download, honoring a per-folder override on top of the
- * room-wide toggle? `folderFetch` maps folderId → forced on/off; a file whose
- * folder has no entry (or that sits in Uncategorized) inherits `roomAutoFetch`.
- * Pure — the engine gates every ensureLocal through this, and it unit-tests
- * without a room.
+ * Should a file auto-download, honoring per-folder overrides on top of the
+ * room-wide toggle? `folderFetch` maps folderId → forced on/off. Resolution is
+ * most-specific-wins: the file's own folder's entry, else (via `parentOf`, one
+ * hop) its parent section's entry, else `roomAutoFetch`. A single hop by
+ * construction — no cycle can spin it. Pure — the engine gates every
+ * ensureLocal through this, and it unit-tests without a room.
  */
 export function wantAutoFetch(
   roomAutoFetch: boolean,
   folderFetch: Record<string, boolean> | undefined,
   folderId: string | null | undefined,
+  parentOf?: (id: string) => string | null | undefined,
 ): boolean {
   if (folderId && folderFetch && Object.prototype.hasOwnProperty.call(folderFetch, folderId)) {
     return folderFetch[folderId] === true;
+  }
+  const parent = folderId && parentOf ? parentOf(folderId) : undefined;
+  if (parent && parent !== folderId && folderFetch && Object.prototype.hasOwnProperty.call(folderFetch, parent)) {
+    return folderFetch[parent] === true;
   }
   return roomAutoFetch;
 }
@@ -128,4 +147,62 @@ export function groupFilesByFolder(files: RoomFile[], folders: RoomFolder[]): Fo
   const out: FolderGroup[] = folders.map((f) => ({ folder: f, files: buckets.get(f.id) as RoomFile[] }));
   if (uncategorized.length) out.push({ folder: null, files: uncategorized });
   return out;
+}
+
+export interface SectionGroup {
+  /** The section (a top-level folder), or null for the root Uncategorized bucket (always LAST). */
+  section: RoomFolder | null;
+  /** Files assigned directly to the section itself. */
+  files: RoomFile[];
+  /** Nested folders (with their files), in the given folder-array order. */
+  children: FolderGroup[];
+}
+
+/**
+ * Resolve which folders render as top-level sections. A folder is a section
+ * when its parentId is absent, dangling (no live folder), self-referential, or
+ * points at a folder that is itself nested — one visual level only, and any
+ * malformed/cyclic chain degrades to the root rather than breaking. Pure and
+ * deterministic from the folder array alone.
+ */
+export function sectionIdOf(folder: RoomFolder, byId: Map<string, RoomFolder>): string | null {
+  const pid = folder.parentId;
+  if (!pid || pid === folder.id) return null;
+  const parent = byId.get(pid);
+  if (!parent) return null;                       // dangling → render at root
+  const grand = parent.parentId;
+  if (grand && grand !== pid && byId.has(grand)) return null; // parent is itself nested → flatten
+  return pid;
+}
+
+/**
+ * Two-level grouping: sections (top-level folders) each carry their own files
+ * plus their nested folders' groups; the root Uncategorized bucket comes last.
+ * Folder-array order is preserved at both levels (buildState pre-sorts by
+ * name). Files whose folderId dangles fall into Uncategorized, exactly like
+ * the flat grouping.
+ */
+export function groupFilesByHierarchy(files: RoomFile[], folders: RoomFolder[]): SectionGroup[] {
+  const byId = new Map(folders.map((f) => [f.id, f] as const));
+  const flat = groupFilesByFolder(files, folders);
+  const groupOf = new Map<string, FolderGroup>();
+  for (const g of flat) if (g.folder) groupOf.set(g.folder.id, g);
+
+  const sections: SectionGroup[] = [];
+  const bySection = new Map<string, SectionGroup>();
+  for (const f of folders) {
+    if (sectionIdOf(f, byId) !== null) continue;   // nested — attached below
+    const sec: SectionGroup = { section: f, files: groupOf.get(f.id)?.files ?? [], children: [] };
+    sections.push(sec);
+    bySection.set(f.id, sec);
+  }
+  for (const f of folders) {
+    const sid = sectionIdOf(f, byId);
+    if (sid === null) continue;
+    // sectionIdOf guarantees the parent resolves to a live top-level folder.
+    bySection.get(sid)?.children.push(groupOf.get(f.id) as FolderGroup);
+  }
+  const uncat = flat.find((g) => !g.folder);
+  if (uncat) sections.push({ section: null, files: uncat.files, children: [] });
+  return sections;
 }

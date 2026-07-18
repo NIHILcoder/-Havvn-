@@ -12,14 +12,15 @@ import { createPortal } from 'react-dom';
 import Hls from 'hls.js';
 import toast from 'react-hot-toast';
 import { RoomState, RoomSummary, RoomProfile, RoomFile, RoomFolder, RoomMember } from '../../shared/types';
-import { Button, Icon, IconName, EmptyState, Identicon, QRCode, TransferPickerModal, Toggle, PlayerControls, Modal, useConfirm, VoiceSettingsModal, ScreenSourcePicker, ScreenView, Tabs, DropdownMenu } from '../components';
+import { Button, Icon, IconName, EmptyState, Identicon, Avatar, ProfileCard, QRCode, TransferPickerModal, Toggle, PlayerControls, Modal, useConfirm, VoiceSettingsModal, ScreenSourcePicker, ScreenView, Tabs, DropdownMenu } from '../components';
 import { VoicePrefs, VOICE_PREFS_EVENT, loadVoicePrefs, saveVoicePrefs, toVoiceSettings } from '../utils/voicePrefs';
 import { loadRoomLayout, saveRoomLayout, RAIL_MIN, RAIL_MAX, CHAT_MIN, CHAT_MAX } from '../utils/roomLayout';
 import { usePopout } from '../utils/popout';
 import { RoomFilesPrefs, loadRoomFilesPrefs, saveRoomFilesPrefs, loadRoomSort, saveRoomSort, loadCollapsedFolders, saveCollapsedFolders, clearRoomFilesPrefs } from '../utils/roomFilesPrefs';
 import { ContextMenu } from '../components/ContextMenu';
 import { avatarCandidates } from '../components/Identicon';
-import { groupFilesByFolder, FOLDER_ICONS } from '../../shared/room-folders';
+import { groupFilesByHierarchy, wantAutoFetch, FOLDER_ICONS } from '../../shared/room-folders';
+import { sanitizeProfileColor, sanitizeProfileStatus, sanitizeProfileImg, PROFILE_COLOR_RE } from '../../shared/profile';
 import { parseChatSegments, isCopyworthy } from '../../shared/chat-format';
 import { classifyMediaKind } from '../../shared/media';
 import { formatBytes, formatSpeed } from '../utils/format-helpers';
@@ -97,6 +98,9 @@ const RoomsPage: React.FC<RoomsPageProps> = ({ focusRoomId, onFocusHandled, onRo
   const [profileName, setProfileName] = useState('');
   const [profileSeed, setProfileSeed] = useState('');
   const [avatarPool, setAvatarPool] = useState<string[]>([]);
+  const [profileColor, setProfileColor] = useState('');
+  const [profileStatus, setProfileStatus] = useState('');
+  const [profileImg, setProfileImg] = useState('');
 
   const selectedRef = useRef<string | null>(null);
   selectedRef.current = selectedId;
@@ -297,11 +301,11 @@ const RoomsPage: React.FC<RoomsPageProps> = ({ focusRoomId, onFocusHandled, onRo
   };
 
   // ── Folder ops (any member may manage; the engine converges via LWW) ──────
-  const handleCreateFolder = async (roomId: string, name: string, icon: string, color: string) => {
-    try { applyRoomState(await window.api.rooms.createFolder(roomId, name, icon, color)); }
+  const handleCreateFolder = async (roomId: string, name: string, icon: string, color: string, parentId?: string) => {
+    try { applyRoomState(await window.api.rooms.createFolder(roomId, name, icon, color, parentId)); }
     catch (e) { toast.error(String(e instanceof Error ? e.message : e)); }
   };
-  const handleUpdateFolder = async (roomId: string, folderId: string, patch: { name?: string; icon?: string; color?: string }) => {
+  const handleUpdateFolder = async (roomId: string, folderId: string, patch: { name?: string; icon?: string; color?: string; parentId?: string | null }) => {
     try { applyRoomState(await window.api.rooms.updateFolder(roomId, folderId, patch)); }
     catch (e) { toast.error(String(e instanceof Error ? e.message : e)); }
   };
@@ -333,19 +337,61 @@ const RoomsPage: React.FC<RoomsPageProps> = ({ focusRoomId, onFocusHandled, onRo
     if (!profile) return;
     setProfileName(profile.name);
     setProfileSeed(profile.avatarSeed);
-    setAvatarPool(avatarCandidates(3, profile.avatarSeed));
+    setAvatarPool(avatarCandidates(2, profile.avatarSeed));
+    setProfileColor(profile.color || '');
+    setProfileStatus(profile.status || '');
+    setProfileImg(profile.avatarImg || '');
     setDialog('profile');
   };
 
   const handleSaveProfile = async () => {
     setBusy(true);
     try {
-      const p = await window.api.rooms.setProfile({ name: profileName.trim(), avatarSeed: profileSeed });
+      const p = await window.api.rooms.setProfile({
+        name: profileName.trim(),
+        avatarSeed: profileSeed,
+        color: sanitizeProfileColor(profileColor) ?? '',
+        status: sanitizeProfileStatus(profileStatus),
+        avatarImg: sanitizeProfileImg(profileImg) ?? '',
+      });
       setProfile(p);
       setDialog(null);
       toast.success(t('rooms.profileSaved'));
     } catch (e) { toast.error(String(e instanceof Error ? e.message : e)); }
     finally { setBusy(false); }
+  };
+
+  // Center-crop → square resize → webp data URL under the gossip cap; steps
+  // down size/quality until it fits (a photo that can't fit is rejected).
+  const pickAvatarPhoto = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/png,image/jpeg,image/webp';
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const side = Math.min(img.naturalWidth, img.naturalHeight);
+        if (!side) { toast.error(t('rooms.profilePhotoBad')); return; }
+        for (const [dim, q] of [[128, 0.85], [128, 0.6], [96, 0.55], [64, 0.5]] as const) {
+          const canvas = document.createElement('canvas');
+          canvas.width = dim; canvas.height = dim;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) break;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, dim, dim);
+          const out = canvas.toDataURL('image/webp', q);
+          if (out.startsWith('data:image/webp') && sanitizeProfileImg(out)) { setProfileImg(out); return; }
+        }
+        toast.error(t('rooms.profilePhotoBad'));
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); toast.error(t('rooms.profilePhotoBad')); };
+      img.src = url;
+    };
+    input.click();
   };
 
   const copy = (text: string, msg: string) => {
@@ -367,8 +413,8 @@ const RoomsPage: React.FC<RoomsPageProps> = ({ focusRoomId, onFocusHandled, onRo
         <div className="rooms-header-actions">
           {profile && (
             <button className="rooms-profile-chip" onClick={openProfile} title={t('rooms.editProfile')}>
-              <Identicon seed={profile.avatarSeed} size={28} ring />
-              <span>{profile.name || t('rooms.you')}</span>
+              <Avatar seed={profile.avatarSeed} img={profile.avatarImg} size={28} ring />
+              <span style={profile.color ? { color: profile.color } : undefined}>{profile.name || t('rooms.you')}</span>
             </button>
           )}
           <Button variant="ghost" size="sm" onClick={() => setDialog('join')} icon={<Icon name="link" size={14} />}>
@@ -407,7 +453,7 @@ const RoomsPage: React.FC<RoomsPageProps> = ({ focusRoomId, onFocusHandled, onRo
                 room={room}
                 onAddFiles={(folderId) => handleAddFiles(room.roomId, folderId)}
                 onDropFiles={(paths, folderId) => handleDropPaths(room.roomId, paths, folderId)}
-                onCreateFolder={(name, icon, color) => handleCreateFolder(room.roomId, name, icon, color)}
+                onCreateFolder={(name, icon, color, parentId) => handleCreateFolder(room.roomId, name, icon, color, parentId)}
                 onUpdateFolder={(folderId, patch) => handleUpdateFolder(room.roomId, folderId, patch)}
                 onDeleteFolder={(folderId) => handleDeleteFolder(room.roomId, folderId)}
                 onAssignFile={(fileId, folderId) => handleAssignFile(room.roomId, fileId, folderId)}
@@ -505,24 +551,78 @@ const RoomsPage: React.FC<RoomsPageProps> = ({ focusRoomId, onFocusHandled, onRo
           </>}
         >
           <div className="rooms-profile-edit">
-            <Identicon seed={profileSeed} size={64} ring />
+            <Avatar seed={profileSeed} img={profileImg} size={64} ring />
+            <div className="rooms-profile-fields">
+              <input
+                className="rooms-input" data-autofocus
+                placeholder={t('rooms.namePlaceholder')}
+                value={profileName}
+                onChange={(e) => setProfileName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSaveProfile()}
+              />
+              <input
+                className="rooms-input"
+                placeholder={t('rooms.profileStatusPlaceholder')}
+                maxLength={140}
+                value={profileStatus}
+                onChange={(e) => setProfileStatus(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSaveProfile()}
+              />
+            </div>
+          </div>
+          {/* Photo: uploaded avatars beat the identicon; capped + recompressed locally. */}
+          <div className="rooms-profile-photo-row">
+            <button type="button" className="rooms-avatar-shuffle" onClick={pickAvatarPhoto}>
+              <Icon name="image" size={13} /> {t('rooms.profilePhoto')}
+            </button>
+            {profileImg && (
+              <button type="button" className="rooms-avatar-shuffle" onClick={() => setProfileImg('')}>
+                <Icon name="x" size={13} /> {t('rooms.profilePhotoRemove')}
+              </button>
+            )}
+          </div>
+          {/* Name color: a small themed palette + a free-pick well. */}
+          <div className="rooms-avatar-pick-head">
+            <span className="rooms-avatar-pick-label">{t('rooms.profileColor')}</span>
+          </div>
+          <div className="rooms-profile-colors">
+            <button
+              type="button"
+              className={`rooms-color-swatch none ${profileColor === '' ? 'active' : ''}`}
+              onClick={() => setProfileColor('')}
+              title={t('rooms.profileColorNone')}
+              aria-pressed={profileColor === ''}
+            >
+              <Icon name="x" size={11} />
+            </button>
+            {['#e8590c', '#f59f00', '#40c057', '#22b8cf', '#4dabf7', '#748ffc', '#9775fa', '#f06595'].map((c) => (
+              <button
+                key={c}
+                type="button"
+                className={`rooms-color-swatch ${profileColor === c ? 'active' : ''}`}
+                style={{ background: c }}
+                onClick={() => setProfileColor(c)}
+                aria-pressed={profileColor === c}
+                aria-label={c}
+              />
+            ))}
             <input
-              className="rooms-input" data-autofocus
-              placeholder={t('rooms.namePlaceholder')}
-              value={profileName}
-              onChange={(e) => setProfileName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSaveProfile()}
+              type="color"
+              className="rooms-color-custom"
+              value={PROFILE_COLOR_RE.test(profileColor) ? profileColor : '#e8590c'}
+              onChange={(e) => setProfileColor(e.target.value)}
+              title={t('rooms.profileColorCustom')}
             />
           </div>
           <div className="rooms-avatar-pick-head">
             <span className="rooms-avatar-pick-label">{t('rooms.avatarPick')}</span>
-            <button type="button" className="rooms-avatar-shuffle" onClick={() => setAvatarPool(avatarCandidates(3, profileSeed))} title={t('rooms.avatarShuffle')}>
+            <button type="button" className="rooms-avatar-shuffle" onClick={() => setAvatarPool(avatarCandidates(2, profileSeed))} title={t('rooms.avatarShuffle')}>
               <Icon name="refresh" size={13} /> {t('rooms.avatarShuffle')}
             </button>
           </div>
           <div className="rooms-avatar-grid">
             {avatarPool.map((seed) => (
-              <button key={seed} type="button" className={`rooms-avatar-option ${seed === profileSeed ? 'active' : ''}`} onClick={() => setProfileSeed(seed)} aria-pressed={seed === profileSeed}>
+              <button key={seed} type="button" className={`rooms-avatar-option ${seed === profileSeed && !profileImg ? 'active' : ''}`} onClick={() => { setProfileSeed(seed); setProfileImg(''); }} aria-pressed={seed === profileSeed && !profileImg}>
                 <Identicon seed={seed} size={44} />
               </button>
             ))}
@@ -609,8 +709,8 @@ type StageView =
 interface FilesPanelProps {
   room: RoomState;
   onAddFiles: (folderId?: string) => void;
-  onCreateFolder: (name: string, icon: string, color: string) => void;
-  onUpdateFolder: (folderId: string, patch: { name?: string; icon?: string; color?: string }) => void;
+  onCreateFolder: (name: string, icon: string, color: string, parentId?: string) => void;
+  onUpdateFolder: (folderId: string, patch: { name?: string; icon?: string; color?: string; parentId?: string | null }) => void;
   onDeleteFolder: (folderId: string) => void;
   onAssignFile: (fileId: string, folderId: string | null) => void;
   onWatch: (file: RoomFile) => void;
@@ -728,16 +828,31 @@ const RoomFilesPanel: React.FC<FilesPanelProps> = ({ room, onAddFiles, onCreateF
   // Folders/sections overlay. `hasFolders` gates progressive disclosure: with
   // none, the file list renders flat exactly as before.
   const [newFolderOpen, setNewFolderOpen] = useState(false);
+  // Section id an inline "new subfolder" editor is open under (null = none).
+  const [newSubfolderFor, setNewSubfolderFor] = useState<string | null>(null);
   const [editFolderId, setEditFolderId] = useState<string | null>(null);
   const [dragOverKey, setDragOverKey] = useState<string | null>(null);
-  useEffect(() => { setNewFolderOpen(false); setEditFolderId(null); }, [room.roomId]);
+  useEffect(() => { setNewFolderOpen(false); setNewSubfolderFor(null); setEditFolderId(null); }, [room.roomId]);
   const folders = room.folders ?? [];
   const hasFolders = folders.length > 0;
   const grouped = useMemo(() => {
-    const g = groupFilesByFolder(visibleFiles, room.folders ?? []);
-    // During an active search, hide empty sections so matches aren't buried.
-    return fileQuery.trim() ? g.filter((x) => x.files.length > 0) : g;
+    const g = groupFilesByHierarchy(visibleFiles, room.folders ?? []);
+    if (!fileQuery.trim()) return g;
+    // During an active search, hide empty folders/sections so matches aren't buried.
+    return g
+      .map((s) => ({ ...s, children: s.children.filter((c) => c.files.length > 0) }))
+      .filter((s) => s.files.length > 0 || s.children.length > 0);
   }, [visibleFiles, room.folders, fileQuery]);
+  // Section list for "move to section" menus (a folder with children can't
+  // become a child itself — the engine enforces the same one-level rule).
+  const sectionFolders = useMemo(() => {
+    const byId = new Map(folders.map((f) => [f.id, f] as const));
+    return folders.filter((f) => !f.parentId || f.parentId === f.id || !byId.has(f.parentId));
+  }, [folders]);
+  const folderLabel = useCallback((f: RoomFolder) => {
+    const parent = f.parentId ? folders.find((x) => x.id === f.parentId) : undefined;
+    return parent && parent.id !== f.id ? `${parent.name} / ${f.name}` : f.name;
+  }, [folders]);
 
   // Drop an internal file-row drag onto a section → reassign it there
   // (folderId null = Uncategorized). OS-file drops fall through to the room
@@ -795,6 +910,106 @@ const RoomFilesPanel: React.FC<FilesPanelProps> = ({ room, onAddFiles, onCreateF
     ))
   );
 
+  // One header for both levels (sections and their subfolders): collapse toggle,
+  // fetch-cycle with the EFFECTIVE inherited state in the tooltip, add-into,
+  // new-subfolder (sections only), move-to-section (nested / childless), rename,
+  // delete. Renders the inline editor in place while renaming.
+  const renderFolderHeader = (
+    folder: RoomFolder | null,
+    count: number,
+    isCollapsed: boolean,
+    key: string,
+    opts: { canNest: boolean; childCount: number },
+  ) => {
+    if (folder && editFolderId === folder.id) {
+      return (
+        <RoomFolderEditor
+          initial={{ name: folder.name, icon: folder.icon, color: folder.color }}
+          onSubmit={(name, icon, color) => { setEditFolderId(null); onUpdateFolder(folder.id, { name, icon, color }); }}
+          onCancel={() => setEditFolderId(null)}
+        />
+      );
+    }
+    const moveTargets = folder
+      ? sectionFolders.filter((s) => s.id !== folder.id && s.id !== (folder.parentId || ''))
+      : [];
+    const canMove = !!folder && opts.childCount === 0 && (moveTargets.length > 0 || !!folder.parentId);
+    return (
+      <div className="room-folder-header">
+        <button type="button" className="room-folder-label room-folder-toggle" onClick={() => toggleCollapsed(key)} title={isCollapsed ? t('rooms.folder.expand') : t('rooms.folder.collapse')}>
+          <Icon name={isCollapsed ? 'chevron-right' : 'chevron-down'} size={13} className="room-folder-chevron" />
+          <FolderIcon folder={folder} />
+          <span className="room-folder-title">{folder ? folder.name : t('rooms.folder.uncategorized')}</span>
+          <span className="room-folder-count">{count}</span>
+        </button>
+        <span className="room-folder-acts">
+          {folder && (() => {
+            const ov = room.folderFetch?.[folder.id];
+            const state = ov === true ? 'on' : ov === false ? 'off' : 'inherit';
+            const effective = wantAutoFetch(room.autoFetch, room.folderFetch, folder.id, (id) => folders.find((x) => x.id === id)?.parentId);
+            const label = state === 'on' ? t('rooms.folder.fetchOn')
+              : state === 'off' ? t('rooms.folder.fetchOff')
+              : `${t('rooms.folder.fetchInherit')} · ${effective ? t('rooms.folder.effOn') : t('rooms.folder.effOff')}`;
+            return (
+              <button className={`room-folder-act room-folder-fetch ${state}`} title={label} onClick={() => cycleFolderFetch(folder.id)}>
+                <Icon name="download" size={13} />
+              </button>
+            );
+          })()}
+          <button className="room-folder-act" title={t('rooms.folder.addHere')} onClick={() => onAddFiles(folder?.id)}>
+            <Icon name="file-plus" size={13} />
+          </button>
+          {folder && opts.canNest && (
+            <button
+              className="room-folder-act"
+              title={t('rooms.folder.newSub')}
+              onClick={() => {
+                setNewFolderOpen(false); setEditFolderId(null); setNewSubfolderFor((v) => (v === folder.id ? null : folder.id));
+                if (collapsed.has(key)) toggleCollapsed(key); // the editor must be visible
+              }}
+            >
+              <Icon name="folder-plus" size={13} />
+            </button>
+          )}
+          {canMove && folder && (
+            <DropdownMenu
+              renderTrigger={({ toggle }) => (
+                <button className="room-folder-act" title={t('rooms.folder.moveToSection')} onClick={toggle}>
+                  <Icon name="arrow-right" size={13} />
+                </button>
+              )}
+              items={[
+                ...moveTargets.map((s) => ({ key: s.id, label: s.name, onSelect: () => onUpdateFolder(folder.id, { parentId: s.id }) })),
+                ...(folder.parentId ? [{ key: '', label: t('rooms.folder.toRoot'), onSelect: () => onUpdateFolder(folder.id, { parentId: null }) }] : []),
+              ]}
+            />
+          )}
+          {folder && (
+            <>
+              <button className="room-folder-act" title={t('rooms.folder.rename')} onClick={() => { setNewFolderOpen(false); setNewSubfolderFor(null); setEditFolderId(folder.id); }}>
+                <Icon name="edit-2" size={13} />
+              </button>
+              <button
+                className="room-folder-act danger"
+                title={t('rooms.folder.delete')}
+                onClick={async () => {
+                  // Count against the UNFILTERED manifest — the header count
+                  // reflects active search/filters and could read 0 while the
+                  // folder still holds files (the confirm must not be skipped).
+                  const realCount = room.files.filter((f) => f.folderId === folder.id).length;
+                  const msg = opts.childCount > 0 ? t('rooms.folder.deleteSectionConfirm') : t('rooms.folder.deleteConfirm');
+                  if ((realCount === 0 && opts.childCount === 0) || await confirm({ message: msg, danger: true })) onDeleteFolder(folder.id);
+                }}
+              >
+                <Icon name="trash" size={13} />
+              </button>
+            </>
+          )}
+        </span>
+      </div>
+    );
+  };
+
   return (
     <div className={`room-section${viewPrefs.density === 'compact' ? ' room-files-compact' : ''}`}>
       <div className="room-section-title-row">
@@ -842,10 +1057,10 @@ const RoomFilesPanel: React.FC<FilesPanelProps> = ({ room, onAddFiles, onCreateF
           <button
             type="button"
             className="room-newfolder-btn"
-            title={t('rooms.folder.new')}
-            onClick={() => { setEditFolderId(null); setNewFolderOpen((v) => !v); }}
+            title={t('rooms.folder.newSection')}
+            onClick={() => { setEditFolderId(null); setNewSubfolderFor(null); setNewFolderOpen((v) => !v); }}
           >
-            <Icon name="plus" size={13} /> {t('rooms.folder.new')}
+            <Icon name="plus" size={13} /> {t('rooms.folder.newSection')}
           </button>
           <div className="room-autofetch" title={t('rooms.autoFetchHint')}>
             <Toggle size="small" checked={room.autoFetch} onChange={onToggleAutoFetch} label={t('rooms.autoFetch')} />
@@ -911,7 +1126,7 @@ const RoomFilesPanel: React.FC<FilesPanelProps> = ({ room, onAddFiles, onCreateF
                 </button>
               )}
               items={[
-                ...folders.map((f) => ({ key: f.id, label: f.name, onSelect: () => { assignMany(Array.from(selected), f.id); setSelected(new Set()); setSelecting(false); } })),
+                ...folders.map((f) => ({ key: f.id, label: folderLabel(f), onSelect: () => { assignMany(Array.from(selected), f.id); setSelected(new Set()); setSelecting(false); } })),
                 { key: '', label: t('rooms.folder.uncategorized'), onSelect: () => { assignMany(Array.from(selected), null); setSelected(new Set()); setSelecting(false); } },
               ]}
             />
@@ -964,65 +1179,46 @@ const RoomFilesPanel: React.FC<FilesPanelProps> = ({ room, onAddFiles, onCreateF
         <div className="room-files-empty">{t('rooms.fileSearchEmpty')}</div>
       ) : (
         <div className="room-folder-list">
-          {grouped.map((g) => {
-            const key = g.folder?.id ?? 'uncategorized';
-            const editing = !!g.folder && editFolderId === g.folder.id;
+          {grouped.map((sec) => {
+            const key = sec.section?.id ?? 'uncategorized';
+            const total = sec.files.length + sec.children.reduce((s, c) => s + c.files.length, 0);
             // A live search force-expands so matches are never hidden.
             const isCollapsed = !fileQuery.trim() && collapsed.has(key);
+            const childCount = sec.section ? folders.filter((f) => f.parentId === sec.section!.id).length : 0;
             return (
-              <div key={key} className={`room-folder-section${dragOverKey === key ? ' dragover' : ''}`} {...sectionDropProps(g.folder?.id ?? null, key)}>
-                {editing && g.folder ? (
-                  <RoomFolderEditor
-                    initial={{ name: g.folder.name, icon: g.folder.icon, color: g.folder.color }}
-                    onSubmit={(name, icon, color) => { setEditFolderId(null); onUpdateFolder(g.folder!.id, { name, icon, color }); }}
-                    onCancel={() => setEditFolderId(null)}
-                  />
-                ) : (
-                  <div className="room-folder-header">
-                    <button type="button" className="room-folder-label room-folder-toggle" onClick={() => toggleCollapsed(key)} title={isCollapsed ? t('rooms.folder.expand') : t('rooms.folder.collapse')}>
-                      <Icon name={isCollapsed ? 'chevron-right' : 'chevron-down'} size={13} className="room-folder-chevron" />
-                      <FolderIcon folder={g.folder} />
-                      <span className="room-folder-title">{g.folder ? g.folder.name : t('rooms.folder.uncategorized')}</span>
-                      <span className="room-folder-count">{g.files.length}</span>
-                    </button>
-                    <span className="room-folder-acts">
-                      {g.folder && (() => {
-                        const ov = room.folderFetch?.[g.folder.id];
-                        const state = ov === true ? 'on' : ov === false ? 'off' : 'inherit';
-                        const label = state === 'on' ? t('rooms.folder.fetchOn') : state === 'off' ? t('rooms.folder.fetchOff') : t('rooms.folder.fetchInherit');
-                        return (
-                          <button className={`room-folder-act room-folder-fetch ${state}`} title={label} onClick={() => cycleFolderFetch(g.folder!.id)}>
-                            <Icon name="download" size={13} />
-                          </button>
-                        );
-                      })()}
-                      <button className="room-folder-act" title={t('rooms.folder.addHere')} onClick={() => onAddFiles(g.folder?.id)}>
-                        <Icon name="file-plus" size={13} />
-                      </button>
-                      {g.folder && (
-                        <>
-                          <button className="room-folder-act" title={t('rooms.folder.rename')} onClick={() => { setNewFolderOpen(false); setEditFolderId(g.folder!.id); }}>
-                            <Icon name="edit-2" size={13} />
-                          </button>
-                          <button
-                            className="room-folder-act danger"
-                            title={t('rooms.folder.delete')}
-                            onClick={async () => {
-                              if (g.files.length === 0 || await confirm({ message: t('rooms.folder.deleteConfirm'), danger: true })) onDeleteFolder(g.folder!.id);
-                            }}
-                          >
-                            <Icon name="trash" size={13} />
-                          </button>
-                        </>
-                      )}
-                    </span>
-                  </div>
+              <div key={key} className={`room-folder-section${dragOverKey === key ? ' dragover' : ''}`} {...sectionDropProps(sec.section?.id ?? null, key)}>
+                {renderFolderHeader(sec.section, total, isCollapsed, key, { canNest: !!sec.section, childCount })}
+                {isCollapsed ? null : (
+                  <>
+                    {sec.section && newSubfolderFor === sec.section.id && (
+                      <div className="room-subfolder">
+                        <RoomFolderEditor
+                          onSubmit={(name, icon, color) => { setNewSubfolderFor(null); onCreateFolder(name, icon, color, sec.section!.id); }}
+                          onCancel={() => setNewSubfolderFor(null)}
+                        />
+                      </div>
+                    )}
+                    {sec.children.map((c) => {
+                      const cKey = c.folder!.id;
+                      const cCollapsed = !fileQuery.trim() && collapsed.has(cKey);
+                      return (
+                        <div key={cKey} className={`room-subfolder${dragOverKey === cKey ? ' dragover' : ''}`} {...sectionDropProps(cKey, cKey)}>
+                          {renderFolderHeader(c.folder, c.files.length, cCollapsed, cKey, { canNest: false, childCount: 0 })}
+                          {cCollapsed ? null : c.files.length > 0 ? (
+                            <div className="room-files">{renderFolderFiles(c.files)}</div>
+                          ) : editFolderId === cKey ? null : (
+                            <div className="room-folder-empty">{t('rooms.folder.empty')}</div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {sec.files.length > 0 ? (
+                      <div className="room-files">{renderFolderFiles(sec.files)}</div>
+                    ) : sec.children.length === 0 && newSubfolderFor !== sec.section?.id && editFolderId !== sec.section?.id ? (
+                      <div className="room-folder-empty">{t('rooms.folder.empty')}</div>
+                    ) : null}
+                  </>
                 )}
-                {isCollapsed ? null : g.files.length > 0 ? (
-                  <div className="room-files">{renderFolderFiles(g.files)}</div>
-                ) : !editing ? (
-                  <div className="room-folder-empty">{t('rooms.folder.empty')}</div>
-                ) : null}
               </div>
             );
           })}
@@ -1123,8 +1319,8 @@ interface StageProps {
   onCloseStage: () => void;
   onWatch: (file: RoomFile) => void;
   onAddFiles: (folderId?: string) => void;
-  onCreateFolder: (name: string, icon: string, color: string) => void;
-  onUpdateFolder: (folderId: string, patch: { name?: string; icon?: string; color?: string }) => void;
+  onCreateFolder: (name: string, icon: string, color: string, parentId?: string) => void;
+  onUpdateFolder: (folderId: string, patch: { name?: string; icon?: string; color?: string; parentId?: string | null }) => void;
   onDeleteFolder: (folderId: string) => void;
   onAssignFile: (fileId: string, folderId: string | null) => void;
   onShared: (state: RoomState) => void;
@@ -1170,8 +1366,8 @@ interface DetailProps {
   onAddFiles: (folderId?: string) => void;
   /** Files were dropped onto the room — absolute paths, already resolved. */
   onDropFiles: (paths: string[], folderId?: string) => void;
-  onCreateFolder: (name: string, icon: string, color: string) => void;
-  onUpdateFolder: (folderId: string, patch: { name?: string; icon?: string; color?: string }) => void;
+  onCreateFolder: (name: string, icon: string, color: string, parentId?: string) => void;
+  onUpdateFolder: (folderId: string, patch: { name?: string; icon?: string; color?: string; parentId?: string | null }) => void;
   onDeleteFolder: (folderId: string) => void;
   onAssignFile: (fileId: string, folderId: string | null) => void;
   onOpenFolder: () => void;
@@ -1565,9 +1761,9 @@ const RoomVoicePanel: React.FC<{ room: RoomState; onWatchShare: (memberId: strin
                   onClick={() => { if (!self) setVolumeFor((cur) => (cur === p.memberId ? null : p.memberId)); }}
                   title={self ? nameOf(p.memberId) : t('rooms.voice.volume')}
                 >
-                  <Identicon seed={seedOf(p.memberId)} size={30} />
+                  <Avatar seed={seedOf(p.memberId)} img={memberOf(p.memberId)?.avatarImg} size={30} />
                 </button>
-                <span className="room-voice-pname">{nameOf(p.memberId)}</span>
+                <span className="room-voice-pname" style={memberOf(p.memberId)?.color ? { color: memberOf(p.memberId)?.color } : undefined}>{nameOf(p.memberId)}</span>
                 {p.muted && <Icon name="mic-off" size={12} className="room-voice-pmic" />}
                 {p.sharing && (
                   <button
@@ -1603,12 +1799,48 @@ const RoomVoicePanel: React.FC<{ room: RoomState; onWatchShare: (memberId: strin
 const RoomMembersList: React.FC<{ room: RoomState }> = ({ room }) => {
   const { t } = useTranslation();
   const { confirm } = useConfirm();
+  // Click a member → their profile card, anchored to the clicked row.
+  const [cardFor, setCardFor] = useState<{ memberId: string; anchor: HTMLElement } | null>(null);
+  const cardMember = cardFor ? room.members.find((m) => m.memberId === cardFor.memberId) : undefined;
+  useEffect(() => { setCardFor(null); }, [room.roomId]);
+  const muteToggle = (m: RoomMember) => async () => {
+    if (m.muted) {
+      window.api.rooms.setMuted(room.roomId, m.memberId, false).catch((e) => toast.error(String(e instanceof Error ? e.message : e)));
+    } else if (await confirm({ message: t('rooms.muteConfirm') })) {
+      window.api.rooms.setMuted(room.roomId, m.memberId, true).catch((e) => toast.error(String(e instanceof Error ? e.message : e)));
+    }
+  };
+  const kick = (m: RoomMember) => async () => {
+    if (await confirm({ message: t('rooms.kickConfirm'), danger: true })) {
+      window.api.rooms.kick(room.roomId, m.memberId)
+        .then(() => toast.success(t('rooms.kicked')))
+        .catch((e) => toast.error(String(e instanceof Error ? e.message : e)));
+    }
+  };
   return (
     <div className="room-members">
+      {cardMember && cardFor && (
+        <ProfileCard
+          member={cardMember}
+          totalFiles={room.files.length}
+          anchor={cardFor.anchor}
+          canManage={room.canManage}
+          onClose={() => setCardFor(null)}
+          onMuteToggle={muteToggle(cardMember)}
+          onKick={kick(cardMember)}
+        />
+      )}
       {room.members.map((m) => (
-        <div key={m.memberId} className={`room-member ${m.online ? '' : 'offline'} ${m.muted ? 'muted' : ''}`} title={m.isSelf ? t('rooms.you') : m.relayed ? t('rooms.relayed') : m.online ? t('rooms.direct') : t('rooms.offline')}>
-          <Identicon seed={m.avatarSeed} size={30} online={m.online} ring={m.isSelf} />
-          <span className="room-member-name">
+        <div key={m.memberId} className={`room-member ${m.online ? '' : 'offline'} ${m.muted ? 'muted' : ''}`} title={m.status ? m.status : m.isSelf ? t('rooms.you') : m.relayed ? t('rooms.relayed') : m.online ? t('rooms.direct') : t('rooms.offline')}>
+          <button
+            type="button"
+            className="room-member-open"
+            title={t('rooms.profileCardHint')}
+            onClick={(e) => setCardFor((cur) => (cur?.memberId === m.memberId ? null : { memberId: m.memberId, anchor: e.currentTarget }))}
+          >
+            <Avatar seed={m.avatarSeed} img={m.avatarImg} size={30} online={m.online} ring={m.isSelf} />
+          </button>
+          <span className="room-member-name" style={m.color ? { color: m.color } : undefined}>
             {m.role === 'owner' && <Icon name="star" size={11} className="room-member-owner" />}
             {m.isSelf ? (m.name && m.name !== 'You' ? m.name : t('rooms.you')) : m.name}
             {m.relayed && <Icon name="network" size={11} className="room-member-relay" />}
@@ -1687,7 +1919,16 @@ const RoomChat: React.FC<{ room: RoomState }> = ({ room }) => {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [zoneTab, setZoneTab] = useState<'chat' | 'history'>('chat');
+  // Author avatar click → info-only profile card (actions live in the rail).
+  // Reset on room switch AND on detach/reattach — the card's anchor element
+  // belongs to the previous document and dies with it.
+  const [chatCardFor, setChatCardFor] = useState<{ memberId: string; anchor: HTMLElement } | null>(null);
+  const chatCardMember = chatCardFor ? room.members.find((m) => m.memberId === chatCardFor.memberId) : undefined;
+  useEffect(() => { setChatCardFor(null); }, [room.roomId]);
   const { popout, openPopout, closePopout } = usePopout('havvn-room-chat', t('rooms.chat'));
+  // Detach/reattach and tab switches remount the log DOM — the card's anchor
+  // element is gone, so a surviving card would pin to the window corner.
+  useEffect(() => { setChatCardFor(null); }, [popout, zoneTab]);
   const selfId = room.members.find((m) => m.isSelf)?.memberId;
   const messages = room.chat || [];
   const listRef = useRef<HTMLDivElement>(null);
@@ -1805,17 +2046,41 @@ const RoomChat: React.FC<{ room: RoomState }> = ({ room }) => {
         </div>
       ) : (
       <div className="room-chat">
+        {chatCardMember && chatCardFor && (
+          <ProfileCard
+            member={chatCardMember}
+            totalFiles={room.files.length}
+            anchor={chatCardFor.anchor}
+            canManage={false}
+            onClose={() => setChatCardFor(null)}
+          />
+        )}
         <div className="room-chat-log" ref={listRef}>
           {messages.length === 0 ? (
             <div className="room-files-empty">{t('rooms.chatEmpty')}</div>
           ) : (
             messages.slice(-100).map((m) => {
               const mine = m.memberId === selfId;
+              // Live member (if still around) carries the rich profile: custom
+              // avatar, name color, and the click-through card. The message's
+              // own name/seed snapshot is the fallback for departed members.
+              const live = room.members.find((mm) => mm.memberId === m.memberId);
               return (
                 <div key={m.id} className={`room-chat-msg ${mine ? 'mine' : ''}`}>
-                  {!mine && <Identicon seed={m.avatarSeed} size={28} />}
+                  {!mine && (live ? (
+                    <button
+                      type="button"
+                      className="room-member-open"
+                      title={t('rooms.profileCardHint')}
+                      onClick={(e) => setChatCardFor((cur) => (cur?.memberId === m.memberId ? null : { memberId: m.memberId, anchor: e.currentTarget }))}
+                    >
+                      <Avatar seed={live.avatarSeed} img={live.avatarImg} size={28} />
+                    </button>
+                  ) : (
+                    <Identicon seed={m.avatarSeed} size={28} />
+                  ))}
                   <div className="room-chat-bubble-wrap">
-                    {!mine && <span className="room-chat-author">{m.name || '?'}</span>}
+                    {!mine && <span className="room-chat-author" style={live?.color ? { color: live.color } : undefined}>{live?.name || m.name || '?'}</span>}
                     <RoomChatBody text={m.text} copyLabel={t('rooms.chatCopy')} copiedLabel={t('rooms.chatCopied')} />
                     <span className="room-chat-time">{shortTime(m.at)}</span>
                   </div>
@@ -2072,10 +2337,13 @@ const RoomFileRow: React.FC<{ file: RoomFile; room: RoomState; onWatch: (file: R
             { label: t('rooms.copyName'), icon: 'copy' as IconName, onClick: () => { navigator.clipboard.writeText(file.name).catch(() => { /* ignore */ }); } },
             ...(folders.length > 0 ? [
               { label: '', onClick: () => { /* divider */ }, divider: true },
-              ...folders.filter((fo) => fo.id !== file.folderId).map((fo) => ({
-                label: `${t('rooms.folder.moveTo')}: ${fo.name}`, icon: 'folder' as IconName,
-                onClick: () => onAssignFile(file.fileId, fo.id),
-              })),
+              ...folders.filter((fo) => fo.id !== file.folderId).map((fo) => {
+                const parent = fo.parentId ? folders.find((x) => x.id === fo.parentId && x.id !== fo.id) : undefined;
+                return {
+                  label: `${t('rooms.folder.moveTo')}: ${parent ? `${parent.name} / ${fo.name}` : fo.name}`, icon: 'folder' as IconName,
+                  onClick: () => onAssignFile(file.fileId, fo.id),
+                };
+              }),
               ...(file.folderId ? [{ label: `${t('rooms.folder.moveTo')}: ${t('rooms.folder.uncategorized')}`, icon: 'folder' as IconName, onClick: () => onAssignFile(file.fileId, null) }] : []),
             ] : []),
             { label: '', onClick: () => { /* divider */ }, divider: true },

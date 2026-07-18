@@ -136,6 +136,17 @@ export interface RoomFolder {
   icon: string;
   color: string;
   at: number;
+  /**
+   * Section membership: id of the top-level folder (section) this folder nests
+   * under. ABSENT (no own property) means "author doesn't know about hierarchy"
+   * — merge preserves the current value, so edits from pre-2.23 clients don't
+   * flatten the tree. An explicit EMPTY STRING means root — '' and not
+   * undefined, because JSON (hello wire, disk persistence) drops
+   * undefined-valued keys and the explicit placement would silently degrade to
+   * "unknown". One level only: resolution follows a single hop and grouping
+   * renders any deeper/dangling/cyclic chain at the root.
+   */
+  parentId?: string;
 }
 
 /** A room folder as persisted to disk (same shape; re-served on restart). */
@@ -164,6 +175,9 @@ export interface RoomMember {
   role: 'owner' | 'member';  // owner = room creator; can kick + rekey
   muted?: boolean;       // locally hidden/ignored on THIS install (not broadcast)
   relayed?: boolean;     // online but reached only via another member (no direct wire)
+  color?: string;        // profile display color (signed 'profile' gossip; '' / absent = default)
+  status?: string;       // short status line (signed 'profile' gossip)
+  avatarImg?: string;    // custom avatar data URL (signed 'profile' gossip; absent = identicon)
 }
 
 /** A chat message in a room (gossiped between members; capped + persisted locally). */
@@ -321,6 +335,12 @@ export interface RoomProfile {
   memberId: string;
   name: string;
   avatarSeed: string;
+  /** Display color for the name in chat/rail ('' / absent = theme default). Hex #rrggbb. */
+  color?: string;
+  /** Short free-text status shown under the name ('' / absent = none). */
+  status?: string;
+  /** Custom avatar as a data:image/(png|jpeg|webp);base64 URL, hard-capped; '' / absent = identicon. */
+  avatarImg?: string;
 }
 
 export type FilePriority = 'skip' | 'low' | 'normal' | 'high';
@@ -1085,7 +1105,7 @@ export interface IpcApi {
   // Friend swarms / private rooms (Phase 3)
   rooms: {
     getProfile: () => Promise<RoomProfile>;
-    setProfile: (updates: Partial<Pick<RoomProfile, 'name' | 'avatarSeed'>>) => Promise<RoomProfile>;
+    setProfile: (updates: Partial<Pick<RoomProfile, 'name' | 'avatarSeed' | 'color' | 'status' | 'avatarImg'>>) => Promise<RoomProfile>;
     create: (name: string, e2e?: boolean) => Promise<RoomState>;
     join: (code: string) => Promise<RoomState>;
     leave: (roomId: string, deleteFiles?: boolean) => Promise<{ ok: boolean }>;
@@ -1106,8 +1126,8 @@ export interface IpcApi {
     markRead: (roomId: string) => Promise<{ ok: boolean }>;
     setActiveRoom: (roomId: string | null) => Promise<{ ok: boolean }>;
     // Folders/sections (any member may manage; convergence is last-writer-wins)
-    createFolder: (roomId: string, name: string, icon: string, color: string) => Promise<RoomState>;
-    updateFolder: (roomId: string, folderId: string, patch: { name?: string; icon?: string; color?: string }) => Promise<RoomState>;
+    createFolder: (roomId: string, name: string, icon: string, color: string, parentId?: string) => Promise<RoomState>;
+    updateFolder: (roomId: string, folderId: string, patch: { name?: string; icon?: string; color?: string; parentId?: string | null }) => Promise<RoomState>;
     deleteFolder: (roomId: string, folderId: string) => Promise<RoomState>;
     assignFile: (roomId: string, fileId: string, folderId: string | null) => Promise<RoomState>;
     assignFiles: (roomId: string, fileIds: string[], folderId: string | null) => Promise<RoomState>;

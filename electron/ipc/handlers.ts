@@ -19,6 +19,7 @@ import { getPythonStatus } from '../services/python-detector';
 import { getIPBlocklistService } from '../services/ip-blocklist';
 import { getWatchFolderService } from '../torrent/watch-folder';
 import { t } from '../i18n';
+import { sanitizeProfileColor, sanitizeProfileStatus, sanitizeProfileImg } from '../../shared/profile';
 
 const log = logger.child('IPC');
 
@@ -347,7 +348,24 @@ export function setupIpcHandlers(window: BrowserWindow): void {
   ));
 
   ipcMain.handle('rooms:setProfile', wrapHandler('rooms:setProfile',
-    async (_event, updates: { name?: string; avatarSeed?: string }) => roomManager.setProfile(updates || {})
+    async (_event, updates: { name?: string; avatarSeed?: string; color?: string; status?: string; avatarImg?: string }) => {
+      // Trust boundary: the custom-profile fields ride P2P gossip, so bad values
+      // are rejected here (not silently coerced) — the renderer pre-validates.
+      const u = updates || {};
+      const clean: { name?: string; avatarSeed?: string; color?: string; status?: string; avatarImg?: string } = {};
+      if (typeof u.name === 'string') clean.name = u.name;
+      if (typeof u.avatarSeed === 'string') clean.avatarSeed = u.avatarSeed;
+      if (u.color !== undefined) {
+        const c = sanitizeProfileColor(u.color);
+        if (c !== null) clean.color = c;
+      }
+      if (u.status !== undefined) clean.status = sanitizeProfileStatus(u.status);
+      if (u.avatarImg !== undefined) {
+        const img = sanitizeProfileImg(u.avatarImg);
+        if (img !== null) clean.avatarImg = img;
+      }
+      return roomManager.setProfile(clean);
+    }
   ));
 
   ipcMain.handle('rooms:create', wrapHandler('rooms:create',
@@ -594,11 +612,11 @@ export function setupIpcHandlers(window: BrowserWindow): void {
   ));
 
   ipcMain.handle('rooms:createFolder', wrapHandler('rooms:createFolder',
-    async (_event, roomId: string, name: string, icon: string, color: string) => roomManager.createFolder(roomId, name, icon, color)
+    async (_event, roomId: string, name: string, icon: string, color: string, parentId?: string) => roomManager.createFolder(roomId, name, icon, color, typeof parentId === 'string' && parentId ? parentId : undefined)
   ));
 
   ipcMain.handle('rooms:updateFolder', wrapHandler('rooms:updateFolder',
-    async (_event, roomId: string, folderId: string, patch: { name?: string; icon?: string; color?: string }) => roomManager.updateFolder(roomId, folderId, patch || {})
+    async (_event, roomId: string, folderId: string, patch: { name?: string; icon?: string; color?: string; parentId?: string | null }) => roomManager.updateFolder(roomId, folderId, patch || {})
   ));
 
   ipcMain.handle('rooms:deleteFolder', wrapHandler('rooms:deleteFolder',

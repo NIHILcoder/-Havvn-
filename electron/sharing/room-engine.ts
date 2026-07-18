@@ -29,6 +29,7 @@ import { deriveKey, topicHash, rendezvousId, randomPeerId, encrypt, decrypt, gen
 import { encryptFile, decryptFile } from './room-e2e';
 import { RoomFile, RoomFolder, RoomMember, RoomState, RoomTransfer, PersistedRoomFile, RoomEvent, RoomChatMessage, VoiceSettings, VoiceDeviceInfo } from '../../shared/types';
 import { mergeFolderUpsert, applyFolderDelete, applyAssignment, sanitizeFolderIcon, wantAutoFetch } from '../../shared/room-folders';
+import { PROFILE_STATUS_MAX, PROFILE_COLOR_RE, PROFILE_IMG_MAX_CHARS, sanitizeProfileStatus, sanitizeProfileImg } from '../../shared/profile';
 import { safeBaseName, safeDirSegment } from '../../shared/path-safety';
 import crypto from 'crypto';
 
@@ -66,7 +67,7 @@ const MAX_REACT_FILES = 200;      // reaction map ceiling per room (kept + hello
 // just another member. Targeted/keyed messages (rekey, kicked) are NOT flooded.
 const RELAY_TTL = 4;                 // max hops a gossip message travels
 const SEEN_GID_CAP = 4096;           // dedup memory per room (FIFO)
-const RELAYABLE = new Set(['hello', 'ping', 'add', 'have', 'del', 'chat', 'sync', 'bye', 'typing', 'react-file', 'prog', 'folder', 'assign', 'rename', 'voice-state', 'voice-signal', 'voice-share']);
+const RELAYABLE = new Set(['hello', 'ping', 'add', 'have', 'del', 'chat', 'sync', 'bye', 'typing', 'react-file', 'prog', 'folder', 'assign', 'rename', 'voice-state', 'voice-signal', 'voice-share', 'profile']);
 
 // ── Gossip input hardening ────────────────────────────────────────────────────
 // Decryption already proves a peer holds the room code, but a *malicious member*
@@ -107,12 +108,21 @@ type Msg =
   // A folder/section was created, renamed/recolored (upsert) or deleted (del).
   // Last-writer-wins by `at`; unknown to older peers, who ignore it and keep
   // showing the flat list. Files carry their folderId; reassignment is 'assign'.
-  | { t: 'folder'; op: 'upsert' | 'del'; id: string; name?: string; icon?: string; color?: string; at: number; memberId: string }
+  // parentId nests the folder under a top-level section ('' / absent = root).
+  // Absent-vs-present matters: an upsert WITHOUT the property (pre-2.23 client
+  // editing) preserves the receiver's current placement in mergeFolderUpsert.
+  | { t: 'folder'; op: 'upsert' | 'del'; id: string; name?: string; icon?: string; color?: string; parentId?: string; at: number; memberId: string }
   // A file moved between folders (or to Uncategorized when folderId is ''). LWW
   // by `at`; kept separate from 'add' because mergeFile is add-only.
   | { t: 'assign'; fileId: string; folderId: string; at: number; memberId: string }
   | { t: 'have'; memberId: string; fileId: string }
   | { t: 'ping'; memberId: string; name: string; avatarSeed: string; have: string[]; roomName: string; ownerId: string }
+  // Rich profile (custom avatar image / name color / status line). A SEPARATE
+  // rarely-sent Msg — never on the 15s ping (the image is ~tens of KB) — and
+  // SIGNED with a per-member monotonic `at` floor, unlike hello/ping's display
+  // fields: a keyholder must not be able to wear someone else's face. Unknown
+  // to ≤2.22 peers, who ignore it (no default switch arm) but still relay it.
+  | { t: 'profile'; memberId: string; at: number; name: string; avatarSeed: string; color: string; status: string; img: string; pub: string; sig: string }
   // Remove a shared file from the room. Signed by the actor; peers apply it only
   // when the signer is the file's author or the owner (see 'del' handler).
   | { t: 'del'; fileId: string; memberId: string; at: number; pub: string; sig: string }
@@ -192,7 +202,7 @@ interface Room {
   iceServers: any[];
   tracker: any;
   started: boolean;
-  self: { memberId: string; name: string; avatarSeed: string; pub: string; priv: string };
+  self: { memberId: string; name: string; avatarSeed: string; color: string; status: string; avatarImg: string; pub: string; priv: string };
   ownerId: string;                       // memberId of the owner ('' until learned)
   ownerPin: string;                      // owner memberId pinned from the invite ('' = TOFU); only this identity may be adopted as owner
   e2e: boolean;                          // end-to-end encryption (ciphertext on the wire)
@@ -224,6 +234,10 @@ interface Room {
   progSent: Map<string, number>;         // fileId → last PROG_STEP % WE gossiped (throttle)
   identities: Map<string, string>;       // memberId → Ed25519 public key (PEM), TOFU-bound
   voice: VoiceSession;                    // serverless mesh voice channel (session-only)
+  profiles: Map<string, { name: string; avatarSeed: string; color: string; status: string; img: string; at: number }>; // VERIFIED rich profiles; entry.at doubles as the anti-replay floor (session-only, FIFO-capped)
+  profileSentTo: Set<string>;            // memberIds whose hello we've already answered with our profile broadcast
+  profileAnnounce: any;                  // pending coalesced profile broadcast timer (join waves = one flood)
+  profileAt: number;                     // our own last announced profile `at` (monotonic vs clock steps)
   seenGids: Set<string>;                 // relay dedup — gossip ids already processed
   seenGidOrder: string[];                // FIFO order for capping seenGids
   kicked: boolean;                       // the owner removed us (session-only)
@@ -431,6 +445,9 @@ function buildState(room: Room): RoomState {
       .filter((f) => room.transfers.get(f.fileId)?.haveLocally)
       .map((f) => f.fileId),
     role: roleOf(room.self.memberId),
+    ...(room.self.color ? { color: room.self.color } : {}),
+    ...(room.self.status ? { status: room.self.status } : {}),
+    ...(room.self.avatarImg ? { avatarImg: room.self.avatarImg } : {}),
   };
   // A member is reached "directly" if some live wire is bound to their id;
   // otherwise we only hear them through another member forwarding (relayed).
@@ -440,7 +457,19 @@ function buildState(room: Room): RoomState {
   for (const m of room.members.values()) {
     if (m.memberId === room.self.memberId) continue; // never show self as a remote member (self-loop guard)
     const online = now - m.lastSeen < OFFLINE_AFTER;
-    members.push({ ...m, online, isSelf: false, role: roleOf(m.memberId), muted: room.mutes.has(m.memberId), relayed: online && !directIds.has(m.memberId) });
+    // A VERIFIED rich profile ratchets over the unsigned hello/ping display
+    // fields — a keyholder can spoof a ping, but not the signed profile.
+    const p = room.profiles.get(m.memberId);
+    members.push({
+      ...m, online, isSelf: false, role: roleOf(m.memberId), muted: room.mutes.has(m.memberId), relayed: online && !directIds.has(m.memberId),
+      ...(p ? {
+        name: p.name || m.name,
+        avatarSeed: p.avatarSeed || m.avatarSeed,
+        ...(p.color ? { color: p.color } : {}),
+        ...(p.status ? { status: p.status } : {}),
+        ...(p.img ? { avatarImg: p.img } : {}),
+      } : {}),
+    });
   }
   const transfers: Record<string, RoomTransfer> = {};
   for (const [k, v] of room.transfers) transfers[k] = v;
@@ -893,6 +922,40 @@ function voiceSignalCanonical(topic: string, m: { memberId: string; to: string; 
 function voiceShareCanonical(topic: string, m: { memberId: string; sharing: boolean; streamId: string; at: number }): Buffer {
   return Buffer.from(JSON.stringify(['voice-share', topic, m.memberId, m.at, m.sharing, m.streamId]), 'utf8');
 }
+/** Bytes a member signs over their rich profile (avatar image / color / status).
+ *  The image is included directly — Ed25519 signs arbitrary length, and binding
+ *  it here means nobody can graft their status onto someone else's face. */
+function profileCanonical(topic: string, m: { memberId: string; at: number; name: string; avatarSeed: string; color: string; status: string; img: string }): Buffer {
+  return Buffer.from(JSON.stringify(['profile', topic, m.memberId, m.at, m.name, m.avatarSeed, m.color, m.status, m.img]), 'utf8');
+}
+
+/** Our signed rich-profile announcement. An EMPTY profile still announces —
+ *  a peer whose session cache holds our old avatar/status must be able to
+ *  learn we cleared it (the frame is ~300 bytes then, cheap). `at` is
+ *  monotonic against our own previous announcement so a backward clock step
+ *  can't make every later update invisible to the peers' floor. */
+function selfProfileMsg(room: Room): Msg | null {
+  const s = room.self;
+  const at = Math.max(Date.now(), room.profileAt + 1);
+  room.profileAt = at;
+  // Keep the signed fields inside the receiver-side gossip clamps (MAX_STR):
+  // a longer value would be truncated there and the signature would die.
+  const body = { memberId: s.memberId, at, name: (s.name || 'You').slice(0, 1024), avatarSeed: s.avatarSeed.slice(0, 1024), color: s.color, status: s.status, img: s.avatarImg };
+  const sig = signBytes(room, profileCanonical(room.topic, body));
+  if (!sig) return null;
+  return { t: 'profile', ...body, pub: s.pub, sig };
+}
+
+/** Coalesced profile broadcast: a join wave produces ONE flood ~3s later, not
+ *  one ~45KB frame per received hello. */
+function scheduleProfileAnnounce(room: Room): void {
+  if (room.profileAnnounce) return;
+  room.profileAnnounce = setTimeout(() => {
+    room.profileAnnounce = null;
+    const pm = selfProfileMsg(room);
+    if (pm) broadcast(room, pm);
+  }, 3000);
+}
 
 /** Wire a room's VoiceSession to the room's signed, encrypted gossip. Presence and
  *  signaling are Ed25519-signed (so a member can't spoof another's voice), ride the
@@ -1082,7 +1145,14 @@ function clampFolder(f: any): RoomFolder | null {
   if (!id || !Number.isFinite(Number(f.at))) return null;
   // Icon is validated against the known set — an unknown name would crash <Icon>
   // on the recipient. Name falls back so an empty one still renders.
-  return { id, name: clampStr(f.name, MAX_STR) || 'Folder', icon: sanitizeFolderIcon(f.icon), color: clampStr(f.color, 64), at: clampAt(f.at) };
+  const out: RoomFolder = { id, name: clampStr(f.name, MAX_STR) || 'Folder', icon: sanitizeFolderIcon(f.icon), color: clampStr(f.color, 64), at: clampAt(f.at) };
+  // parentId is carried ONLY when the sender had the property — absent means
+  // "hierarchy-unaware author" and mergeFolderUpsert preserves the current
+  // placement. Assigning unconditionally would create the own-property and turn
+  // every legacy entry into an explicit move-to-root. '' (explicit root) is
+  // kept as '' so it survives every JSON boundary.
+  if (Object.prototype.hasOwnProperty.call(f, 'parentId')) out.parentId = typeof f.parentId === 'string' ? clampStr(f.parentId, MAX_STR) : '';
+  return out;
 }
 
 /** Bound a decoded gossip message's strings/arrays in place (anti-DoS). */
@@ -1150,6 +1220,18 @@ function clampGossip(msg: any): void {
   if ('icon' in msg) msg.icon = sanitizeFolderIcon(msg.icon);
   if ('color' in msg) msg.color = clampStr(msg.color, 64);
   if ('folderId' in msg) msg.folderId = clampStr(msg.folderId, MAX_STR);
+  if ('parentId' in msg) msg.parentId = clampStr(msg.parentId, MAX_STR);
+  // Rich-profile fields (anti-DoS bounds; scoped to the type so the keys can't
+  // collide with other messages). An out-of-bounds value breaks the sender's
+  // signature and the message dies at verify — exactly like oversized chat text;
+  // legit senders stay in range (the IPC boundary enforces the same limits).
+  if (msg.t === 'profile') {
+    msg.status = clampStr(msg.status, PROFILE_STATUS_MAX);
+    msg.color = typeof msg.color === 'string' && (msg.color === '' || PROFILE_COLOR_RE.test(msg.color)) ? msg.color : '';
+    // Full shared validation incl. container-header dimension sniffing — a
+    // pixel-bomb PNG dies here (and its now-mangled signature at verify).
+    msg.img = sanitizeProfileImg(msg.img) ?? '';
+  }
   // 'at' on folder/assign messages: never accept a future timestamp (see clampAt).
   if (msg.t === 'folder' || msg.t === 'assign') msg.at = clampAt(msg.at);
   if (Array.isArray(msg.folders)) msg.folders = msg.folders.slice(0, MAX_ARRAY).map(clampFolder).filter(Boolean);
@@ -1207,6 +1289,10 @@ function onMessage(room: Room, wire: Wire, raw: any): void {
 
   switch (msg.t) {
     case 'hello': {
+      // A direct hello on a wire not yet bound to a member = a fresh connection
+      // (their FIRST greet this link) — they may have restarted and lost their
+      // session-only profile cache, so the announce gate below must not skip them.
+      const freshWire = direct && !wire.memberId;
       if (direct) wire.memberId = msg.memberId;
       bindIdentity(room, msg.memberId, msg.pub); // TOFU their identity key from the greet, so we can verify their signed commands
       const isNew = !room.members.has(msg.memberId);
@@ -1225,6 +1311,14 @@ function onMessage(room: Room, wire: Wire, raw: any): void {
       maybeAdoptOwner(room, msg.ownerId);
       maybeAdoptE2E(room, msg.e2e, msg.secret, msg.cfg);
       if (isNew) logEvent(room, { type: 'joined', actorId: msg.memberId, actorName: msg.name || '?' });
+      // A greeting from someone we haven't announced our rich profile to yet —
+      // or a known member greeting over a FRESH wire (likely restarted, cache
+      // gone): schedule ONE coalesced broadcast (floods, so relay-only joiners
+      // get it too).
+      if (freshWire || !room.profileSentTo.has(msg.memberId)) {
+        room.profileSentTo.add(msg.memberId);
+        scheduleProfileAnnounce(room);
+      }
       // Re-announce voice presence on EVERY hello (not just a new member's): a
       // hello doubles as a "who's in voice?" solicit — e.g. a peer that just
       // un-muted us locally greets to re-learn the voice state it was dropping.
@@ -1250,12 +1344,30 @@ function onMessage(room: Room, wire: Wire, raw: any): void {
       }
       // Folder overlay convergence: apply the peer's deletions first (so a stale
       // folder in their list can't override our newer delete), then their upserts.
+      let folderPlaneChanged = false;
       for (const [id, at] of Object.entries(msg.folderTombs || {})) {
-        if (applyFolderDelete(room.folders, room.folderTombstones, id, Number(at) || 0)) persistFolderDelete(room, id, Number(at) || 0, !room.folders.has(id));
+        if (applyFolderDelete(room.folders, room.folderTombstones, id, Number(at) || 0)) {
+          persistFolderDelete(room, id, Number(at) || 0, !room.folders.has(id));
+          // Same as the live 'folder' del path: a lingering per-folder override
+          // would silently keep gating the (now-dangling) files — and, via the
+          // section hop, whole subtrees — forever.
+          dropFolderFetch(room, id);
+          folderPlaneChanged = true;
+        }
       }
       for (const f of msg.folders || []) {
-        if (mergeFolderUpsert(room.folders, room.folderTombstones, f)) persistFolder(room, f);
+        if (mergeFolderUpsert(room.folders, room.folderTombstones, f)) {
+          // Persist what the merge STORED — preserve-on-absent means it can
+          // differ from the incoming record (the live 'folder' handler does the
+          // same); persisting `f` would drop a preserved parentId on disk.
+          persistFolder(room, room.folders.get(f.id) ?? f);
+          folderPlaneChanged = true;
+        }
       }
+      // The hello merged files BEFORE folders (tombstone authorship needs the
+      // files first), so any file gated at merge time by a then-unknown folder
+      // — or flipped by a delete/reparent above — re-checks now.
+      if (folderPlaneChanged) recheckAutoFetch(room);
       // Union the peer's reaction view into ours (late-join convergence).
       if (mergeReacts(room, msg.fileReacts)) persistReacts(room);
       // Chat backfill: if this peer is behind our chat (or hasn't said how caught-up
@@ -1311,13 +1423,25 @@ function onMessage(room: Room, wire: Wire, raw: any): void {
           // Its files fall back to Uncategorized — a lingering per-folder
           // auto-fetch override would silently keep gating them forever.
           dropFolderFetch(room, msg.id);
+          // Files that fell out of the deleted folder/section (or its children)
+          // now resolve against the room toggle — pull newly effective-ON ones.
+          recheckAutoFetch(room);
           pushState(room);
         }
       } else {
-        // clampGossip already sanitized name/icon/color/at.
+        // clampGossip already sanitized name/icon/color/parentId/at.
         const folder: RoomFolder = { id: msg.id, name: msg.name || 'Folder', icon: msg.icon || 'folder', color: msg.color || '', at: msg.at };
+        if (Object.prototype.hasOwnProperty.call(msg, 'parentId')) folder.parentId = msg.parentId || '';
         if (mergeFolderUpsert(room.folders, room.folderTombstones, folder)) {
-          persistFolder(room, folder);
+          // Persist what the merge actually stored — preserve-absent semantics
+          // mean it can differ from our local rebuild (parentId kept from the
+          // previous record when a hierarchy-unaware peer edited the folder).
+          const merged = room.folders.get(msg.id);
+          persistFolder(room, merged ?? folder);
+          // A folder record arriving late (files referenced it before it
+          // existed) or a reparent under/out of an overridden section can flip
+          // its files' EFFECTIVE auto-fetch — catch up the ones that turned on.
+          recheckAutoFetch(room, (f) => f.folderId === msg.id);
           pushState(room);
         }
       }
@@ -1332,7 +1456,7 @@ function onMessage(room: Room, wire: Wire, raw: any): void {
         // A live 'add' races its 'assign' (the folderId lands here, after the merge
         // decided against fetching) — re-check the per-folder override now that the
         // file's real folder is known. Landing in an auto-ON folder starts the pull.
-        if (!tr?.haveLocally && wantAutoFetch(room.autoFetch, room.folderFetch, file.folderId) && (!tr || tr.status === 'queued' || !tr.status)) {
+        if (!tr?.haveLocally && effectiveAutoFetch(room, file.folderId) && (!tr || tr.status === 'queued' || !tr.status)) {
           ensureLocal(room, file);
         }
         pushState(room);
@@ -1401,7 +1525,10 @@ function onMessage(room: Room, wire: Wire, raw: any): void {
         room.members.delete(msg.memberId);
         logEvent(room, { type: 'left', actorId: msg.memberId, actorName: m.name || '?' });
       }
-      // Their session-only liveness goes with them.
+      // Their session-only liveness goes with them. Forget that we announced
+      // our rich profile too — their cache is session-only, so a rejoin must
+      // get a fresh announce or they'd see us profileless until we change it.
+      room.profileSentTo.delete(msg.memberId);
       room.memberProg.delete(msg.memberId);
       delete room.typing[msg.memberId];
       room.voice.onMemberGone(msg.memberId); // tear down any voice connection to them
@@ -1433,6 +1560,34 @@ function onMessage(room: Room, wire: Wire, raw: any): void {
       if (!Number.isFinite(at) || at > Date.now() + 60_000) break; // reject unstamped / far-future
       if (!verifySignedBy(room, msg.memberId, msg.pub, msg.sig, voiceShareCanonical(room.topic, { memberId: msg.memberId, sharing: msg.sharing, streamId: msg.streamId, at }))) break;
       room.voice.onPeerShare(msg.memberId, !!msg.sharing, String(msg.streamId || ''), at);
+      break;
+    }
+    case 'profile': {
+      if (room.mutes.has(msg.memberId)) break; // a muted member's face/status stays hidden too
+      const at = Number(msg.at);
+      if (!Number.isFinite(at) || at > Date.now() + 60_000) break; // unstamped / far-future
+      // The stored entry's `at` IS the per-member monotonic floor (own map — the
+      // voice-share lesson: never share another message type's floor).
+      const prev = room.profiles.get(msg.memberId);
+      if (prev && prev.at >= at) break;
+      const body = { memberId: msg.memberId, at, name: String(msg.name || ''), avatarSeed: String(msg.avatarSeed || ''), color: String(msg.color || ''), status: String(msg.status || ''), img: String(msg.img || '') };
+      if (!verifySignedBy(room, msg.memberId, msg.pub, msg.sig, profileCanonical(room.topic, body))) break;
+      // Cap: a hostile keyholder minting identities must not grow this map of
+      // ~45KB entries unbounded. Evict a STRANGER (id not in the roster) first
+      // so a minted-identity flood can't wipe real members' cached profiles —
+      // only if every entry belongs to a rostered member does the oldest one go.
+      if (!prev && room.profiles.size >= 128) {
+        let evict: string | undefined;
+        for (const id of room.profiles.keys()) { if (!room.members.has(id)) { evict = id; break; } }
+        evict = evict ?? room.profiles.keys().next().value;
+        if (evict !== undefined) room.profiles.delete(evict);
+      }
+      // The signature covers the RAW fields; what we STORE is display-sanitized
+      // (control chars / bidi overrides stripped from the status) so a hostile
+      // member can't smuggle render-order tricks past the verified envelope.
+      room.profiles.set(msg.memberId, { name: body.name, avatarSeed: body.avatarSeed, color: body.color, status: sanitizeProfileStatus(body.status), img: body.img, at });
+      touchMember(room, msg.memberId, body.name, body.avatarSeed);
+      pushState(room);
       break;
     }
     case 'sync': {
@@ -1733,7 +1888,7 @@ function mergeFile(room: Room, file: RoomFile): void {
     // explicit fetchFile. (Our OWN shares go through mergeFileLocal instead.)
     // Per-folder overrides apply when the folderId is known at merge time (hello
     // backfill / restore); a live add races its 'assign', which re-checks below.
-    if (wantAutoFetch(room.autoFetch, room.folderFetch, file.folderId)) ensureLocal(room, file);
+    if (effectiveAutoFetch(room, file.folderId)) ensureLocal(room, file);
   }
 }
 
@@ -1939,7 +2094,7 @@ function restoreManifestFile(room: Room, pf: PersistedRoomFile): void {
       if (room.secret && !havePlain) void decryptOne(room, file, cipherPath);
       return;
     }
-    if (wantAutoFetch(room.autoFetch, room.folderFetch, file.folderId)) ensureLocal(room, file); // no cached ciphertext — re-download it
+    if (effectiveAutoFetch(room, file.folderId)) ensureLocal(room, file); // no cached ciphertext — re-download it
     return;
   }
 
@@ -1949,7 +2104,7 @@ function restoreManifestFile(room: Room, pf: PersistedRoomFile): void {
     catch (e) { log('manifest reseed failed: ' + String(e)); }
     return;
   }
-  if (wantAutoFetch(room.autoFetch, room.folderFetch, file.folderId)) ensureLocal(room, file); // not at the known path — seed-from-folder or re-download
+  if (effectiveAutoFetch(room, file.folderId)) ensureLocal(room, file); // not at the known path — seed-from-folder or re-download
 }
 
 function wireTorrentStats(room: Room, torrent: any): void {
@@ -2153,7 +2308,7 @@ function kickMember(room: Room, memberId: string): void {
 
 // ── Room lifecycle ───────────────────────────────────────────────────────────
 function startRoom(p: { roomId: string; name: string; code: string; folder: string;
-  self: { memberId: string; name: string; avatarSeed: string; pub: string; priv: string }; useTurn: boolean; turnServers?: any[]; tombstones?: Record<string, number>; tombSigs?: Record<string, { by: string; pub: string; sig: string }>; revives?: Record<string, number>; manifest?: PersistedRoomFile[]; folders?: RoomFolder[]; folderTombs?: Record<string, number>; ownerId?: string; ownerPin?: string; nameAt?: number; mutes?: string[]; history?: RoomEvent[]; chat?: RoomChatMessage[]; reacts?: Record<string, Record<string, string[]>>; identities?: Record<string, string>; e2e?: boolean; secret?: string; e2eCfg?: E2ECfg | null; cacheDir?: string; autoFetch?: boolean; folderFetch?: Record<string, boolean>; upKbps?: number; downKbps?: number }): RoomState {
+  self: { memberId: string; name: string; avatarSeed: string; color?: string; status?: string; avatarImg?: string; pub: string; priv: string }; useTurn: boolean; turnServers?: any[]; tombstones?: Record<string, number>; tombSigs?: Record<string, { by: string; pub: string; sig: string }>; revives?: Record<string, number>; manifest?: PersistedRoomFile[]; folders?: RoomFolder[]; folderTombs?: Record<string, number>; ownerId?: string; ownerPin?: string; nameAt?: number; mutes?: string[]; history?: RoomEvent[]; chat?: RoomChatMessage[]; reacts?: Record<string, Record<string, string[]>>; identities?: Record<string, string>; e2e?: boolean; secret?: string; e2eCfg?: E2ECfg | null; cacheDir?: string; autoFetch?: boolean; folderFetch?: Record<string, boolean>; upKbps?: number; downKbps?: number }): RoomState {
   // Authoritative kill-switch gate: refuse to bring up ANY room networking while
   // the VPN is down, no matter how this join raced past the manager's flag. The
   // manager clears this via 'netResume' before it re-joins on VPN restore.
@@ -2181,7 +2336,7 @@ function startRoom(p: { roomId: string; name: string; code: string; folder: stri
     iceServers,
     tracker: null,
     started: false,
-    self: p.self,
+    self: { ...p.self, color: p.self.color || '', status: p.self.status || '', avatarImg: p.self.avatarImg || '' },
     // Honor the invite's owner pin: never trust a persisted ownerId that doesn't
     // match it (it'd be a pre-pin or tampered value) — re-learn under the pin.
     ownerId: (p.ownerPin && p.ownerId && p.ownerId !== p.ownerPin) ? '' : (p.ownerId || ''),
@@ -2225,6 +2380,10 @@ function startRoom(p: { roomId: string; name: string; code: string; folder: stri
     // entry that predates the key-derived id, so a poisoned binding can't survive.
     identities: new Map(Object.entries(p.identities || {}).filter(([id, pub]) => idMatchesPub(id, pub as string))),
     voice: undefined as unknown as VoiceSession, // set right after (its adapter closes over `room`)
+    profiles: new Map(),
+    profileSentTo: new Set(),
+    profileAnnounce: null,
+    profileAt: 0,
     seenGids: new Set(),
     seenGidOrder: [],
     kicked: false,
@@ -2289,6 +2448,13 @@ function startRoom(p: { roomId: string; name: string; code: string; folder: stri
     const cutoff = Date.now() - OFFLINE_AFTER;
     for (const m of r.members.values()) {
       if (m.lastSeen < cutoff) r.voice.onMemberGone(m.memberId);
+    }
+    // Forget the profile announce for members gone offline (crash — no 'bye'):
+    // their session-only profile cache died with them, so their next greeting
+    // must trigger a fresh announce even when it arrives via a relay.
+    for (const id of r.profileSentTo) {
+      const m = r.members.get(id);
+      if (!m || m.lastSeen < cutoff) r.profileSentTo.delete(id);
     }
     pushState(r);
   }, PING_INTERVAL);
@@ -2399,44 +2565,82 @@ async function addFiles(roomId: string, paths: string[], opts?: { folderId?: str
 // never a bare Date.now() that a fast-clock peer's value would silently reject.
 function nextAt(prev: number): number { return Math.max(Date.now(), prev + 1); }
 
+/** Does this folder RENDER as a top-level section? Mirrors the renderer's
+ *  sectionIdOf exactly: absent/empty/self/dangling parent → top-level, and a
+ *  folder whose parent is itself (validly) nested flattens to the top too. */
+function rendersTopLevel(room: Room, f: RoomFolder): boolean {
+  const pid = f.parentId;
+  if (!pid || pid === f.id) return true;
+  const parent = room.folders.get(pid);
+  if (!parent) return true;                        // dangling → renders at root
+  const grand = parent.parentId;
+  return !!(grand && grand !== pid && room.folders.has(grand)); // parent itself nested → we flatten to root
+}
+
 /** Create/register a folder in this room + broadcast + persist (no pushState). */
-function makeFolder(room: Room, name: string, icon: string, color: string): RoomFolder {
+function makeFolder(room: Room, name: string, icon: string, color: string, parentId?: string): RoomFolder {
+  // Only nest under a folder that RENDERS top-level (same rule the UI uses to
+  // offer targets) — one level, no chains from us. '' = explicit root.
+  const parent = parentId ? room.folders.get(parentId) : undefined;
+  const validParent = parent && parent.id !== undefined && rendersTopLevel(room, parent) ? parent.id : '';
   const folder: RoomFolder = {
     id: crypto.randomBytes(8).toString('hex'),
     name: String(name || '').trim().slice(0, 200) || 'Folder',
     icon: sanitizeFolderIcon(icon),
     color: String(color || '').slice(0, 64),
     at: Date.now(),
+    parentId: validParent,
   };
   room.folders.set(folder.id, folder);
   persistFolder(room, folder);
-  broadcast(room, { t: 'folder', op: 'upsert', id: folder.id, name: folder.name, icon: folder.icon, color: folder.color, at: folder.at, memberId: room.self.memberId });
+  // parentId is ALWAYS present on our upserts ('' = explicit root) so receivers
+  // treat the placement as authoritative rather than preserve-on-absent.
+  broadcast(room, { t: 'folder', op: 'upsert', id: folder.id, name: folder.name, icon: folder.icon, color: folder.color, parentId: folder.parentId ?? '', at: folder.at, memberId: room.self.memberId });
   return folder;
 }
 
-function createFolder(roomId: string, name: string, icon: string, color: string): RoomState {
+function createFolder(roomId: string, name: string, icon: string, color: string, parentId?: string): RoomState {
   const room = rooms.get(roomId);
   if (!room) throw new Error('Room not active');
-  makeFolder(room, name, icon, color);
+  makeFolder(room, name, icon, color, parentId);
   pushState(room, true);
   return buildState(room);
 }
 
-function updateFolder(roomId: string, folderId: string, patch: { name?: string; icon?: string; color?: string }): RoomState {
+function updateFolder(roomId: string, folderId: string, patch: { name?: string; icon?: string; color?: string; parentId?: string | null }): RoomState {
   const room = rooms.get(roomId);
   if (!room) throw new Error('Room not active');
   const cur = room.folders.get(folderId);
   if (!cur) return buildState(room);
+  // Reparent rules: target must render as a top-level section (same rule the
+  // UI uses), not self, and a folder that has children cannot become a child
+  // itself (one level only). '' = explicit move to root — kept as '' (not
+  // undefined) so JSON round-trips preserve the placement.
+  let reparent: { parentId?: string } | Record<string, never> = {};
+  if (patch && 'parentId' in patch) {
+    const pid = typeof patch.parentId === 'string' ? patch.parentId : '';
+    const parent = pid ? room.folders.get(pid) : undefined;
+    const hasChildren = Array.from(room.folders.values()).some((f) => f.parentId === folderId);
+    const valid = pid === '' || (!!parent && rendersTopLevel(room, parent) && pid !== folderId && !hasChildren);
+    if (valid) reparent = { parentId: pid };
+  }
   const next: RoomFolder = {
     ...cur,
     ...(typeof patch?.name === 'string' ? { name: patch.name.trim().slice(0, 200) || cur.name } : {}),
     ...(typeof patch?.icon === 'string' ? { icon: sanitizeFolderIcon(patch.icon) } : {}),
     ...(typeof patch?.color === 'string' ? { color: patch.color.slice(0, 64) } : {}),
+    ...reparent,
     at: nextAt(cur.at),
   };
   room.folders.set(folderId, next);
   persistFolder(room, next);
-  broadcast(room, { t: 'folder', op: 'upsert', id: next.id, name: next.name, icon: next.icon, color: next.color, at: next.at, memberId: room.self.memberId });
+  // Include parentId ONLY when we actually know this folder's placement (own
+  // property) — asserting '' for a hierarchy-unknown folder would explicitly
+  // re-root it on peers that DO know where it lives.
+  broadcast(room, { t: 'folder', op: 'upsert', id: next.id, name: next.name, icon: next.icon, color: next.color, ...(Object.prototype.hasOwnProperty.call(next, 'parentId') ? { parentId: next.parentId ?? '' } : {}), at: next.at, memberId: room.self.memberId });
+  // A reparent under/out of an overridden section can flip the folder's files'
+  // effective auto-fetch — pull the ones that just turned on.
+  recheckAutoFetch(room, (f) => f.folderId === next.id);
   pushState(room, true);
   return buildState(room);
 }
@@ -2446,11 +2650,15 @@ function deleteFolder(roomId: string, folderId: string): RoomState {
   if (!room) throw new Error('Room not active');
   const at = nextAt(room.folders.get(folderId)?.at ?? room.folderTombstones.get(folderId) ?? 0);
   // Files keep their (now-dangling) folderId → they render Uncategorized via
-  // groupFilesByFolder. No per-file reassignment gossip needed.
+  // groupFilesByFolder; child folders' dangling parentId renders them at root.
+  // No per-file reassignment gossip needed.
   if (applyFolderDelete(room.folders, room.folderTombstones, folderId, at)) {
     persistFolderDelete(room, folderId, at, !room.folders.has(folderId));
     dropFolderFetch(room, folderId); // a lingering override would gate Uncategorized files forever
     broadcast(room, { t: 'folder', op: 'del', id: folderId, at, memberId: room.self.memberId });
+    // Dropping a section's override re-parents its (and its children's) files
+    // onto the room toggle — catch up anything that just became effective-ON.
+    recheckAutoFetch(room);
     pushState(room, true);
   }
   return buildState(room);
@@ -2461,6 +2669,29 @@ function dropFolderFetch(room: Room, folderId: string): void {
   if (!(folderId in room.folderFetch)) return;
   delete room.folderFetch[folderId];
   try { ipcRenderer.send('room-folder-fetch-del', { roomId: room.roomId, folderId }); } catch { /* ignore */ }
+}
+
+/** wantAutoFetch with this room's one-hop folder→section resolver. */
+function effectiveAutoFetch(room: Room, folderId: string | null | undefined): boolean {
+  return wantAutoFetch(room.autoFetch, room.folderFetch, folderId, (id) => room.folders.get(id)?.parentId);
+}
+
+/**
+ * Re-run the auto-fetch gate over (a subset of) the manifest after anything
+ * that can flip a file's EFFECTIVE state without touching the file itself: a
+ * folder reparent, a late-arriving folder record, a section override change, a
+ * folder/section delete. Pull-only and idempotent — ensureLocal no-ops on an
+ * already-tracked transfer, and cancelled/errored files are left alone (same
+ * status guard as the assign re-check).
+ */
+function recheckAutoFetch(room: Room, only?: (f: RoomFile) => boolean): void {
+  for (const f of room.files.values()) {
+    if (only && !only(f)) continue;
+    const tr = room.transfers.get(f.fileId);
+    if (!tr?.haveLocally && effectiveAutoFetch(room, f.folderId) && (!tr || tr.status === 'queued' || !tr.status)) {
+      ensureLocal(room, f);
+    }
+  }
 }
 
 function assignFile(roomId: string, fileId: string, folderId: string | null): RoomState {
@@ -2475,7 +2706,7 @@ function assignFile(roomId: string, fileId: string, folderId: string | null): Ro
     persistManifest(room, file, tr?.localPath, tr?.cipherPath);
     broadcast(room, { t: 'assign', fileId, folderId: folderId || '', at, memberId: room.self.memberId });
     // Moving a not-yet-fetched file into an auto-ON folder starts the pull.
-    if (!tr?.haveLocally && wantAutoFetch(room.autoFetch, room.folderFetch, file.folderId) && (!tr || tr.status === 'queued' || !tr.status)) {
+    if (!tr?.haveLocally && effectiveAutoFetch(room, file.folderId) && (!tr || tr.status === 'queued' || !tr.status)) {
       ensureLocal(room, file);
     }
     pushState(room, true);
@@ -2488,6 +2719,7 @@ function leaveRoom(roomId: string): void {
   if (!room) return;
   // Tell peers we're leaving so they drop us at once (no 45s offline ghost).
   try { room.voice.suspend(); } catch { /* ignore */ } // release the mic + close voice PCs
+  if (room.profileAnnounce) { clearTimeout(room.profileAnnounce); room.profileAnnounce = null; }
   broadcast(room, { t: 'bye', memberId: room.self.memberId });
   rooms.delete(roomId);
   const c = clients.get(roomId);
@@ -2576,12 +2808,19 @@ function renameRoom(roomId: string, rawName: string): RoomState {
   return buildState(room);
 }
 
-/** Apply a profile change (name/avatar) to every active room and tell peers. */
-function updateProfile(p: { name?: string; avatarSeed?: string }): void {
+/** Apply a profile change (name/avatar/color/status/image) to every active room
+ *  and tell peers: the legacy ping keeps ≤2.22 clients current on name/seed,
+ *  and the signed 'profile' broadcast carries the rich fields. */
+function updateProfile(p: { name?: string; avatarSeed?: string; color?: string; status?: string; avatarImg?: string }): void {
   for (const room of rooms.values()) {
     if (typeof p.name === 'string') room.self.name = p.name;
     if (typeof p.avatarSeed === 'string' && p.avatarSeed) room.self.avatarSeed = p.avatarSeed;
+    if (typeof p.color === 'string') room.self.color = p.color;
+    if (typeof p.status === 'string') room.self.status = p.status;
+    if (typeof p.avatarImg === 'string') room.self.avatarImg = p.avatarImg;
     broadcast(room, { t: 'ping', memberId: room.self.memberId, name: room.self.name || 'You', avatarSeed: room.self.avatarSeed, have: buildState(room).members[0].have, roomName: room.name, ownerId: room.ownerId });
+    const pm = selfProfileMsg(room);
+    if (pm) broadcast(room, pm);
     pushState(room, true);
   }
 }
@@ -2593,7 +2832,7 @@ ipcRenderer.on('room-cmd', async (_e, msg: any) => {
     let data: any;
     if (type === 'join') data = startRoom(msg.payload);
     else if (type === 'addFiles') data = await addFiles(msg.roomId, msg.paths, msg.opts);
-    else if (type === 'createFolder') data = createFolder(msg.roomId, msg.name, msg.icon, msg.color);
+    else if (type === 'createFolder') data = createFolder(msg.roomId, msg.name, msg.icon, msg.color, msg.parentId ? String(msg.parentId) : undefined);
     else if (type === 'updateFolder') data = updateFolder(msg.roomId, msg.folderId, msg.patch || {});
     else if (type === 'rename') data = renameRoom(msg.roomId, msg.name);
     else if (type === 'deleteFolder') data = deleteFolder(msg.roomId, msg.folderId);
@@ -2755,7 +2994,7 @@ ipcRenderer.on('room-cmd', async (_e, msg: any) => {
         // files in folders whose per-folder override forces fetching OFF.
         if (r.autoFetch) {
           for (const f of r.files.values()) {
-            if (!r.transfers.get(f.fileId)?.haveLocally && wantAutoFetch(r.autoFetch, r.folderFetch, f.folderId)) ensureLocal(r, f);
+            if (!r.transfers.get(f.fileId)?.haveLocally && effectiveAutoFetch(r, f.folderId)) ensureLocal(r, f);
           }
         }
         pushState(r, true);
@@ -2769,13 +3008,24 @@ ipcRenderer.on('room-cmd', async (_e, msg: any) => {
       if (!r) throw new Error('Room not active');
       const folderId = String(msg.folderId || '');
       if (folderId) {
-        if (msg.mode === true || msg.mode === false) r.folderFetch[folderId] = msg.mode;
+        // Liveness guard: the manager persists the override BEFORE this cmd, so
+        // a folder delete racing in between would otherwise resurrect a dead-id
+        // override that silently gates dangling files (and, via the section
+        // hop, subtrees). A dead id always means inherit — and undo the db copy.
+        if (!r.folders.has(folderId)) {
+          delete r.folderFetch[folderId];
+          try { ipcRenderer.send('room-folder-fetch-del', { roomId: r.roomId, folderId }); } catch { /* ignore */ }
+        } else if (msg.mode === true || msg.mode === false) r.folderFetch[folderId] = msg.mode;
         else delete r.folderFetch[folderId];
-        if (wantAutoFetch(r.autoFetch, r.folderFetch, folderId)) {
-          for (const f of r.files.values()) {
-            if (f.folderId === folderId && !r.transfers.get(f.fileId)?.haveLocally) ensureLocal(r, f);
-          }
-        }
+        // Catch up everything whose EFFECTIVE state may have flipped: the
+        // folder's own files plus — when it's a section — files in child
+        // folders that inherit from it (their own override, if any, wins
+        // inside effectiveAutoFetch).
+        recheckAutoFetch(r, (f) => {
+          const fid = f.folderId;
+          if (!fid) return false;
+          return fid === folderId || r.folders.get(fid)?.parentId === folderId;
+        });
         pushState(r, true);
       }
       data = buildState(r);
@@ -2796,7 +3046,7 @@ ipcRenderer.on('room-cmd', async (_e, msg: any) => {
           const tr = r.transfers.get(fileId);
           persistManifest(r, file, tr?.localPath, tr?.cipherPath);
           broadcast(r, { t: 'assign', fileId, folderId: folderId || '', at, memberId: r.self.memberId });
-          if (!tr?.haveLocally && wantAutoFetch(r.autoFetch, r.folderFetch, file.folderId) && (!tr || tr.status === 'queued' || !tr.status)) {
+          if (!tr?.haveLocally && effectiveAutoFetch(r, file.folderId) && (!tr || tr.status === 'queued' || !tr.status)) {
             ensureLocal(r, file);
           }
         }

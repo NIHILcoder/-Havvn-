@@ -17,7 +17,7 @@
 import React, { useMemo, useId } from 'react';
 import { useTranslation } from '../utils/i18nContext';
 
-export const AVATAR_STYLES = ['mirror', 'grid', 'rings', 'bauhaus'] as const;
+export const AVATAR_STYLES = ['mirror', 'grid', 'rings', 'bauhaus', 'pixel', 'orbit'] as const;
 export type AvatarStyle = (typeof AVATAR_STYLES)[number];
 
 interface IdenticonProps {
@@ -230,6 +230,62 @@ function buildBauhaus(rng: () => number, size: number, fg: string): React.ReactN
   return nodes;
 }
 
+function buildPixel(rng: () => number, size: number, fg: string): React.ReactNode {
+  // Dense 7×7 mirrored pixel field — busier texture than the classic 5×5.
+  const cell = size / 7;
+  const pad = cell * 0.1;
+  const cells: boolean[] = new Array(49).fill(false);
+  for (let row = 0; row < 7; row++) {
+    for (let col = 0; col < 4; col++) {
+      const on = rng() > 0.55;
+      cells[row * 7 + col] = on;
+      cells[row * 7 + (6 - col)] = on;
+    }
+  }
+  return cells.map((on, i) =>
+    on ? (
+      <rect
+        key={i}
+        x={(i % 7) * cell + pad}
+        y={Math.floor(i / 7) * cell + pad}
+        width={cell - pad * 2}
+        height={cell - pad * 2}
+        rx={Math.max(0.5, cell * 0.12)}
+        fill={fg}
+      />
+    ) : null
+  );
+}
+
+function buildOrbit(rng: () => number, size: number, fg: string): React.ReactNode {
+  // A "planet" disc with orbital rings carrying moon dots.
+  const cx = size * (0.4 + rng() * 0.2);
+  const cy = size * (0.4 + rng() * 0.2);
+  const nodes: React.ReactNode[] = [
+    <circle key="p" cx={cx} cy={cy} r={size * (0.1 + rng() * 0.08)} fill={fg} fillOpacity={0.95} />,
+  ];
+  const rings = 2 + Math.floor(rng() * 2);
+  for (let i = 0; i < rings; i++) {
+    const r = size * (0.2 + i * 0.14 + rng() * 0.04);
+    nodes.push(<circle key={`r${i}`} cx={cx} cy={cy} r={r} fill="none" stroke={fg} strokeWidth={Math.max(1, size * 0.02)} strokeOpacity={0.45} />);
+    const moons = 1 + Math.floor(rng() * 2);
+    for (let m = 0; m < moons; m++) {
+      const a = rng() * Math.PI * 2;
+      nodes.push(
+        <circle
+          key={`m${i}-${m}`}
+          cx={cx + Math.cos(a) * r}
+          cy={cy + Math.sin(a) * r}
+          r={Math.max(1.5, size * (0.035 + rng() * 0.035))}
+          fill={fg}
+          fillOpacity={0.9}
+        />
+      );
+    }
+  }
+  return nodes;
+}
+
 export const Identicon: React.FC<IdenticonProps> = ({ seed, size = 40, online, ring, className, title }) => {
   const { t } = useTranslation();
   const { style, base } = useMemo(() => parseAvatar(seed), [seed]);
@@ -253,6 +309,8 @@ export const Identicon: React.FC<IdenticonProps> = ({ seed, size = 40, online, r
       case 'grid': return buildGrid(rng, size, fg);
       case 'rings': return buildRings(rng, size, fg);
       case 'bauhaus': return buildBauhaus(rng, size, fg);
+      case 'pixel': return buildPixel(rng, size, fg);
+      case 'orbit': return buildOrbit(rng, size, fg);
       case 'mirror':
       default: return buildMirror(rng, size, fg);
     }

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  mergeFolderUpsert, applyFolderDelete, applyAssignment, groupFilesByFolder, sanitizeFolderIcon, FOLDER_ICONS, wantAutoFetch,
+  mergeFolderUpsert, applyFolderDelete, applyAssignment, groupFilesByFolder, groupFilesByHierarchy, sanitizeFolderIcon, FOLDER_ICONS, wantAutoFetch,
 } from './room-folders';
 import type { RoomFile, RoomFolder } from './types';
 
@@ -147,5 +147,101 @@ describe('wantAutoFetch', () => {
   });
   it('only a literal true forces fetching on (garbage-safe)', () => {
     expect(wantAutoFetch(false, { a: 1 as unknown as boolean }, 'a')).toBe(false);
+  });
+});
+
+// ── 2.23 hierarchy: parentId preserve-semantics, one-hop inheritance, grouping ──
+
+const child = (id: string, at: number, parentId: string, name = id): RoomFolder => ({ ...folder(id, at, name), parentId });
+
+describe('mergeFolderUpsert parentId semantics', () => {
+  it('an upsert WITHOUT the property preserves the current placement (legacy edit)', () => {
+    const folders = new Map([['a', child('a', 10, 'sec')]]); const tombs = new Map<string, number>();
+    expect(mergeFolderUpsert(folders, tombs, folder('a', 20, 'renamed'))).toBe(true);
+    expect(folders.get('a')?.name).toBe('renamed');
+    expect(folders.get('a')?.parentId).toBe('sec'); // survived the whole-object LWW
+  });
+  it('an explicit empty parentId moves the folder to root — stored as EMPTY STRING (JSON-survivable)', () => {
+    const folders = new Map([['a', child('a', 10, 'sec')]]); const tombs = new Map<string, number>();
+    expect(mergeFolderUpsert(folders, tombs, { ...folder('a', 20), parentId: '' })).toBe(true);
+    expect(folders.get('a')?.parentId).toBe('');
+    // The whole point: a JSON round-trip (hello wire / disk) must keep the
+    // explicit-root marker, or stale placements could never be corrected.
+    const roundTripped = JSON.parse(JSON.stringify(folders.get('a')));
+    expect(Object.prototype.hasOwnProperty.call(roundTripped, 'parentId')).toBe(true);
+  });
+  it('an explicit parentId places the folder', () => {
+    const folders = new Map<string, RoomFolder>(); const tombs = new Map<string, number>();
+    expect(mergeFolderUpsert(folders, tombs, child('a', 10, 'sec'))).toBe(true);
+    expect(folders.get('a')?.parentId).toBe('sec');
+  });
+  it('a self-parent is normalized to root (empty string)', () => {
+    const folders = new Map<string, RoomFolder>(); const tombs = new Map<string, number>();
+    expect(mergeFolderUpsert(folders, tombs, child('a', 10, 'a'))).toBe(true);
+    expect(folders.get('a')?.parentId).toBe('');
+  });
+  it('absent property on a NEW folder stays absent (root)', () => {
+    const folders = new Map<string, RoomFolder>(); const tombs = new Map<string, number>();
+    mergeFolderUpsert(folders, tombs, folder('a', 10));
+    expect(Object.prototype.hasOwnProperty.call(folders.get('a'), 'parentId')).toBe(false);
+  });
+});
+
+describe('wantAutoFetch one-hop inheritance', () => {
+  const parentOf = (m: Record<string, string | undefined>) => (id: string) => m[id];
+  it('own override wins over the section override', () => {
+    expect(wantAutoFetch(true, { f: false, s: true }, 'f', parentOf({ f: 's' }))).toBe(false);
+    expect(wantAutoFetch(false, { f: true, s: false }, 'f', parentOf({ f: 's' }))).toBe(true);
+  });
+  it('falls back to the section override, then the room toggle', () => {
+    expect(wantAutoFetch(true, { s: false }, 'f', parentOf({ f: 's' }))).toBe(false);
+    expect(wantAutoFetch(false, { s: true }, 'f', parentOf({ f: 's' }))).toBe(true);
+    expect(wantAutoFetch(true, {}, 'f', parentOf({ f: 's' }))).toBe(true);
+  });
+  it('one hop only — the grand-section override does not apply', () => {
+    expect(wantAutoFetch(true, { g: false }, 'f', parentOf({ f: 's', s: 'g' }))).toBe(true);
+  });
+  it('a self-referential parent cannot loop or apply its own entry twice', () => {
+    expect(wantAutoFetch(true, { f: false }, 'f', parentOf({ f: 'f' }))).toBe(false);
+    expect(wantAutoFetch(true, {}, 'f', parentOf({ f: 'f' }))).toBe(true);
+  });
+  it('no resolver behaves exactly like 2.22', () => {
+    expect(wantAutoFetch(true, { s: false }, 'f')).toBe(true);
+  });
+});
+
+describe('groupFilesByHierarchy', () => {
+  it('nests children under their sections, uncategorized last', () => {
+    const folders = [folder('s1', 1, 'S1'), child('c1', 2, 's1', 'C1'), folder('s2', 3, 'S2')];
+    const files = [file('a', { folderId: 's1' }), file('b', { folderId: 'c1' }), file('c'), file('d', { folderId: 's2' })];
+    const out = groupFilesByHierarchy(files, folders);
+    expect(out.map((g) => g.section?.id ?? null)).toEqual(['s1', 's2', null]);
+    expect(out[0].files.map((f) => f.fileId)).toEqual(['a']);
+    expect(out[0].children.map((c) => c.folder?.id)).toEqual(['c1']);
+    expect(out[0].children[0].files.map((f) => f.fileId)).toEqual(['b']);
+    expect(out[2].files.map((f) => f.fileId)).toEqual(['c']);
+  });
+  it('dangling parentId renders the folder at root', () => {
+    const out = groupFilesByHierarchy([], [child('c1', 1, 'ghost')]);
+    expect(out.map((g) => g.section?.id)).toEqual(['c1']);
+  });
+  it('a folder pointing at a NESTED parent flattens to root (one level max)', () => {
+    const folders = [folder('top', 1), child('mid', 2, 'top'), child('leaf', 3, 'mid')];
+    const out = groupFilesByHierarchy([], folders);
+    expect(out.map((g) => g.section?.id)).toEqual(['top', 'leaf']);
+    expect(out[0].children.map((c) => c.folder?.id)).toEqual(['mid']);
+  });
+  it('a two-folder parent cycle degrades both to root', () => {
+    const folders = [child('a', 1, 'b'), child('b', 2, 'a')];
+    const out = groupFilesByHierarchy([], folders);
+    expect(out.map((g) => g.section?.id)).toEqual(['a', 'b']);
+    expect(out.every((g) => g.children.length === 0)).toBe(true);
+  });
+  it('empty sections and empty children stay visible', () => {
+    const out = groupFilesByHierarchy([], [folder('s', 1), child('c', 2, 's')]);
+    expect(out).toHaveLength(1);
+    expect(out[0].children).toHaveLength(1);
+    expect(out[0].files).toEqual([]);
+    expect(out[0].children[0].files).toEqual([]);
   });
 });

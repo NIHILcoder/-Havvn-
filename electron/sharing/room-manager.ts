@@ -389,7 +389,7 @@ export class RoomManager {
       type: 'join',
       payload: {
         roomId, name, code, folder,
-        self: { memberId: profile.memberId, name: profile.name, avatarSeed: profile.avatarSeed, pub: identity.pub, priv: identity.priv },
+        self: { memberId: profile.memberId, name: profile.name, avatarSeed: profile.avatarSeed, color: profile.color ?? '', status: profile.status ?? '', avatarImg: profile.avatarImg ?? '', pub: identity.pub, priv: identity.priv },
         useTurn,
         turnServers,
         tombstones: db.getRoomTombstones(roomId),
@@ -422,12 +422,15 @@ export class RoomManager {
   // ── Public API ─────────────────────────────────────────────────────────────
   getProfile(): RoomProfile { return db.getRoomProfile(); }
 
-  setProfile(updates: Partial<Pick<RoomProfile, 'name' | 'avatarSeed'>>): RoomProfile {
+  setProfile(updates: Partial<Pick<RoomProfile, 'name' | 'avatarSeed' | 'color' | 'status' | 'avatarImg'>>): RoomProfile {
     const profile = db.updateRoomProfile(updates);
     // Push the change into the live engine so active rooms re-broadcast the new
     // identity to peers immediately (no rejoin needed). Skip if not running yet.
     if (this.win && !this.win.isDestroyed() && this.ready) {
-      this.win.webContents.send('room-cmd', { type: 'profile', reqId: ++this.reqSeq, payload: { name: profile.name, avatarSeed: profile.avatarSeed } });
+      this.win.webContents.send('room-cmd', {
+        type: 'profile', reqId: ++this.reqSeq,
+        payload: { name: profile.name, avatarSeed: profile.avatarSeed, color: profile.color ?? '', status: profile.status ?? '', avatarImg: profile.avatarImg ?? '' },
+      });
     }
     return profile;
   }
@@ -636,10 +639,10 @@ export class RoomManager {
     return this.folderCmd(roomId, 'rename', { name });
   }
 
-  createFolder(roomId: string, name: string, icon: string, color: string): Promise<RoomState> {
-    return this.folderCmd(roomId, 'createFolder', { name, icon, color });
+  createFolder(roomId: string, name: string, icon: string, color: string, parentId?: string): Promise<RoomState> {
+    return this.folderCmd(roomId, 'createFolder', { name, icon, color, parentId });
   }
-  updateFolder(roomId: string, folderId: string, patch: { name?: string; icon?: string; color?: string }): Promise<RoomState> {
+  updateFolder(roomId: string, folderId: string, patch: { name?: string; icon?: string; color?: string; parentId?: string | null }): Promise<RoomState> {
     return this.folderCmd(roomId, 'updateFolder', { folderId, patch });
   }
   deleteFolder(roomId: string, folderId: string): Promise<RoomState> {

@@ -601,7 +601,7 @@ const api: IpcApi = {
   // Friend swarms / private rooms (Phase 3)
   rooms: {
     getProfile: (): Promise<RoomProfile> => ipcRenderer.invoke('rooms:getProfile'),
-    setProfile: (updates: Partial<Pick<RoomProfile, 'name' | 'avatarSeed'>>): Promise<RoomProfile> =>
+    setProfile: (updates: Partial<Pick<RoomProfile, 'name' | 'avatarSeed' | 'color' | 'status' | 'avatarImg'>>): Promise<RoomProfile> =>
       ipcRenderer.invoke('rooms:setProfile', updates),
     create: (name: string, e2e?: boolean): Promise<RoomState> => ipcRenderer.invoke('rooms:create', name, e2e),
     join: (code: string): Promise<RoomState> => ipcRenderer.invoke('rooms:join', code),
@@ -656,9 +656,9 @@ const api: IpcApi = {
       signal: (roomId: string, memberId: string, kind: 'answer' | 'ice', data: unknown): Promise<{ ok: boolean }> =>
         ipcRenderer.invoke('rooms:screenSignal', roomId, memberId, kind, data),
     },
-    createFolder: (roomId: string, name: string, icon: string, color: string): Promise<RoomState> =>
-      ipcRenderer.invoke('rooms:createFolder', roomId, name, icon, color),
-    updateFolder: (roomId: string, folderId: string, patch: { name?: string; icon?: string; color?: string }): Promise<RoomState> =>
+    createFolder: (roomId: string, name: string, icon: string, color: string, parentId?: string): Promise<RoomState> =>
+      ipcRenderer.invoke('rooms:createFolder', roomId, name, icon, color, parentId),
+    updateFolder: (roomId: string, folderId: string, patch: { name?: string; icon?: string; color?: string; parentId?: string | null }): Promise<RoomState> =>
       ipcRenderer.invoke('rooms:updateFolder', roomId, folderId, patch),
     deleteFolder: (roomId: string, folderId: string): Promise<RoomState> =>
       ipcRenderer.invoke('rooms:deleteFolder', roomId, folderId),
