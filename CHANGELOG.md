@@ -4,6 +4,30 @@ All notable changes to Havvn (formerly TorrentHunt) are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [2.23.1] - 2026-07-19
+
+Fixes and simplification from first-run feedback on 2.23.
+
+### Changed
+- **Far fewer auto-download switches.** There's now one master auto-download
+  toggle in the files header; the per-folder / per-section override moved into
+  each folder's "⋯" menu (inherit / always / off, with the effective state
+  shown) instead of a control on every header. Move-to-section, rename and
+  delete moved into that menu too, so folder headers stay calm.
+- **Compact files header.** View, Request file and New section are icon-only
+  buttons now (labels in the tooltip), so the header no longer overflows or
+  wraps text in a narrow room.
+- **The sort control matches the rest of the UI** — it's the app's own
+  dropdown styled as a pill, not the browser's native select.
+
+### Added
+- **Show in folder.** Right-click a downloaded file → "Show in folder" reveals
+  and selects it in Explorer without stopping the share.
+
+### Fixed
+- **Avatar tiles are square again** — the picker grid stretched them into
+  rectangles; they're now locked to a 1:1 shape.
+
 ## [2.23.0] - 2026-07-18
 
 Rooms grow a real file hierarchy, and members get faces.
