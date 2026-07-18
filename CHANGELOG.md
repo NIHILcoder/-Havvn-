@@ -4,6 +4,25 @@ All notable changes to Havvn (formerly TorrentHunt) are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [2.22.1] - 2026-07-18
+
+Visual fixes from first-run feedback on 2.22.
+
+### Fixed
+- **Detached voice settings no longer cram their text together.** The pop-out
+  window's fixed height made the flex chain definite, so the noise-suppression
+  label ballooned to 42% of its block and the hint text overflowed onto the
+  Auto-gain row. Labels and hints in stacked fields now size to content, and
+  sections never squeeze — the window scrolls instead.
+- **The voice panel in the people rail is properly laid out.** A clean header
+  (title + ghost settings gear) with a full-width Join bar under it — or, in a
+  call, an evenly stretched control strip — instead of buttons crowding the
+  title on one cramped row.
+- **Files-zone controls share one shape.** Every control in the files header and
+  toolbar (View, Request file, New folder, the sort dropdown, filter chips,
+  Select and the selection-bar buttons) is now the same 26px pill — one height,
+  one radius, one type size.
+
 ## [2.22.0] - 2026-07-18
 
 The room, refined: detachable panels, a chat that understands code, and a far more
