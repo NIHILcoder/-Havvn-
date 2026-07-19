@@ -4,6 +4,26 @@ All notable changes to Havvn (formerly TorrentHunt) are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [2.24.0] - 2026-07-19
+
+### Added
+- **Hear yourself in the mic test.** The voice settings mic test can now play
+  your processed microphone back through your output — toggle "Hear myself" and
+  switch noise-suppression modes to compare them by ear (the playback runs the
+  same enhanced RNNoise stage a real call does). Use headphones: on speakers the
+  mic re-captures the playback.
+
+### Changed
+- **The invite dialog shows a room preview instead of a QR code.** A QR is
+  pointless on a desktop-only app; the dialog now previews who's in the room,
+  the file count and total size, and whether voice is live, with a prominent
+  Copy-invite button and the speakable code below.
+
+### Removed
+- **Custom profile photos.** Uploading your own avatar image is gone — profiles
+  use the built-in identicons (with a name color and status) again. Any custom
+  photo set earlier is cleared, and photos from older-build peers no longer show.
+
 ## [2.23.2] - 2026-07-19
 
 More polish from feedback on 2.23.1.
