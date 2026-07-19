@@ -173,10 +173,12 @@ export const VoiceSettingsModal: React.FC<{ onClose: () => void }> = ({ onClose 
             <Icon name={testing ? 'pause' : 'play'} size={12} />
             {testing ? t('rooms.voice.micTestStop') : t('rooms.voice.micTest')}
           </button>
-          {/* Hear yourself: play the PROCESSED mic back so the NS mode is audible. */}
+          {/* Hear yourself: play the PROCESSED mic back so the NS mode is audible.
+              Turning it on starts the test too — the monitor lives inside the mic
+              test, so on its own this button would silently do nothing. */}
           <button
             className={`vsm-test-btn${monitor ? ' active' : ''}`}
-            onClick={() => setMonitor((x) => !x)}
+            onClick={() => { const next = !monitor; setMonitor(next); if (next) setTesting(true); }}
             title={t('rooms.voice.micMonitorHint')}
           >
             <Icon name={monitor ? 'volume-2' : 'volume-x'} size={12} />

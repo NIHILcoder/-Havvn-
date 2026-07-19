@@ -1204,6 +1204,7 @@ export class MicTester {
   private onEnded: (() => void) | null = null;
   private seq = 0; // invalidates a start() that lost a race with stop()/restart
   private monitorCtx: AudioContext | null = null; // "hear yourself" playback graph
+  private monitorEl: HTMLAudioElement | null = null; // its sink (honors the chosen output device)
 
   /** `onEnded` fires when the test stops ON ITS OWN (the 60s deadline) so the UI can
    *  drop out of its "testing" state — an explicit stop() is caller-driven and does
@@ -1235,9 +1236,10 @@ export class MicTester {
     this.stopTimer = setTimeout(() => { const cb = this.onEnded; this.stop(); cb?.(); }, MIC_TEST_MAX_MS);
   }
 
-  /** Build src → [rnnoise?] → gain → speakers so the user hears exactly what the
-   *  selected NS mode produces (the enhanced RNNoise stage included). Mirrors the
-   *  real capture pipeline, minus the sent MediaStreamDestination. */
+  /** Build src → [rnnoise?] → gain → <audio> so the user hears exactly what the
+   *  selected NS mode produces (the enhanced RNNoise stage included). Playback goes
+   *  through an audio element + setSinkId — NOT ctx.destination — so it lands on the
+   *  CHOSEN output device, the same path remote voice already uses. */
   private async startMonitor(stream: MediaStream, s: VoiceSettings, mySeq: number): Promise<void> {
     try {
       const ctx = new AudioContext({ sampleRate: 48000 });
@@ -1245,7 +1247,8 @@ export class MicTester {
       const src = ctx.createMediaStreamSource(stream);
       const gain = ctx.createGain();
       gain.gain.value = s.inputGain;
-      gain.connect(ctx.destination);
+      const dest = ctx.createMediaStreamDestination();
+      gain.connect(dest);
       let head: AudioNode = gain;
       if (s.noiseSuppressionMode === 'enhanced') {
         const node = await makeRnnoiseNode(ctx);
@@ -1254,7 +1257,15 @@ export class MicTester {
       }
       src.connect(head);
       if (mySeq !== this.seq) { try { await ctx.close(); } catch { /* ignore */ } return; }
+      const el = new Audio();
+      el.autoplay = true;
+      el.srcObject = dest.stream;
+      el.volume = Math.max(0, Math.min(1, s.masterVolume));
+      const anyEl = el as unknown as { setSinkId?: (id: string) => Promise<void> };
+      if (anyEl.setSinkId) anyEl.setSinkId(s.outputDeviceId || '').catch(() => { /* device gone — default */ });
+      el.play().catch(() => { /* autoplay policy is permissive here; ignore */ });
       this.monitorCtx = ctx;
+      this.monitorEl = el;
     } catch { /* monitoring is best-effort — the meter still works */ }
   }
 
@@ -1263,6 +1274,7 @@ export class MicTester {
     this.onEnded = null;
     if (this.stopTimer) { clearTimeout(this.stopTimer); this.stopTimer = null; }
     this.vad?.stop(); this.vad = null;
+    if (this.monitorEl) { try { this.monitorEl.pause(); this.monitorEl.srcObject = null; } catch { /* ignore */ } this.monitorEl = null; }
     if (this.monitorCtx) { try { void this.monitorCtx.close(); } catch { /* ignore */ } this.monitorCtx = null; }
     this.stream?.getTracks().forEach((t) => t.stop());
     this.stream = null;
