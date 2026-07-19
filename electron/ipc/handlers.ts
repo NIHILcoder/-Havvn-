@@ -584,7 +584,7 @@ export function setupIpcHandlers(window: BrowserWindow): void {
     async () => roomManager.voiceDevices()
   ));
   ipcMain.handle('rooms:voiceMicTestStart', wrapHandler('rooms:voiceMicTestStart',
-    async (_event, settings: unknown) => roomManager.voiceMicTestStart(settings as never)
+    async (_event, settings: unknown, monitor?: boolean) => roomManager.voiceMicTestStart(settings as never, monitor === true)
   ));
   ipcMain.handle('rooms:voiceMicTestStop', wrapHandler('rooms:voiceMicTestStop',
     async () => roomManager.voiceMicTestStop()

@@ -1156,7 +1156,7 @@ export interface IpcApi {
        *  `supported` = the given key is expressible by the hook. */
       globalPtt: (enabled: boolean, code: string) => Promise<{ ok: boolean; available: boolean; supported: boolean }>;
       devices: () => Promise<VoiceDeviceInfo[]>;
-      micTestStart: (settings: VoiceSettings) => Promise<{ ok: boolean }>;
+      micTestStart: (settings: VoiceSettings, monitor?: boolean) => Promise<{ ok: boolean }>;
       micTestStop: () => Promise<{ ok: boolean }>;
     };
     // Screenshare over the voice mesh (viewing rides a local loopback PC — see

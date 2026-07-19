@@ -737,9 +737,9 @@ export class RoomManager {
   /** Audio devices as the ENGINE window sees them (its deviceId space is the one
    *  the capture pipeline uses — main-renderer ids would not match). */
   voiceDevices(): Promise<VoiceDeviceInfo[]> { return this.call<VoiceDeviceInfo[]>('voiceDevices', {}, 15000); }
-  async voiceMicTestStart(settings: VoiceSettings): Promise<{ ok: boolean }> {
+  async voiceMicTestStart(settings: VoiceSettings, monitor = false): Promise<{ ok: boolean }> {
     await this.ensureMicAccess(); // macOS TCC prompt, same as joining voice
-    return this.call<{ ok: boolean }>('voiceMicTestStart', { settings }, 15000);
+    return this.call<{ ok: boolean }>('voiceMicTestStart', { settings, monitor }, 15000);
   }
   voiceMicTestStop(): Promise<{ ok: boolean }> { return this.call<{ ok: boolean }>('voiceMicTestStop', {}); }
 

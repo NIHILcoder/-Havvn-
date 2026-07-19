@@ -29,6 +29,7 @@ export const VoiceSettingsModal: React.FC<{ onClose: () => void }> = ({ onClose 
   const [testing, setTesting] = useState(false);
   const [level, setLevel] = useState(0);       // raw (pre-gain) 0-255 from the engine
   const [capturing, setCapturing] = useState(false); // PTT key rebind in progress
+  const [monitor, setMonitor] = useState(false);      // "hear yourself" playback during the mic test
   const [globalInfo, setGlobalInfo] = useState<{ available: boolean; supported: boolean } | null>(null);
 
   const update = (patch: Partial<VoicePrefs>) => {
@@ -62,12 +63,13 @@ export const VoiceSettingsModal: React.FC<{ onClose: () => void }> = ({ onClose 
 
   // Mic test lifecycle: restart when the CAPTURE config changes (device/processing);
   // gain is applied to the displayed bar client-side, so dragging it stays live.
+  // `monitor` plays the processed mic back — restarts too (it rebuilds the graph).
   useEffect(() => {
     if (!testing) return;
     let dead = false;
     // Pass the current settings explicitly — the engine's cached settings are
     // debounced 200ms, so they'd lag a device/processing change made just now.
-    window.api.rooms.voice.micTestStart(toVoiceSettings(prefs)).catch((e) => {
+    window.api.rooms.voice.micTestStart(toVoiceSettings(prefs), monitor).catch((e) => {
       if (!dead) { setTesting(false); toast.error(String(e instanceof Error ? e.message : e)); }
     });
     const off = window.api.onVoiceMicLevel((lv) => {
@@ -84,7 +86,7 @@ export const VoiceSettingsModal: React.FC<{ onClose: () => void }> = ({ onClose 
     // Only CAPTURE-affecting knobs restart the test; gain/VAD are applied to the
     // displayed bar client-side (the meter is raw pre-gain), so they don't recapture.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [testing, prefs.inputDeviceId, prefs.echoCancellation, prefs.noiseSuppressionMode, prefs.autoGainControl]);
+  }, [testing, monitor, prefs.inputDeviceId, prefs.echoCancellation, prefs.noiseSuppressionMode, prefs.autoGainControl]);
 
   // Detach into an OS window (the content portals there; state stays here).
   const { popout, openPopout, closePopout } = usePopout('havvn-voice-settings', t('rooms.voice.settings'));
@@ -171,6 +173,15 @@ export const VoiceSettingsModal: React.FC<{ onClose: () => void }> = ({ onClose 
             <Icon name={testing ? 'pause' : 'play'} size={12} />
             {testing ? t('rooms.voice.micTestStop') : t('rooms.voice.micTest')}
           </button>
+          {/* Hear yourself: play the PROCESSED mic back so the NS mode is audible. */}
+          <button
+            className={`vsm-test-btn${monitor ? ' active' : ''}`}
+            onClick={() => setMonitor((x) => !x)}
+            title={t('rooms.voice.micMonitorHint')}
+          >
+            <Icon name={monitor ? 'volume-2' : 'volume-x'} size={12} />
+            {t('rooms.voice.micMonitor')}
+          </button>
           <div className="vsm-meter" title={t('rooms.voice.micTestHint')}>
             <div
               className={`vsm-meter-fill${shownLevel > prefs.vadThreshold ? ' hot' : ''}`}
@@ -179,6 +190,7 @@ export const VoiceSettingsModal: React.FC<{ onClose: () => void }> = ({ onClose 
             <div className="vsm-meter-mark" style={{ left: `${markPct}%` }} />
           </div>
         </div>
+        {monitor && testing && <div className="vsm-hint">{t('rooms.voice.micMonitorWarn')}</div>}
       </div>
 
       {/* Volumes */}

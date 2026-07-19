@@ -940,7 +940,9 @@ function selfProfileMsg(room: Room): Msg | null {
   room.profileAt = at;
   // Keep the signed fields inside the receiver-side gossip clamps (MAX_STR):
   // a longer value would be truncated there and the signature would die.
-  const body = { memberId: s.memberId, at, name: (s.name || 'You').slice(0, 1024), avatarSeed: s.avatarSeed.slice(0, 1024), color: s.color, status: s.status, img: s.avatarImg };
+  // img is always '' — custom avatar images were removed; only the identicon
+  // seed / color / status ride the profile now.
+  const body = { memberId: s.memberId, at, name: (s.name || 'You').slice(0, 1024), avatarSeed: s.avatarSeed.slice(0, 1024), color: s.color, status: s.status, img: '' };
   const sig = signBytes(room, profileCanonical(room.topic, body));
   if (!sig) return null;
   return { t: 'profile', ...body, pub: s.pub, sig };
@@ -1585,7 +1587,10 @@ function onMessage(room: Room, wire: Wire, raw: any): void {
       // The signature covers the RAW fields; what we STORE is display-sanitized
       // (control chars / bidi overrides stripped from the status) so a hostile
       // member can't smuggle render-order tricks past the verified envelope.
-      room.profiles.set(msg.memberId, { name: body.name, avatarSeed: body.avatarSeed, color: body.color, status: sanitizeProfileStatus(body.status), img: body.img, at });
+      // img is dropped unconditionally — custom avatar images were removed, so
+      // even a valid one from an older-build peer never renders (and never grows
+      // the profiles map).
+      room.profiles.set(msg.memberId, { name: body.name, avatarSeed: body.avatarSeed, color: body.color, status: sanitizeProfileStatus(body.status), img: '', at });
       touchMember(room, msg.memberId, body.name, body.avatarSeed);
       pushState(room);
       break;
@@ -2956,6 +2961,7 @@ ipcRenderer.on('room-cmd', async (_e, msg: any) => {
         s,
         (level) => { try { ipcRenderer.send('room-mic-level', { level }); } catch { /* ignore */ } },
         () => { try { ipcRenderer.send('room-mic-level', { level: -1 }); } catch { /* ignore */ } }, // -1 = auto-stopped (60s)
+        msg.monitor === true, // play the processed mic back so the user can hear the NS mode
       );
       data = { ok: true };
     }

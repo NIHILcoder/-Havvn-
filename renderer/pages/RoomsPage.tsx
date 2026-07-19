@@ -12,7 +12,7 @@ import { createPortal } from 'react-dom';
 import Hls from 'hls.js';
 import toast from 'react-hot-toast';
 import { RoomState, RoomSummary, RoomProfile, RoomFile, RoomFolder, RoomMember } from '../../shared/types';
-import { Button, Icon, IconName, EmptyState, Identicon, Avatar, ProfileCard, QRCode, TransferPickerModal, Toggle, PlayerControls, Modal, useConfirm, VoiceSettingsModal, ScreenSourcePicker, ScreenView, Select, Tabs, DropdownMenu } from '../components';
+import { Button, Icon, IconName, EmptyState, Identicon, Avatar, ProfileCard, TransferPickerModal, Toggle, PlayerControls, Modal, useConfirm, VoiceSettingsModal, ScreenSourcePicker, ScreenView, Select, Tabs, DropdownMenu } from '../components';
 import { VoicePrefs, VOICE_PREFS_EVENT, loadVoicePrefs, saveVoicePrefs, toVoiceSettings } from '../utils/voicePrefs';
 import { loadRoomLayout, saveRoomLayout, RAIL_MIN, RAIL_MAX, CHAT_MIN, CHAT_MAX } from '../utils/roomLayout';
 import { usePopout } from '../utils/popout';
@@ -20,7 +20,7 @@ import { RoomFilesPrefs, loadRoomFilesPrefs, saveRoomFilesPrefs, loadRoomSort, s
 import { ContextMenu } from '../components/ContextMenu';
 import { avatarCandidates } from '../components/Identicon';
 import { groupFilesByHierarchy, wantAutoFetch, FOLDER_ICONS } from '../../shared/room-folders';
-import { sanitizeProfileColor, sanitizeProfileStatus, sanitizeProfileImg, PROFILE_COLOR_RE } from '../../shared/profile';
+import { sanitizeProfileColor, sanitizeProfileStatus, PROFILE_COLOR_RE } from '../../shared/profile';
 import { parseChatSegments, isCopyworthy } from '../../shared/chat-format';
 import { classifyMediaKind } from '../../shared/media';
 import { formatBytes, formatSpeed } from '../utils/format-helpers';
@@ -100,7 +100,6 @@ const RoomsPage: React.FC<RoomsPageProps> = ({ focusRoomId, onFocusHandled, onRo
   const [avatarPool, setAvatarPool] = useState<string[]>([]);
   const [profileColor, setProfileColor] = useState('');
   const [profileStatus, setProfileStatus] = useState('');
-  const [profileImg, setProfileImg] = useState('');
 
   const selectedRef = useRef<string | null>(null);
   selectedRef.current = selectedId;
@@ -340,7 +339,6 @@ const RoomsPage: React.FC<RoomsPageProps> = ({ focusRoomId, onFocusHandled, onRo
     setAvatarPool(avatarCandidates(2, profile.avatarSeed));
     setProfileColor(profile.color || '');
     setProfileStatus(profile.status || '');
-    setProfileImg(profile.avatarImg || '');
     setDialog('profile');
   };
 
@@ -352,46 +350,13 @@ const RoomsPage: React.FC<RoomsPageProps> = ({ focusRoomId, onFocusHandled, onRo
         avatarSeed: profileSeed,
         color: sanitizeProfileColor(profileColor) ?? '',
         status: sanitizeProfileStatus(profileStatus),
-        avatarImg: sanitizeProfileImg(profileImg) ?? '',
+        avatarImg: '', // custom avatar images were removed — always clear any prior one
       });
       setProfile(p);
       setDialog(null);
       toast.success(t('rooms.profileSaved'));
     } catch (e) { toast.error(String(e instanceof Error ? e.message : e)); }
     finally { setBusy(false); }
-  };
-
-  // Center-crop → square resize → webp data URL under the gossip cap; steps
-  // down size/quality until it fits (a photo that can't fit is rejected).
-  const pickAvatarPhoto = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/png,image/jpeg,image/webp';
-    input.onchange = () => {
-      const file = input.files?.[0];
-      if (!file) return;
-      const url = URL.createObjectURL(file);
-      const img = new Image();
-      img.onload = () => {
-        URL.revokeObjectURL(url);
-        const side = Math.min(img.naturalWidth, img.naturalHeight);
-        if (!side) { toast.error(t('rooms.profilePhotoBad')); return; }
-        for (const [dim, q] of [[128, 0.85], [128, 0.6], [96, 0.55], [64, 0.5]] as const) {
-          const canvas = document.createElement('canvas');
-          canvas.width = dim; canvas.height = dim;
-          const ctx = canvas.getContext('2d');
-          if (!ctx) break;
-          ctx.imageSmoothingQuality = 'high';
-          ctx.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, dim, dim);
-          const out = canvas.toDataURL('image/webp', q);
-          if (out.startsWith('data:image/webp') && sanitizeProfileImg(out)) { setProfileImg(out); return; }
-        }
-        toast.error(t('rooms.profilePhotoBad'));
-      };
-      img.onerror = () => { URL.revokeObjectURL(url); toast.error(t('rooms.profilePhotoBad')); };
-      img.src = url;
-    };
-    input.click();
   };
 
   const copy = (text: string, msg: string) => {
@@ -551,7 +516,7 @@ const RoomsPage: React.FC<RoomsPageProps> = ({ focusRoomId, onFocusHandled, onRo
           </>}
         >
           <div className="rooms-profile-edit">
-            <Avatar seed={profileSeed} img={profileImg} size={64} ring />
+            <Identicon seed={profileSeed} size={64} ring />
             <div className="rooms-profile-fields">
               <input
                 className="rooms-input" data-autofocus
@@ -569,17 +534,6 @@ const RoomsPage: React.FC<RoomsPageProps> = ({ focusRoomId, onFocusHandled, onRo
                 onKeyDown={(e) => e.key === 'Enter' && handleSaveProfile()}
               />
             </div>
-          </div>
-          {/* Photo: uploaded avatars beat the identicon; capped + recompressed locally. */}
-          <div className="rooms-profile-photo-row">
-            <button type="button" className="rooms-avatar-shuffle" onClick={pickAvatarPhoto}>
-              <Icon name="image" size={13} /> {t('rooms.profilePhoto')}
-            </button>
-            {profileImg && (
-              <button type="button" className="rooms-avatar-shuffle" onClick={() => setProfileImg('')}>
-                <Icon name="x" size={13} /> {t('rooms.profilePhotoRemove')}
-              </button>
-            )}
           </div>
           {/* Name color: a small themed palette + a free-pick well. */}
           <div className="rooms-avatar-pick-head">
@@ -622,7 +576,7 @@ const RoomsPage: React.FC<RoomsPageProps> = ({ focusRoomId, onFocusHandled, onRo
           </div>
           <div className="rooms-avatar-grid">
             {avatarPool.map((seed) => (
-              <button key={seed} type="button" className={`rooms-avatar-option ${seed === profileSeed && !profileImg ? 'active' : ''}`} onClick={() => { setProfileSeed(seed); setProfileImg(''); }} aria-pressed={seed === profileSeed && !profileImg}>
+              <button key={seed} type="button" className={`rooms-avatar-option ${seed === profileSeed ? 'active' : ''}`} onClick={() => setProfileSeed(seed)} aria-pressed={seed === profileSeed}>
                 <Identicon seed={seed} size={44} />
               </button>
             ))}
@@ -637,15 +591,48 @@ const RoomsPage: React.FC<RoomsPageProps> = ({ focusRoomId, onFocusHandled, onRo
           footer={<Button variant="primary" onClick={() => setDialog(null)}>{t('common.done')}</Button>}
         >
           <p className="rooms-modal-desc">{t('rooms.inviteDesc')}</p>
-          {/* Copy/QR carry the full invite, which PINS the owner so a joiner can't
-              be tricked into adopting an impostor owner. The chip shows the
-              speakable code for verbal sharing (verbal is trust-on-first-use). */}
-          <div className="rooms-invite-code" onClick={() => copy(room.invite || room.code, t('rooms.codeCopied'))} title={t('rooms.copyCode')}>
+          {/* A preview of what you're inviting people INTO (a QR is useless on a
+              desktop-only app). The invite string PINS the owner so a joiner
+              can't be tricked into adopting an impostor. The chip below shows the
+              speakable code for verbal sharing (trust-on-first-use). */}
+          {(() => {
+            const totalSize = room.files.reduce((s, f) => s + (f.size || 0), 0);
+            const inVoice = room.voice?.participants?.length ?? 0;
+            const shown = room.members.slice(0, 6);
+            return (
+              <div className="rooms-invite-preview">
+                <div className="rooms-invite-preview-head">
+                  <span className="rooms-invite-preview-name">{room.name || t('rooms.untitled')}</span>
+                  {inVoice > 0 && (
+                    <span className="rooms-invite-preview-voice"><Icon name="headphones" size={12} /> {inVoice}</span>
+                  )}
+                </div>
+                <div className="rooms-invite-preview-avatars">
+                  {shown.map((m) => (
+                    <Identicon key={m.memberId} seed={m.avatarSeed} size={28} title={m.name} />
+                  ))}
+                  {room.members.length > shown.length && (
+                    <span className="rooms-invite-preview-more">+{room.members.length - shown.length}</span>
+                  )}
+                </div>
+                <div className="rooms-invite-preview-stats">
+                  <span><Icon name="users" size={12} /> {t('rooms.invitePeople').replace('{n}', String(room.members.length))}</span>
+                  <span><Icon name="file" size={12} /> {t('rooms.inviteFiles').replace('{n}', String(room.files.length))}</span>
+                  {totalSize > 0 && <span>{formatBytes(totalSize)}</span>}
+                </div>
+              </div>
+            );
+          })()}
+          <button
+            type="button"
+            className="rooms-invite-copy"
+            onClick={() => copy(room.invite || room.code, t('rooms.codeCopied'))}
+          >
+            <Icon name="copy" size={15} /> {t('rooms.copyInvite')}
+          </button>
+          <div className="rooms-invite-code" onClick={() => copy(room.code, t('rooms.codeCopied'))} title={t('rooms.copyCode')}>
             <span>{room.code}</span>
             <Icon name="copy" size={16} />
-          </div>
-          <div className="rooms-invite-qr">
-            <QRCode data={room.invite || room.code} size={168} />
           </div>
         </Modal>
       )}

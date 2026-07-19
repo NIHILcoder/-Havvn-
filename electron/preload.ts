@@ -645,7 +645,7 @@ const api: IpcApi = {
       globalPtt: (enabled: boolean, code: string): Promise<{ ok: boolean; available: boolean; supported: boolean }> =>
         ipcRenderer.invoke('rooms:voiceGlobalPtt', enabled, code),
       devices: (): Promise<VoiceDeviceInfo[]> => ipcRenderer.invoke('rooms:voiceDevices'),
-      micTestStart: (settings: VoiceSettings): Promise<{ ok: boolean }> => ipcRenderer.invoke('rooms:voiceMicTestStart', settings),
+      micTestStart: (settings: VoiceSettings, monitor?: boolean): Promise<{ ok: boolean }> => ipcRenderer.invoke('rooms:voiceMicTestStart', settings, monitor),
       micTestStop: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('rooms:voiceMicTestStop'),
     },
     screen: {

@@ -1174,6 +1174,24 @@ export class VoiceSession {
 // settings modal open (its stop() would never arrive).
 const MIC_TEST_MAX_MS = 60_000;
 
+/** Create a one-off RNNoise worklet node on `ctx` (own module + WASM), or null
+ *  if it can't load. Standalone twin of VoiceSession.ensureRnnoiseNode — used by
+ *  the mic test's monitor path so "hear yourself" reflects the SAME enhanced
+ *  suppression a real call applies (no shared caching; the tester is short-lived). */
+async function makeRnnoiseNode(ctx: AudioContext): Promise<AudioWorkletNode | null> {
+  try {
+    const url = URL.createObjectURL(new Blob([RNNOISE_WORKLET_SOURCE], { type: 'application/javascript' }));
+    try { await ctx.audioWorklet.addModule(url); } finally { URL.revokeObjectURL(url); }
+    const node = new AudioWorkletNode(ctx, 'rnnoise', {
+      numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
+      channelCount: 1, channelCountMode: 'explicit', channelInterpretation: 'speakers',
+    });
+    const bytes = Uint8Array.from(Buffer.from(RNNOISE_WASM_BASE64, 'base64'));
+    node.port.postMessage({ type: 'wasm', bytes });
+    return node;
+  } catch { return null; }
+}
+
 /** Standalone mic level meter for the settings UI. Captures the CONFIGURED mic
  *  and reports the RAW (pre-gain) 0-255 average level every poll — the renderer
  *  multiplies the displayed bar by the gain slider, so dragging gain never forces
@@ -1185,11 +1203,14 @@ export class MicTester {
   private stopTimer: any = null;
   private onEnded: (() => void) | null = null;
   private seq = 0; // invalidates a start() that lost a race with stop()/restart
+  private monitorCtx: AudioContext | null = null; // "hear yourself" playback graph
 
   /** `onEnded` fires when the test stops ON ITS OWN (the 60s deadline) so the UI can
    *  drop out of its "testing" state — an explicit stop() is caller-driven and does
-   *  NOT fire it. */
-  async start(s: VoiceSettings, onLevel: (level: number) => void, onEnded?: () => void): Promise<void> {
+   *  NOT fire it. `monitor` plays the PROCESSED mic back through the speakers so the
+   *  user can hear the current noise-suppression mode (headphones recommended — on
+   *  speakers the mic re-captures the playback). */
+  async start(s: VoiceSettings, onLevel: (level: number) => void, onEnded?: () => void, monitor = false): Promise<void> {
     this.stop(); // also bumps seq, invalidating any in-flight start
     const mySeq = ++this.seq;
     if (!navigator.mediaDevices?.getUserMedia) {
@@ -1210,7 +1231,31 @@ export class MicTester {
     this.stream = stream;
     this.onEnded = onEnded || null;
     this.vad = new Vad(stream, () => { /* meter only */ }, () => Date.now(), s.vadThreshold, onLevel);
+    if (monitor) { void this.startMonitor(stream, s, mySeq); }
     this.stopTimer = setTimeout(() => { const cb = this.onEnded; this.stop(); cb?.(); }, MIC_TEST_MAX_MS);
+  }
+
+  /** Build src → [rnnoise?] → gain → speakers so the user hears exactly what the
+   *  selected NS mode produces (the enhanced RNNoise stage included). Mirrors the
+   *  real capture pipeline, minus the sent MediaStreamDestination. */
+  private async startMonitor(stream: MediaStream, s: VoiceSettings, mySeq: number): Promise<void> {
+    try {
+      const ctx = new AudioContext({ sampleRate: 48000 });
+      void ctx.resume().catch(() => { /* ignore */ });
+      const src = ctx.createMediaStreamSource(stream);
+      const gain = ctx.createGain();
+      gain.gain.value = s.inputGain;
+      gain.connect(ctx.destination);
+      let head: AudioNode = gain;
+      if (s.noiseSuppressionMode === 'enhanced') {
+        const node = await makeRnnoiseNode(ctx);
+        if (mySeq !== this.seq) { try { await ctx.close(); } catch { /* ignore */ } return; } // superseded mid-await
+        if (node) { node.connect(gain); head = node; }
+      }
+      src.connect(head);
+      if (mySeq !== this.seq) { try { await ctx.close(); } catch { /* ignore */ } return; }
+      this.monitorCtx = ctx;
+    } catch { /* monitoring is best-effort — the meter still works */ }
   }
 
   stop(): void {
@@ -1218,6 +1263,7 @@ export class MicTester {
     this.onEnded = null;
     if (this.stopTimer) { clearTimeout(this.stopTimer); this.stopTimer = null; }
     this.vad?.stop(); this.vad = null;
+    if (this.monitorCtx) { try { void this.monitorCtx.close(); } catch { /* ignore */ } this.monitorCtx = null; }
     this.stream?.getTracks().forEach((t) => t.stop());
     this.stream = null;
   }
