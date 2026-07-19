@@ -4,6 +4,46 @@ All notable changes to Havvn (formerly TorrentHunt) are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [2.24.1] - 2026-07-19
+
+Everything since 2.20, in one release. Rooms grew a real layout, detachable
+panels, a file hierarchy and member profiles; voice gained screenshare, global
+push-to-talk, neural noise suppression and a mic test you can actually hear.
+
+### Rooms
+- **Three-region layout** — People + Voice, an adaptive Stage, and Chat, with
+  draggable splitters that remember their widths.
+- **Detachable chat and voice settings** — pop either into its own window and
+  drag it to a second monitor; everything keeps working.
+- **Sections: two-level file organization** — top-level sections with subfolders
+  inside, drag files onto either level, move folders between sections. Older
+  clients keep seeing a flat list and can't flatten anyone's tree.
+- **Auto-download that inherits** — one master toggle; a folder or section can
+  override it (inherit / always / off) from its "⋯" menu, and a folder with no
+  setting follows its section, then the room.
+- **A files zone that works like a file manager** — right-click menus, hover
+  actions, filter chips, view options, per-room sort and collapse memory,
+  search highlighting, Show-in-folder, and a total-size readout.
+- **A chat built for sharing scripts** — multiline composer, Tab indents,
+  triple-backtick code blocks with copy, and an Activity tab.
+- **Member profiles** — name colors, status lines, more identicon styles, and a
+  profile card on any member (works in the detached chat too).
+- **Invite shows a room preview** instead of a QR code: who's inside, file count
+  and total size, live-voice badge, and a prominent Copy-invite button.
+
+### Voice
+- **Screen sharing** in rooms, watched on demand.
+- **Global push-to-talk** that works while the app is in the background.
+- **Neural noise suppression** (RNNoise) with Off / Standard / Enhanced.
+- **Full device settings** — mic and output pickers, input gain, output volume,
+  voice-activity sensitivity, and a live mic test.
+
+### Fixed
+- **"Hear myself" in the mic test is audible now.** Enabling it starts the test
+  (it used to only set a flag), and playback goes to your *chosen* output device
+  through the same path remote voice uses — it previously went to the system
+  default, so it could play on the wrong device.
+
 ## [2.24.0] - 2026-07-19
 
 ### Added
