@@ -59,13 +59,15 @@ body.te-resizing .app-container { transition: none; }
   border-bottom: 1px solid var(--color-border-subtle);
 }
 
-/* Flat Ember brand: the bare Double-V mark, no tile, no sheen. */
+/* Flat Ember brand: the W-wings mark, no tile. The hover glint (the light
+   band sweeping inside the silhouette — components.css .logo-glint) replaced
+   the old stroke-draw animation of the outline-era Double-V. */
 .sidebar-logo {
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
+  width: 54px;
   height: 40px;
   flex-shrink: 0;
   transition: transform var(--transition-normal);
@@ -76,32 +78,16 @@ body.te-resizing .app-container { transition: none; }
   transform: translateY(-1px);
 }
 
-/* The Double-V draws itself in on app start, and re-draws on hover. Two
-   identical keyframe sets so the hover animation restarts cleanly. Both are
-   killed by the "reduce animations" interface preference automatically
-   ([data-reduce-motion] in base.css zeroes all animation durations, leaving
-   the mark fully drawn via fill-mode: both). Path length ≈ 49 units. */
-.sidebar-logo .logo-mark-path {
-  stroke-dasharray: 50;
-  animation: logoDraw 0.9s cubic-bezier(0.4, 0, 0.2, 1) both;
-}
-.sidebar-logo:hover .logo-mark-path {
-  animation: logoDrawHover 0.7s cubic-bezier(0.4, 0, 0.2, 1) both;
-}
-@keyframes logoDraw {
-  from { stroke-dashoffset: 50; }
-  to { stroke-dashoffset: 0; }
-}
-@keyframes logoDrawHover {
-  from { stroke-dashoffset: 50; }
-  to { stroke-dashoffset: 0; }
-}
-
 .sidebar-title {
-  font-size: 22px;
-  font-weight: var(--font-weight-bold);
+  /* DIN-style technical face to match the sharp angular mark. Bahnschrift
+     ships with Windows 10+; the Segoe fallbacks keep other setups sane. */
+  font-family: 'Bahnschrift', 'Segoe UI Variable Display', 'Segoe UI', var(--font-family);
+  font-size: 21px;
+  font-weight: 700;
+  font-stretch: 87.5%; /* Bahnschrift SemiCondensed — tighter, badge-like */
+  text-transform: uppercase;
   color: var(--color-text-primary);
-  letter-spacing: -0.02em;
+  letter-spacing: 0.06em;
   cursor: default;
 }
 
