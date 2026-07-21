@@ -66,15 +66,34 @@ export const LogoMark: React.FC<LogoMarkProps> = ({ size = 22, mono = false, cla
   );
 };
 
+// Custom HAVVN lettermark (assets/logo/wordmark.svg is the standalone twin):
+// angular polygon glyphs with speed-cut corners and wing-weight VV, drawn to
+// match the mark. HA+N ride currentColor; the VV pair takes the accent.
+const WM_VB_W = 440;
+const WM_VB_H = 100;
+const WM_MAIN = 'M11.5 18.0L40.0 0.0L26.0 100.0L0.0 100.0ZM60.0 0.0L86.0 0.0L74.5 82.0L46.0 100.0ZM28.7 38.0L60.7 38.0L57.5 61.0L25.5 61.0ZM138.0 0.0L133.8 30.0L111.0 100.0L85.0 100.0ZM138.0 0.0L163.0 100.0L137.0 100.0L133.8 30.0ZM110.3 62.0L148.3 62.0L145.2 84.0L107.2 84.0ZM364.0 0.0L390.0 0.0L376.0 100.0L350.0 100.0ZM411.5 18.0L440.0 0.0L426.0 100.0L400.0 100.0ZM364.0 0.0L390.0 0.0L426.0 100.0L400.0 100.0Z';
+const WM_VV = 'M190.0 0.0L218.0 0.0L218.9 72.0L215.0 100.0ZM268.0 0.0L240.0 0.0L218.9 72.0L215.0 100.0ZM273.0 0.0L301.0 0.0L301.9 72.0L298.0 100.0ZM351.0 0.0L323.0 0.0L301.9 72.0L298.0 100.0Z';
+
 interface WordmarkProps {
+  /** Rendered cap height in px (width follows the 4.4:1 aspect). */
+  height?: number;
   className?: string;
 }
 
-/** "Havvn" with the double-v picked out in the accent — pairs with LogoMark. */
-export const Wordmark: React.FC<WordmarkProps> = ({ className }) => (
-  <span className={className}>
-    Ha<b style={{ color: 'var(--color-accent-primary)', fontWeight: 'inherit' }}>vv</b>n
-  </span>
+/** The HAVVN lettermark — pairs with LogoMark; VV picked out in the accent. */
+export const Wordmark: React.FC<WordmarkProps> = ({ height = 17, className }) => (
+  <svg
+    className={className}
+    height={height}
+    width={Math.round(height * (WM_VB_W / WM_VB_H))}
+    viewBox={`0 0 ${WM_VB_W} ${WM_VB_H}`}
+    role="img"
+    aria-label="Havvn"
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <path fill="currentColor" d={WM_MAIN} />
+    <path fill="var(--color-accent-primary)" d={WM_VV} />
+  </svg>
 );
 
 export default LogoMark;

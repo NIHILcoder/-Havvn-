@@ -79,15 +79,10 @@ body.te-resizing .app-container { transition: none; }
 }
 
 .sidebar-title {
-  /* DIN-style technical face to match the sharp angular mark. Bahnschrift
-     ships with Windows 10+; the Segoe fallbacks keep other setups sane. */
-  font-family: 'Bahnschrift', 'Segoe UI Variable Display', 'Segoe UI', var(--font-family);
-  font-size: 21px;
-  font-weight: 700;
-  font-stretch: 87.5%; /* Bahnschrift SemiCondensed — tighter, badge-like */
-  text-transform: uppercase;
+  /* Hosts the SVG lettermark: color feeds its currentColor (HA+N). */
+  display: flex;
+  align-items: center;
   color: var(--color-text-primary);
-  letter-spacing: 0.06em;
   cursor: default;
 }
 
