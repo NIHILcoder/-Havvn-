@@ -2060,7 +2060,9 @@ const RoomVoicePanel: React.FC<{ room: RoomState; onWatchShare: (memberId: strin
                 </button>
                 <span className="room-voice-pname" style={memberOf(p.memberId)?.color ? { color: memberOf(p.memberId)?.color } : undefined}>{nameOf(p.memberId)}</span>
                 {p.muted && <Icon name="mic-off" size={12} className="room-voice-pmic" />}
-                {!self && pref.muted && <Icon name="volume-x" size={12} className="room-voice-pmic" />}
+                {/* Their deafen (hears no one) vs MY local mute of them (slash). */}
+                {p.deafened && <Icon name="volume-x" size={12} className="room-voice-pmic" />}
+                {!self && pref.muted && <Icon name="slash" size={12} className="room-voice-pmic" />}
                 {p.sharing && (
                   <button
                     className="room-voice-share-badge"

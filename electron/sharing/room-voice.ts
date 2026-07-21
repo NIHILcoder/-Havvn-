@@ -90,7 +90,7 @@ export interface VoiceAdapter {
   sendSignal(to: string, kind: SignalKind, data: unknown): void;
   /** Announce our voice presence/mute (engine signs + broadcasts to the room). `at`
    *  is a monotonic wall-clock stamp bound into the signature so peers reject replays. */
-  announce(inVoice: boolean, muted: boolean, at: number): void;
+  announce(inVoice: boolean, muted: boolean, at: number, deafened?: boolean): void;
   /** Announce our screenshare presence (signed + broadcast; own monotonic `at`). */
   announceShare(sharing: boolean, streamId: string, at: number): void;
   /** Loopback signaling for the screen-watch overlay: engine → main → renderer. */
@@ -105,6 +105,8 @@ export interface VoiceAdapter {
 export interface VoiceParticipant {
   memberId: string;
   muted: boolean;
+  /** Display-only (rides voice-state OUTSIDE the signature for ≤2.24 compat). */
+  deafened?: boolean;
   speaking: boolean;
   sharing: boolean;        // this member is sharing their screen
 }
@@ -513,7 +515,7 @@ export class VoiceSession {
   private localVad: Vad | null = null;
   private localSpeaking = false;
   private peers = new Map<string, MediaPeer>();               // memberId → media connection
-  private roster = new Map<string, { muted: boolean }>();     // OTHER members currently in voice
+  private roster = new Map<string, { muted: boolean; deafened?: boolean }>();     // OTHER members currently in voice
   private speaking = new Map<string, boolean>();              // memberId → speaking (remote)
   private volumes = new Map<string, number>();                // memberId → 0..1
   private lastStateAt = new Map<string, number>();            // memberId → last accepted voice-state timestamp (anti-replay)
@@ -686,7 +688,7 @@ export class VoiceSession {
     this.localVad = this.vadStream
       ? new Vad(this.vadStream, (vs) => this.onVad(vs), this.now, s.vadThreshold)
       : null;
-    this.a.announce(true, this.muted, this.nextAt());
+    this.a.announce(true, this.muted, this.nextAt(), this.deafened);
     for (const id of this.roster.keys()) this.ensurePeer(id); // connect to everyone already here
     this.a.onChange();
     // Settings may have changed while getUserMedia was in flight (the engine's
@@ -733,7 +735,7 @@ export class VoiceSession {
     this.pttActive = false;
     this.speaking.clear();
     this.pendingOffers.clear();
-    this.a.announce(false, false, this.nextAt());
+    this.a.announce(false, false, this.nextAt(), false);
     this.a.onChange();
   }
 
@@ -838,7 +840,7 @@ export class VoiceSession {
     if (!this.active || this.muted === muted) return;
     this.muted = muted;
     this.applyTransmit();
-    this.a.announce(true, this.muted, this.nextAt());
+    this.a.announce(true, this.muted, this.nextAt(), this.deafened);
     this.a.onChange();
   }
 
@@ -854,7 +856,7 @@ export class VoiceSession {
     } else {
       if (this.muted !== this.mutedBeforeDeafen) { this.muted = this.mutedBeforeDeafen; this.applyTransmit(); }
     }
-    this.a.announce(true, this.muted, this.nextAt());
+    this.a.announce(true, this.muted, this.nextAt(), this.deafened);
     this.a.onChange();
   }
 
@@ -1032,7 +1034,7 @@ export class VoiceSession {
    *  a monotonic wall-clock stamp bound into the signature; we accept only strictly
    *  newer state per member, so a replayed (older) voice-state can't resurrect a
    *  departed member or flip their displayed mute. */
-  onPeerState(memberId: string, inVoice: boolean, muted: boolean, at: number): void {
+  onPeerState(memberId: string, inVoice: boolean, muted: boolean, at: number, deafened = false): void {
     if (memberId === this.a.selfId) return;
     if (!Number.isFinite(at) || at <= (this.lastStateAt.get(memberId) ?? 0)) return; // stale/replayed — drop
     this.lastStateAt.delete(memberId); this.lastStateAt.set(memberId, at); // re-insert at tail (freshest)
@@ -1041,7 +1043,7 @@ export class VoiceSession {
     if (inVoice) {
       // Cap: don't let unlimited (possibly fabricated) identities grow the roster.
       if (!had && this.roster.size >= MAX_VOICE_PEERS) { this.a.log('voice roster full — ignoring ' + memberId.slice(0, 8)); return; }
-      this.roster.set(memberId, { muted });
+      this.roster.set(memberId, { muted, deafened });
       // A voice-share that beat this voice-state (unordered flood) applies now.
       const pend = this.pendingShares.get(memberId);
       if (pend) { this.pendingShares.delete(memberId); this.applyPeerShare(memberId, true, pend.streamId); }
@@ -1101,7 +1103,7 @@ export class VoiceSession {
    *  member whose LIVE badge was set by a replayed voice-share. */
   reannounce(): void {
     if (!this.active) return;
-    this.a.announce(true, this.muted, this.nextAt());
+    this.a.announce(true, this.muted, this.nextAt(), this.deafened);
     this.a.announceShare(this.isSharing(), this.shareStream?.id || '', this.nextAt());
   }
 
@@ -1162,9 +1164,9 @@ export class VoiceSession {
 
   getState(): VoiceState {
     const participants: VoiceParticipant[] = [];
-    if (this.active) participants.push({ memberId: this.a.selfId, muted: this.muted, speaking: this.localSpeaking && !this.muted, sharing: this.isSharing() });
+    if (this.active) participants.push({ memberId: this.a.selfId, muted: this.muted, deafened: this.deafened, speaking: this.localSpeaking && !this.muted, sharing: this.isSharing() });
     for (const [id, st] of this.roster) {
-      participants.push({ memberId: id, muted: st.muted, speaking: !!this.speaking.get(id) && !st.muted, sharing: this.remoteShares.has(id) });
+      participants.push({ memberId: id, muted: st.muted, deafened: !!st.deafened, speaking: !!this.speaking.get(id) && !st.muted, sharing: this.remoteShares.has(id) });
     }
     return { inVoice: this.active, muted: this.muted, deafened: this.deafened, transmitting: this.transmitting(), inputMode: this.inputMode, sharing: this.isSharing(), participants };
   }

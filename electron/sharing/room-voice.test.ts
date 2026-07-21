@@ -49,10 +49,10 @@ describe('VoiceSession roster (no media)', () => {
     let t = 0;
 
     vs.onPeerState('B', true, false, ++t);
-    expect(vs.getState().participants).toEqual([{ memberId: 'B', muted: false, speaking: false, sharing: false }]);
+    expect(vs.getState().participants).toEqual([{ memberId: 'B', muted: false, deafened: false, speaking: false, sharing: false }]);
 
     vs.onPeerState('B', true, true, ++t); // B muted their mic
-    expect(vs.getState().participants).toEqual([{ memberId: 'B', muted: true, speaking: false, sharing: false }]);
+    expect(vs.getState().participants).toEqual([{ memberId: 'B', muted: true, deafened: false, speaking: false, sharing: false }]);
 
     vs.onPeerState('B', false, false, ++t); // B left voice
     expect(vs.getState().participants).toEqual([]);
@@ -113,9 +113,9 @@ describe('VoiceSession screenshare presence (no media)', () => {
     const vs = new VoiceSession(makeAdapter());
     vs.onPeerState('B', true, false, 1);
     vs.onPeerShare('B', true, 'stream-1', 2);
-    expect(vs.getState().participants).toEqual([{ memberId: 'B', muted: false, speaking: false, sharing: true }]);
+    expect(vs.getState().participants).toEqual([{ memberId: 'B', muted: false, deafened: false, speaking: false, sharing: true }]);
     vs.onPeerShare('B', false, '', 3);
-    expect(vs.getState().participants).toEqual([{ memberId: 'B', muted: false, speaking: false, sharing: false }]);
+    expect(vs.getState().participants).toEqual([{ memberId: 'B', muted: false, deafened: false, speaking: false, sharing: false }]);
   });
 
   it('rejects a replayed (stale-or-equal `at`) voice-share', () => {
@@ -135,7 +135,7 @@ describe('VoiceSession screenshare presence (no media)', () => {
     vs.onPeerShare('B', true, 'stream-1', 5); // B is not rostered yet
     expect(vs.getState().participants).toEqual([]);
     vs.onPeerState('B', true, false, 6);      // presence lands → buffered share applies
-    expect(vs.getState().participants).toEqual([{ memberId: 'B', muted: false, speaking: false, sharing: true }]);
+    expect(vs.getState().participants).toEqual([{ memberId: 'B', muted: false, deafened: false, speaking: false, sharing: true }]);
   });
 
   it('caps the pending-share buffer against fabricated identities', () => {
@@ -173,7 +173,7 @@ describe('VoiceSession screenshare presence (no media)', () => {
     vs.onMemberGone('B');               // B leaves the room
     vs.onPeerState('B', true, false, 20); // B comes back to voice (newer)
     vs.onPeerShare('B', true, 's', 10); // REPLAY of the old share (t=10 ≤ kept floor) — must be ignored
-    expect(vs.getState().participants).toEqual([{ memberId: 'B', muted: false, speaking: false, sharing: false }]);
+    expect(vs.getState().participants).toEqual([{ memberId: 'B', muted: false, deafened: false, speaking: false, sharing: false }]);
   });
 });
 

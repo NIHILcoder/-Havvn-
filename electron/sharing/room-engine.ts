@@ -164,7 +164,7 @@ type Msg =
   // Voice presence: the sender joined/left the room's voice channel or toggled
   // mute. SIGNED so a member can't fake another's presence; relayed so late/relay-
   // only members learn who is talking.
-  | { t: 'voice-state'; memberId: string; inVoice: boolean; muted: boolean; at: number; pub: string; sig: string }
+  | { t: 'voice-state'; memberId: string; inVoice: boolean; muted: boolean; deafened?: boolean; at: number; pub: string; sig: string }
   // Voice signaling (WebRTC offer/answer/ICE) from `memberId` to `to`. SIGNED so
   // signaling can't be spoofed; relayed+targeted so it reaches a peer we can only
   // reach through another member. The media itself is DTLS-SRTP peer-to-peer.
@@ -971,9 +971,13 @@ function createVoiceSession(room: Room): VoiceSession {
       const sig = signBytes(room, voiceSignalCanonical(room.topic, { memberId: room.self.memberId, to, kind, data }));
       broadcast(room, { t: 'voice-signal', memberId: room.self.memberId, to, kind, data, pub: room.self.pub, sig });
     },
-    announce(inVoice: boolean, muted: boolean, at: number): void {
+    announce(inVoice: boolean, muted: boolean, at: number, deafened?: boolean): void {
       const sig = signBytes(room, voiceStateCanonical(room.topic, { memberId: room.self.memberId, inVoice, muted, at }));
-      broadcast(room, { t: 'voice-state', memberId: room.self.memberId, inVoice, muted, at, pub: room.self.pub, sig });
+      // `deafened` rides OUTSIDE the canonical on purpose: adding it to the
+      // signed bytes would fail verification on ≤2.24 peers (who'd then drop
+      // the whole presence). It's cosmetic — a replayed frame could at worst
+      // show a stale headphone glyph, never affect audio or authorization.
+      broadcast(room, { t: 'voice-state', memberId: room.self.memberId, inVoice, muted, deafened: deafened === true, at, pub: room.self.pub, sig });
     },
     announceShare(sharing: boolean, streamId: string, at: number): void {
       const sig = signBytes(room, voiceShareCanonical(room.topic, { memberId: room.self.memberId, sharing, streamId, at }));
@@ -1545,7 +1549,7 @@ function onMessage(room: Room, wire: Wire, raw: any): void {
       const at = Number(msg.at);
       if (!Number.isFinite(at) || at > Date.now() + 60_000) break; // reject unstamped / far-future presence
       if (!verifySignedBy(room, msg.memberId, msg.pub, msg.sig, voiceStateCanonical(room.topic, { memberId: msg.memberId, inVoice: msg.inVoice, muted: msg.muted, at }))) break;
-      room.voice.onPeerState(msg.memberId, !!msg.inVoice, !!msg.muted, at);
+      room.voice.onPeerState(msg.memberId, !!msg.inVoice, !!msg.muted, at, msg.deafened === true);
       break;
     }
     case 'voice-signal': {

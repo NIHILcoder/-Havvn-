@@ -256,6 +256,8 @@ export interface RoomState {
 export interface RoomVoiceParticipant {
   memberId: string;
   muted: boolean;
+  /** Deafened (hears no one). Display-only: unsigned wire field, cosmetic. */
+  deafened?: boolean;
   speaking: boolean;
   /** This member is sharing their screen (click to watch). */
   sharing: boolean;
