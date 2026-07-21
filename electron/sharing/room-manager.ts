@@ -286,6 +286,18 @@ export class RoomManager {
         }
       } catch { /* ignore */ }
     });
+    // Topic changed (signed gossip / owner set / hello bootstrap) — persist it.
+    ipcMain.on('room-topic', (_e, payload: { roomId: string; text?: string; at?: number }) => {
+      try {
+        if (!payload?.roomId) return;
+        const r = db.getPersistedRooms().find((x) => x.roomId === payload.roomId);
+        const at = Math.min(Number(payload.at) || 0, Date.now() + 60_000); // never persist a future clock (LWW-wedge guard)
+        const text = String(payload.text ?? '').slice(0, 300);
+        if (r && (r.topic !== text || at > (r.topicAt ?? 0))) {
+          db.savePersistedRoom({ ...r, topic: text, ...(at ? { topicAt: at } : {}) });
+        }
+      } catch { /* ignore */ }
+    });
   }
 
   private failAll(message: string): void {
@@ -415,6 +427,8 @@ export class RoomManager {
         ownerId: ownerId ?? '',
         ownerPin: ownerPin ?? '',
         nameAt: persisted?.nameAt ?? 0,
+        topicText: persisted?.topic ?? '',
+        topicAt: persisted?.topicAt ?? 0,
         mutes: db.getRoomMutes(roomId),
         history: db.getRoomHistory(roomId),
         chat: db.getRoomChats(roomId),
@@ -701,6 +715,11 @@ export class RoomManager {
   /** Owner-only room rename — the engine gates + signs it, then gossips + persists. */
   renameRoom(roomId: string, name: string): Promise<RoomState> {
     return this.folderCmd(roomId, 'rename', { name });
+  }
+
+  /** Owner-only: set (or clear with '') the room topic — signed + gossiped. */
+  async setTopic(roomId: string, text: string): Promise<RoomState> {
+    return this.folderCmd(roomId, 'setTopic', { text });
   }
 
   createFolder(roomId: string, name: string, icon: string, color: string, parentId?: string): Promise<RoomState> {

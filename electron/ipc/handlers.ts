@@ -560,6 +560,10 @@ export function setupIpcHandlers(window: BrowserWindow): void {
     async (_event, roomId: string, name: string) => roomManager.renameRoom(roomId, String(name || '').trim())
   ));
 
+  ipcMain.handle('rooms:setTopic', wrapHandler('rooms:setTopic',
+    async (_event, roomId: string, text: string) => roomManager.setTopic(roomId, String(text ?? '').trim())
+  ));
+
   ipcMain.handle('rooms:requestFile', wrapHandler('rooms:requestFile',
     async (_event, roomId: string, text: string) => roomManager.requestFile(roomId, String(text || ''))
   ));

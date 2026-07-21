@@ -653,6 +653,7 @@ const RoomsPage: React.FC<RoomsPageProps> = ({ focusRoomId, onFocusHandled, onRo
                     <span className="rooms-invite-preview-voice"><Icon name="headphones" size={12} /> {inVoice}</span>
                   )}
                 </div>
+                {room.topic && <p className="rooms-invite-preview-topic">{room.topic}</p>}
                 <div className="rooms-invite-preview-avatars">
                   {shown.map((m) => (
                     <Identicon key={m.memberId} seed={m.avatarSeed} size={28} title={m.name} />
@@ -1484,6 +1485,16 @@ const RoomDetail: React.FC<DetailProps> = ({ room, suspended, notifyMuted, onTog
   const [renaming, setRenaming] = useState(false);
   const [nameDraft, setNameDraft] = useState(room.name);
   useEffect(() => { setRenaming(false); setNameDraft(room.name); }, [room.roomId, room.name]);
+  // Owner-only topic, same signed/LWW discipline; '' clears it.
+  const [topicEditing, setTopicEditing] = useState(false);
+  const [topicDraft, setTopicDraft] = useState(room.topic || '');
+  useEffect(() => { setTopicEditing(false); setTopicDraft(room.topic || ''); }, [room.roomId, room.topic]);
+  const submitTopic = () => {
+    setTopicEditing(false);
+    const text = topicDraft.trim();
+    if (text === (room.topic || '')) return;
+    window.api.rooms.setTopic(room.roomId, text).catch((e) => toast.error(String(e instanceof Error ? e.message : e)));
+  };
   const submitRename = () => {
     const n = nameDraft.trim();
     setRenaming(false);
@@ -1683,6 +1694,28 @@ const RoomDetail: React.FC<DetailProps> = ({ room, suspended, notifyMuted, onTog
               )}
             </h2>
           )}
+          {/* Topic line: owner edits inline (dbl-click / the add button). */}
+          {topicEditing ? (
+            <input
+              className="room-topic-input" autoFocus value={topicDraft} maxLength={300}
+              placeholder={t('rooms.topicPlaceholder')}
+              onChange={(e) => setTopicDraft(e.target.value)}
+              onBlur={submitTopic}
+              onKeyDown={(e) => { if (e.key === 'Enter') submitTopic(); if (e.key === 'Escape') { setTopicEditing(false); setTopicDraft(room.topic || ''); } }}
+            />
+          ) : room.topic ? (
+            <p
+              className={`room-topic${room.canManage ? ' editable' : ''}`}
+              title={room.canManage ? t('rooms.topicHint') : undefined}
+              onDoubleClick={room.canManage ? () => setTopicEditing(true) : undefined}
+            >
+              {room.topic}
+            </p>
+          ) : room.canManage ? (
+            <button type="button" className="room-topic-add" onClick={() => setTopicEditing(true)}>
+              <Icon name="plus" size={11} /> {t('rooms.topicAdd')}
+            </button>
+          ) : null}
           <div className="room-detail-badges">
             {room.e2e && (
               <span className="room-e2e-badge" title={t('rooms.e2eHint')}>

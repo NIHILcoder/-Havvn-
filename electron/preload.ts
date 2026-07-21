@@ -635,6 +635,8 @@ const api: IpcApi = {
       ipcRenderer.invoke('rooms:removeFiles', roomId, fileIds),
     rename: (roomId: string, name: string): Promise<RoomState> =>
       ipcRenderer.invoke('rooms:rename', roomId, name),
+    setTopic: (roomId: string, text: string): Promise<RoomState> =>
+      ipcRenderer.invoke('rooms:setTopic', roomId, text),
     requestFile: (roomId: string, text: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke('rooms:requestFile', roomId, text),
     markRead: (roomId: string): Promise<{ ok: boolean }> =>

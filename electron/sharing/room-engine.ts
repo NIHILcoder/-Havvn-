@@ -67,7 +67,7 @@ const MAX_REACT_FILES = 200;      // reaction map ceiling per room (kept + hello
 // just another member. Targeted/keyed messages (rekey, kicked) are NOT flooded.
 const RELAY_TTL = 4;                 // max hops a gossip message travels
 const SEEN_GID_CAP = 4096;           // dedup memory per room (FIFO)
-const RELAYABLE = new Set(['hello', 'ping', 'add', 'have', 'del', 'chat', 'sync', 'bye', 'typing', 'react-file', 'prog', 'folder', 'assign', 'rename', 'voice-state', 'voice-signal', 'voice-share', 'profile']);
+const RELAYABLE = new Set(['hello', 'ping', 'add', 'have', 'del', 'chat', 'sync', 'bye', 'typing', 'react-file', 'prog', 'folder', 'assign', 'rename', 'topic', 'voice-state', 'voice-signal', 'voice-share', 'profile']);
 
 // ── Gossip input hardening ────────────────────────────────────────────────────
 // Decryption already proves a peer holds the room code, but a *malicious member*
@@ -103,7 +103,7 @@ type Msg =
   // whose owner runs an older build that doesn't sign.
   // `fileReacts` is a clamped summary of this member's reaction view (fileId →
   // emoji → memberIds) so late joiners converge by unioning member sets.
-  | { t: 'hello'; memberId: string; name: string; avatarSeed: string; pub?: string; have: string[]; files: RoomFile[]; tombs: string[]; tombsAt?: Record<string, number>; tombSigs?: Record<string, TombProof>; roomName: string; nameAt?: number; ownerId: string; e2e: boolean; secret: string; cfg?: E2ECfg; fileReacts?: Record<string, Record<string, string[]>>; folders?: RoomFolder[]; folderTombs?: Record<string, number>; chatAt?: number }
+  | { t: 'hello'; memberId: string; name: string; avatarSeed: string; pub?: string; have: string[]; files: RoomFile[]; tombs: string[]; tombsAt?: Record<string, number>; tombSigs?: Record<string, TombProof>; roomName: string; nameAt?: number; topicText?: string; topicAt?: number; ownerId: string; e2e: boolean; secret: string; cfg?: E2ECfg; fileReacts?: Record<string, Record<string, string[]>>; folders?: RoomFolder[]; folderTombs?: Record<string, number>; chatAt?: number }
   | { t: 'add'; file: RoomFile }
   // A folder/section was created, renamed/recolored (upsert) or deleted (del).
   // Last-writer-wins by `at`; unknown to older peers, who ignore it and keep
@@ -153,6 +153,7 @@ type Msg =
   // actually change an already-set name (the plain HELLO roomName only bootstraps
   // a placeholder). Relayed verbatim; peers verify `by === ownerId`.
   | { t: 'rename'; name: string; at: number; by: string; pub: string; sig: string }
+  | { t: 'topic'; text: string; at: number; by: string; pub: string; sig: string }
   // Liveness: the sender is composing a chat message. Renderer-triggered, never
   // persisted; receivers stamp it and let a ~4s TTL fade it out on their own.
   | { t: 'typing'; memberId: string }
@@ -193,6 +194,8 @@ interface Room {
   roomId: string;
   name: string;
   nameAt: number;                        // last-writer-wins clock for the room name (owner rename)
+  topicText: string;                     // owner-set room topic ('' = none)
+  topicAt: number;                       // last-writer-wins clock for the topic
   code: string;
   folder: string;
   key: Buffer;
@@ -497,6 +500,7 @@ function buildState(room: Room): RoomState {
   return {
     roomId: room.roomId,
     name: room.name,
+    ...(room.topicText ? { topic: room.topicText } : {}),
     code: room.code,
     // The shareable invite pins the owner (when known) so joiners can't be tricked
     // into adopting an impostor owner; the bare `code` stays the speakable fallback.
@@ -598,6 +602,7 @@ function helloMsg(room: Room): Msg {
     ...(room.tombSigs.size ? { tombSigs: tombSigsToRecord(room) } : {}), // authenticated deletions (peers verify authority before applying)
     roomName: room.name, // so a joiner (who only knows the code) learns the name
     ...(room.nameAt ? { nameAt: room.nameAt } : {}), // the name's LWW clock, so a joiner won't later reject a newer rename
+    ...(room.topicAt ? { topicText: room.topicText, topicAt: room.topicAt } : {}), // topic bootstrap (same discipline)
     ownerId: room.ownerId, // so joiners learn who the owner is
     e2e: room.e2e, // E2E mode + content key ride the encrypted gossip channel
     secret: room.secret,
@@ -907,6 +912,11 @@ function kickedCanonical(topic: string, m: { targetId: string; by: string }): Bu
 /** Bytes the owner signs to rename the room (owner-gated + last-writer-wins). */
 function renameCanonical(topic: string, m: { name: string; at: number; by: string }): Buffer {
   return Buffer.from(JSON.stringify(['rename', topic, m.name, m.at, m.by]), 'utf8');
+}
+
+/** Bytes the owner signs over a topic change (same discipline as rename). */
+function topicCanonical(topic: string, m: { text: string; at: number; by: string }): Buffer {
+  return Buffer.from(JSON.stringify(['topic', topic, m.text, m.at, m.by]), 'utf8');
 }
 /** Bytes a member signs over a voice presence announcement. `at` is bound in so a
  *  replayed (older) presence can't resurrect a departed member or flip their mute. */
@@ -1314,6 +1324,17 @@ function onMessage(room: Room, wire: Wire, raw: any): void {
         const incoming = Math.min(Number(msg.nameAt) || 0, Date.now());
         if (incoming > room.nameAt) room.nameAt = incoming;
       }
+      // Topic bootstrap mirrors the name: HELLO is unsigned, so adopt the text
+      // only when we have none yet; the clamped clock always advances so a
+      // replayed OLD signed topic can't later roll us backwards.
+      if (msg.topicAt !== undefined) {
+        const incomingTopicAt = Math.min(Number(msg.topicAt) || 0, Date.now());
+        if (room.topicAt === 0 && incomingTopicAt > 0 && typeof msg.topicText === 'string') {
+          room.topicText = String(msg.topicText).slice(0, MAX_TOPIC).trim();
+          try { ipcRenderer.send('room-topic', { roomId: room.roomId, text: room.topicText, at: incomingTopicAt }); } catch { /* ignore */ }
+        }
+        if (incomingTopicAt > room.topicAt) room.topicAt = incomingTopicAt;
+      }
       maybeAdoptOwner(room, msg.ownerId);
       maybeAdoptE2E(room, msg.e2e, msg.secret, msg.cfg);
       if (isNew) logEvent(room, { type: 'joined', actorId: msg.memberId, actorName: msg.name || '?' });
@@ -1521,6 +1542,20 @@ function onMessage(room: Room, wire: Wire, raw: any): void {
       room.name = name;
       room.nameAt = at;
       try { ipcRenderer.send('room-name', { roomId: room.roomId, name, at }); } catch { /* ignore */ }
+      pushState(room, true);
+      break;
+    }
+    case 'topic': {
+      // Same rules as rename; an EMPTY text is legal (clears the topic).
+      const at = Number(msg.at) || 0;
+      const text = String(msg.text || '').slice(0, MAX_TOPIC).trim();
+      if (at <= room.topicAt) break;                               // not newer — ignore
+      if (at > Date.now() + 60_000) break;                         // no future-dated clock wedge
+      if (!room.ownerId || msg.by !== room.ownerId) break;         // only the owner sets the topic
+      if (!verifySignedBy(room, msg.by, msg.pub, msg.sig, topicCanonical(room.topic, { text, at, by: msg.by }))) break;
+      room.topicText = text;
+      room.topicAt = at;
+      try { ipcRenderer.send('room-topic', { roomId: room.roomId, text, at }); } catch { /* ignore */ }
       pushState(room, true);
       break;
     }
@@ -2328,7 +2363,7 @@ function kickMember(room: Room, memberId: string): void {
 
 // ── Room lifecycle ───────────────────────────────────────────────────────────
 function startRoom(p: { roomId: string; name: string; code: string; folder: string;
-  self: { memberId: string; name: string; avatarSeed: string; color?: string; status?: string; avatarImg?: string; pub: string; priv: string }; useTurn: boolean; turnServers?: any[]; tombstones?: Record<string, number>; tombSigs?: Record<string, { by: string; pub: string; sig: string }>; revives?: Record<string, number>; manifest?: PersistedRoomFile[]; folders?: RoomFolder[]; folderTombs?: Record<string, number>; ownerId?: string; ownerPin?: string; nameAt?: number; mutes?: string[]; history?: RoomEvent[]; chat?: RoomChatMessage[]; reacts?: Record<string, Record<string, string[]>>; identities?: Record<string, string>; e2e?: boolean; secret?: string; e2eCfg?: E2ECfg | null; cacheDir?: string; autoFetch?: boolean; folderFetch?: Record<string, boolean>; upKbps?: number; downKbps?: number }): RoomState {
+  self: { memberId: string; name: string; avatarSeed: string; color?: string; status?: string; avatarImg?: string; pub: string; priv: string }; useTurn: boolean; turnServers?: any[]; tombstones?: Record<string, number>; tombSigs?: Record<string, { by: string; pub: string; sig: string }>; revives?: Record<string, number>; manifest?: PersistedRoomFile[]; folders?: RoomFolder[]; folderTombs?: Record<string, number>; ownerId?: string; ownerPin?: string; nameAt?: number; topicText?: string; topicAt?: number; mutes?: string[]; history?: RoomEvent[]; chat?: RoomChatMessage[]; reacts?: Record<string, Record<string, string[]>>; identities?: Record<string, string>; e2e?: boolean; secret?: string; e2eCfg?: E2ECfg | null; cacheDir?: string; autoFetch?: boolean; folderFetch?: Record<string, boolean>; upKbps?: number; downKbps?: number }): RoomState {
   // Authoritative kill-switch gate: refuse to bring up ANY room networking while
   // the VPN is down, no matter how this join raced past the manager's flag. The
   // manager clears this via 'netResume' before it re-joins on VPN restore.
@@ -2347,6 +2382,8 @@ function startRoom(p: { roomId: string; name: string; code: string; folder: stri
     roomId: p.roomId,
     name: p.name,
     nameAt: Number(p.nameAt) || 0,
+    topicText: String(p.topicText || '').slice(0, 300),
+    topicAt: Number(p.topicAt) || 0,
     code: p.code,
     folder: p.folder,
     key,
@@ -2840,6 +2877,24 @@ function renameRoom(roomId: string, rawName: string): RoomState {
   return buildState(room);
 }
 
+/** Owner-only: set (or clear, with '') the room topic — signed, LWW by `at`. */
+const MAX_TOPIC = 300;
+function setRoomTopic(roomId: string, rawText: string): RoomState {
+  const room = rooms.get(roomId);
+  if (!room) throw new Error('Room not active');
+  if (room.ownerId !== room.self.memberId) throw new Error('Only the room owner can set the topic');
+  const text = String(rawText || '').slice(0, MAX_TOPIC).trim();
+  const at = Math.max(Date.now(), room.topicAt + 1); // strictly newer, never in the past
+  const by = room.self.memberId;
+  const sig = signBytes(room, topicCanonical(room.topic, { text, at, by }));
+  room.topicText = text;
+  room.topicAt = at;
+  try { ipcRenderer.send('room-topic', { roomId: room.roomId, text, at }); } catch { /* ignore */ }
+  broadcast(room, { t: 'topic', text, at, by, pub: room.self.pub, sig });
+  pushState(room, true);
+  return buildState(room);
+}
+
 /** Apply a profile change (name/avatar/color/status/image) to every active room
  *  and tell peers: the legacy ping keeps ≤2.22 clients current on name/seed,
  *  and the signed 'profile' broadcast carries the rich fields. */
@@ -2867,6 +2922,7 @@ ipcRenderer.on('room-cmd', async (_e, msg: any) => {
     else if (type === 'createFolder') data = createFolder(msg.roomId, msg.name, msg.icon, msg.color, msg.parentId ? String(msg.parentId) : undefined);
     else if (type === 'updateFolder') data = updateFolder(msg.roomId, msg.folderId, msg.patch || {});
     else if (type === 'rename') data = renameRoom(msg.roomId, msg.name);
+    else if (type === 'setTopic') data = setRoomTopic(msg.roomId, msg.text);
     else if (type === 'deleteFolder') data = deleteFolder(msg.roomId, msg.folderId);
     else if (type === 'assignFile') data = assignFile(msg.roomId, msg.fileId, msg.folderId ?? null);
     else if (type === 'leave') { leaveRoom(msg.roomId); data = { ok: true }; }

@@ -222,6 +222,8 @@ export interface RoomTransfer {
 export interface RoomState {
   roomId: string;        // local uuid
   name: string;
+  /** Owner-set room topic (signed, LWW; absent = none). */
+  topic?: string;
   code: string;          // the secret invite code (speakable; unpinned = trust-on-first-use owner)
   invite: string;        // shareable invite that also PINS the owner ("<code>~<ownerId>") when known — prefer this for sharing
   folder: string;        // local shared folder path
@@ -1131,6 +1133,7 @@ export interface IpcApi {
     removeFile: (roomId: string, fileId: string) => Promise<{ ok: boolean }>;
     removeFiles: (roomId: string, fileIds: string[]) => Promise<{ ok: boolean }>;
     rename: (roomId: string, name: string) => Promise<RoomState>;
+    setTopic: (roomId: string, text: string) => Promise<RoomState>;
     requestFile: (roomId: string, text: string) => Promise<{ ok: boolean }>;
     markRead: (roomId: string) => Promise<{ ok: boolean }>;
     setActiveRoom: (roomId: string | null) => Promise<{ ok: boolean }>;

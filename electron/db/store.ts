@@ -108,6 +108,8 @@ export interface PersistedRoom {
   ownerId?: string;  // memberId of the room owner (creator); learned via gossip for joiners
   ownerPin?: string; // owner memberId pinned from the invite — only this identity may be adopted as owner (absent = trust-on-first-use)
   nameAt?: number;   // last-writer-wins clock for the room name (owner rename); absent/0 = never renamed
+  topic?: string;    // owner-set room topic ('' / absent = none)
+  topicAt?: number;  // last-writer-wins clock for the topic
   e2e?: boolean;     // end-to-end encryption mode (set at creation; learned via gossip)
   secret?: string;   // E2E content key (32-byte hex); distributed over encrypted gossip
   // Owner-signed E2E config blob (Ed25519 over topic+ownerId+e2e+secret). Kept so
