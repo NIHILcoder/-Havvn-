@@ -316,7 +316,6 @@ export const Identicon: React.FC<IdenticonProps> = ({ seed, size = 40, online, r
     }
   }, [style, base, size, fg]);
 
-  const radius = Math.round(size * 0.28);
   const dot = Math.max(7, Math.round(size * 0.22));
 
   return (
@@ -332,7 +331,8 @@ export const Identicon: React.FC<IdenticonProps> = ({ seed, size = 40, online, r
             <stop offset="100%" stopColor={pal.c2} />
           </linearGradient>
           <clipPath id={clipId}>
-            <rect width={size} height={size} rx={radius} ry={radius} />
+            {/* Square base — the HUD chamfer is applied by CSS on the svg. */}
+            <rect width={size} height={size} rx={0} ry={0} />
           </clipPath>
         </defs>
         <g clipPath={`url(#${clipId})`}>

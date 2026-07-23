@@ -691,7 +691,9 @@
 .room-folder-list { display: flex; flex-direction: column; gap: var(--space-3); }
 .room-folder-section {
   border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-md);
+  border-left: 2px solid color-mix(in srgb, var(--color-accent-primary) 55%, transparent);
+  border-radius: 0;
+  background: color-mix(in srgb, var(--color-text-primary) 2.5%, transparent);
   padding: 6px;
   transition: border-color var(--transition-fast), background var(--transition-fast);
 }
@@ -712,8 +714,8 @@
   margin: 2px 0 6px 14px;
   padding: 4px;
   border: 1px solid var(--color-border-subtle);
-  border-left: 2px solid var(--color-border-default);
-  border-radius: var(--radius-sm);
+  border-left: 2px solid color-mix(in srgb, var(--color-accent-primary) 35%, transparent);
+  border-radius: 0;
   transition: border-color var(--transition-fast), background var(--transition-fast);
 }
 .room-subfolder.dragover {
@@ -731,9 +733,9 @@
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .room-folder-count {
-  flex-shrink: 0; font-variant-numeric: tabular-nums;
+  flex-shrink: 0; font-family: var(--font-family-mono); font-variant-numeric: tabular-nums;
   font-size: 0.68rem; color: var(--color-text-tertiary);
-  background: var(--color-bg-secondary); border-radius: var(--radius-full);
+  background: var(--color-bg-secondary); border-radius: 0; clip-path: var(--clip-cut-sm);
   padding: 1px 7px; min-width: 18px; text-align: center;
 }
 .room-folder-acts { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; }
@@ -781,7 +783,8 @@
   width: 24px;
   height: 24px;
   margin-right: 6px;
-  border-radius: var(--radius-sm, 4px);
+  border-radius: 0;
+  clip-path: var(--clip-cut-sm);
   object-fit: cover;
   vertical-align: middle;
   background: var(--color-bg-tertiary);
@@ -1065,8 +1068,8 @@
   padding: 6px 10px;
   background: var(--color-bg-tertiary);
   border: 1px solid var(--color-border-subtle);
-  border-radius: 10px;
-  border-bottom-left-radius: 4px;
+  border-radius: 0;
+  clip-path: var(--clip-cut-sm);
   font-size: 13px;
   line-height: 1.45;
   color: var(--color-text-primary);
@@ -1077,8 +1080,6 @@
   background: var(--color-accent-primary);
   color: var(--color-bg-primary);
   border-color: transparent;
-  border-radius: 10px;
-  border-bottom-right-radius: 4px;
 }
 .room-chat-time { font-size: 10px; color: var(--color-text-tertiary); padding: 0 var(--space-1); font-variant-numeric: tabular-nums; }
 
@@ -1726,8 +1727,10 @@
 
 /* ── Identicon ─────────────────────────────────────────────────────────── */
 .identicon { position: relative; display: inline-flex; flex-shrink: 0; line-height: 0; }
-.identicon svg { display: block; border-radius: inherit; }
-.avatar-img { display: block; object-fit: cover; background: var(--color-bg-tertiary); }
+/* Avatars take the HUD chamfer (on the image/svg only, so the status dot — a
+   sibling — is never clipped). Matches the chamfered chips and tiles. */
+.identicon > svg, .avatar-img { display: block; clip-path: var(--clip-cut-sm); border-radius: 0; }
+.avatar-img { object-fit: cover; background: var(--color-bg-tertiary); }
 /* Borderless button wrapper that makes an avatar clickable (profile card). */
 .room-member-open {
   display: inline-flex;
@@ -1736,10 +1739,10 @@
   border: none;
   background: transparent;
   cursor: pointer;
-  border-radius: 28%;
+  border-radius: 0;
 }
 .room-member-open:hover { filter: brightness(1.12); }
-.identicon-ring { box-shadow: 0 0 0 2px var(--color-bg-primary), 0 0 0 4px var(--color-accent); border-radius: 28%; }
+.identicon-ring { box-shadow: 0 0 0 2px var(--color-bg-primary), 0 0 0 4px var(--color-accent); border-radius: 0; }
 .identicon-status {
   position: absolute;
   right: -2px;

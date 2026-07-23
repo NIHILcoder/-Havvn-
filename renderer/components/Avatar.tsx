@@ -41,7 +41,7 @@ export const Avatar: React.FC<AvatarProps> = ({ seed, img, size = 40, online, ri
         height={size}
         alt={title || ''}
         draggable={false}
-        style={{ borderRadius: Math.round(size * 0.28) }}
+        style={{ borderRadius: 0 }}
       />
       {online !== undefined && (
         <span className={`identicon-status ${online ? 'online' : 'offline'}`} style={{ width: dot, height: dot }} aria-hidden="true" />
