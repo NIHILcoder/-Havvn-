@@ -369,7 +369,26 @@
   min-width: 0;
   min-height: 0;
 }
-.room-col-rail { overflow: hidden; }   /* voice pinned; member list scrolls */
+/* The people+voice rail is one framed module, matching the files/chat zones
+   (which frame via their inner .room-section). Same square border + brackets. */
+.room-col-rail {
+  overflow: hidden;   /* voice pinned; member list scrolls */
+  position: relative;
+  border: 1px solid var(--color-border-default);
+  background: var(--color-bg-secondary);
+  padding: var(--space-4);
+}
+.room-col-rail::before,
+.room-col-rail::after {
+  content: "";
+  position: absolute;
+  width: 10px; height: 10px;
+  border-color: color-mix(in srgb, var(--color-accent-primary) 55%, transparent);
+  pointer-events: none;
+  z-index: 2;
+}
+.room-col-rail::before { top: 5px; left: 5px; border-top: 1.5px solid; border-left: 1.5px solid; }
+.room-col-rail::after { bottom: 5px; right: 5px; border-bottom: 1.5px solid; border-right: 1.5px solid; }
 .room-col-stage { overflow: hidden; }  /* files list / player scroll internally */
 
 /* Draggable region borders — a 6px grab track with a centered hairline. */
@@ -416,7 +435,7 @@
 
 /* Voice card sits at the top of the rail as a rounded card (the panel's base
    styles are rail-native now — actions live on their own row, nothing wraps). */
-.room-col-rail .room-voice { padding: var(--space-2); border-radius: var(--radius-md); }
+.room-col-rail .room-voice { padding: 0 0 var(--space-3); border-radius: 0; }
 /* The member "have" count reads cryptic — give it a helper cursor (title attr). */
 .room-member-have { cursor: help; }
 
@@ -691,9 +710,7 @@
 .room-folder-list { display: flex; flex-direction: column; gap: var(--space-3); }
 .room-folder-section {
   border: 1px solid var(--color-border-subtle);
-  border-left: 2px solid color-mix(in srgb, var(--color-accent-primary) 55%, transparent);
   border-radius: 0;
-  background: color-mix(in srgb, var(--color-text-primary) 2.5%, transparent);
   padding: 6px;
   transition: border-color var(--transition-fast), background var(--transition-fast);
 }
@@ -714,7 +731,6 @@
   margin: 2px 0 6px 14px;
   padding: 4px;
   border: 1px solid var(--color-border-subtle);
-  border-left: 2px solid color-mix(in srgb, var(--color-accent-primary) 35%, transparent);
   border-radius: 0;
   transition: border-color var(--transition-fast), background var(--transition-fast);
 }
@@ -2270,9 +2286,10 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-border-subtle);
-  background: var(--color-bg-secondary);
+  padding: 0 0 var(--space-3);
+  border: none;
+  border-bottom: 1px solid var(--color-border-subtle); /* hairline splits voice from people within the framed rail */
+  background: transparent;
 }
 .room-voice-head {
   display: flex;

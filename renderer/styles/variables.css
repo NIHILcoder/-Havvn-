@@ -131,10 +131,11 @@
   /* Russian: Chakra Petch has no Cyrillic, so a RU heading would mix its Cyrillic
      (Exo 2) with any Latin/digits (Chakra Petch). Put Exo 2 first for RU so the
      whole string renders in one squared face. (:root:lang(ru) rule is below.) */
-  /* Signature 8px corner chamfer (from the Blaze site) — applied sparingly to
-     primary buttons, pills and the active-nav marker, never dense tables. */
-  --clip-cut: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
-  --clip-cut-sm: polygon(0 0, calc(100% - 5px) 0, 100% 5px, 100% 100%, 5px 100%, 0 calc(100% - 5px));
+  /* Corner treatment. The whole app is STRICT SQUARE — these are `none` so every
+     `clip-path: var(--clip-cut*)` collapses to no clip (paired with border-radius:0
+     everywhere). Kept as tokens so the corner language is a single switch. */
+  --clip-cut: none;
+  --clip-cut-sm: none;
 
   --font-size-xs: 11px;
   --font-size-sm: 13px;
@@ -154,12 +155,16 @@
   --line-height-normal: 1.5;
   --line-height-relaxed: 1.75;
 
-  /* === Border Radius — a notch sharper than 2.0 === */
-  --radius-sm: 5px;
-  --radius-md: 7px;
-  --radius-lg: 10px;
-  --radius-xl: 14px;
-  --radius-2xl: 18px;
+  /* === Border Radius — the app is STRICT SQUARE. Every card/panel/button/input
+     radius collapses to 0 (kept as tokens so it's a single switch, and so the
+     scale-ordering stays legible). --radius-full is the ONE exception: it keeps
+     round status dots, level meters and progress tracks circular — square panels
+     with round indicators is the tactical-HUD idiom, not an inconsistency. === */
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --radius-xl: 0;
+  --radius-2xl: 0;
   --radius-full: 9999px;
 
   /* === Shadows — neutral depth; "glow" is now a hairline ember ring === */
