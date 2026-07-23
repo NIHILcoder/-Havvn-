@@ -23,11 +23,12 @@ interface ProfileCardProps {
   onClose: () => void;
   onMuteToggle?: () => void;
   onKick?: () => void;
+  onTransfer?: () => void;
 }
 
 const CARD_W = 240;
 
-export const ProfileCard: React.FC<ProfileCardProps> = ({ member, totalFiles, anchor, canManage, onClose, onMuteToggle, onKick }) => {
+export const ProfileCard: React.FC<ProfileCardProps> = ({ member, totalFiles, anchor, canManage, onClose, onMuteToggle, onKick, onTransfer }) => {
   const { t } = useTranslation();
   const doc = anchor.ownerDocument;
   const win = doc.defaultView ?? window;
@@ -81,11 +82,16 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({ member, totalFiles, an
         </span>
         {member.muted && <span className="profile-card-mutedtag">{t('rooms.muted')}</span>}
       </div>
-      {!member.isSelf && (onMuteToggle || onKick) && (
+      {!member.isSelf && (onMuteToggle || onKick || onTransfer) && (
         <div className="profile-card-acts">
           {onMuteToggle && (
             <button type="button" className="profile-card-act" onClick={() => { onMuteToggle(); onClose(); }}>
               <Icon name={member.muted ? 'eye' : 'eye-off'} size={12} /> {member.muted ? t('rooms.unmute') : t('rooms.mute')}
+            </button>
+          )}
+          {onTransfer && canManage && member.role !== 'owner' && member.online && (
+            <button type="button" className="profile-card-act danger" onClick={() => { onTransfer(); onClose(); }}>
+              <Icon name="star" size={12} /> {t('rooms.transferOwner')}
             </button>
           )}
           {onKick && canManage && member.role !== 'owner' && (

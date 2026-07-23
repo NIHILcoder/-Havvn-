@@ -8,6 +8,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { createPortal } from 'react-dom';
 import Hls from 'hls.js';
 import toast from 'react-hot-toast';
@@ -23,12 +24,15 @@ import { groupFilesByHierarchy, wantAutoFetch, FOLDER_ICONS } from '../../shared
 import { sanitizeProfileColor, sanitizeProfileStatus, PROFILE_COLOR_RE } from '../../shared/profile';
 import { parseChatSegments, isCopyworthy, splitLinks } from '../../shared/chat-format';
 import { CHAT_REACT_EMOJIS } from '../../shared/reactions';
-import { classifyMediaKind } from '../../shared/media';
+import { classifyMediaKind, isDirectlyPlayable, isImage } from '../../shared/media';
 import { formatBytes, formatSpeed } from '../utils/format-helpers';
 import { useTranslation } from '../utils/i18nContext';
 import './RoomsPage.css';
 
 const isPlayable = (name: string): boolean => classifyMediaKind(name) !== 'other';
+// Rooms file-list kind: images are a display category (thumbnail/lightbox) layered
+// over the streaming-only classifyMediaKind, which never returns 'image'.
+const fileTypeOf = (name: string): 'video' | 'audio' | 'image' | 'other' => isImage(name) ? 'image' : classifyMediaKind(name);
 
 /** The compact per-file reaction set (mirrors the engine's allow-list). */
 const FILE_REACT_EMOJIS = ['🔥', '👍', '❤️', '😂'] as const;
@@ -64,6 +68,7 @@ function eventText(t: RoomsTFn, ev: import('../../shared/types').RoomEvent): str
     case 'file-removed': return `${t('rooms.ev.fileRemoved')} ${ev.fileName || ''}`.trim();
     case 'kicked': return `${t('rooms.ev.kicked')} ${ev.targetName || ''}`.trim();
     case 'rekeyed': return t('rooms.ev.rekeyed');
+    case 'ownership-transferred': return `${t('rooms.ev.ownerTransferred')} ${ev.targetName || ''}`.trim();
     default: return ev.type;
   }
 }
@@ -803,7 +808,7 @@ const RoomFilesPanel: React.FC<FilesPanelProps> = ({ room, onAddFiles, onDropFil
     const d: RoomFilesSortDir = sortDir === 'asc' ? 'desc' : 'asc';
     setSortDirRaw(d); saveRoomSortDir(room.roomId, d);
   };
-  const [typeFilter, setTypeFilter] = useState<'all' | 'video' | 'audio' | 'other'>('all');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'video' | 'audio' | 'image' | 'other'>('all');
   const [onlyMine, setOnlyMine] = useState(false);
   const [onlyMissing, setOnlyMissing] = useState(false);
   const [selecting, setSelecting] = useState(false);
@@ -847,7 +852,7 @@ const RoomFilesPanel: React.FC<FilesPanelProps> = ({ room, onAddFiles, onDropFil
     const q = fileQuery.trim().toLowerCase();
     let arr = room.files;
     if (q) arr = arr.filter((f) => f.name.toLowerCase().includes(q));
-    if (typeFilter !== 'all') arr = arr.filter((f) => classifyMediaKind(f.name) === typeFilter);
+    if (typeFilter !== 'all') arr = arr.filter((f) => fileTypeOf(f.name) === typeFilter);
     if (onlyMine) arr = arr.filter((f) => f.addedBy === selfId);
     if (onlyMissing) arr = arr.filter((f) => !room.transfers?.[f.fileId]?.haveLocally);
     // Ascending comparators; the direction toggle flips the whole order.
@@ -923,6 +928,24 @@ const RoomFilesPanel: React.FC<FilesPanelProps> = ({ room, onAddFiles, onDropFil
     return parent && parent.id !== f.id ? `${parent.name} / ${f.name}` : f.name;
   }, [folders]);
 
+  // Virtualize the FLAT (no-folders) file list. A big room re-renders its whole
+  // list on every state push (presence pings, progress, reactions) and on every
+  // filter/search/sort change; rendering all rows costs ~1ms each (measured: 600
+  // rows ≈ 600ms per re-render, ~64 DOM nodes/row). Windowing mounts only the
+  // rows in view. The grouped/sectioned view keeps its normal rendering — each
+  // section is naturally bounded, and its collapse/drag-drop structure doesn't
+  // map onto a single flat window. Rows measure themselves (heights vary:
+  // downloading adds a progress bar, the action cluster can wrap).
+  const filesScrollRef = useRef<HTMLDivElement>(null);
+  const flatList = !hasFolders && visibleFiles.length > 0;
+  const fileVirtualizer = useVirtualizer({
+    count: flatList ? visibleFiles.length : 0,
+    getScrollElement: () => filesScrollRef.current,
+    estimateSize: () => 72, // seeds the first paint + scrollbar; measureElement corrects each row's real height
+    getItemKey: (i) => visibleFiles[i]?.fileId ?? i,
+    overscan: 10,
+  });
+
   // Drop targets on a section: an internal file-row drag reassigns the file(s)
   // there (folderId null = Uncategorized); an OS-file drag shares straight into
   // that section. An OS drop anywhere else still falls through to the room
@@ -977,16 +1000,15 @@ const RoomFilesPanel: React.FC<FilesPanelProps> = ({ room, onAddFiles, onDropFil
       .catch((e) => toast.error(String(e instanceof Error ? e.message : e)));
   };
 
-  const renderFolderFiles = (files: RoomFile[]) => (
-    files.map((f) => (
-      <RoomFileRow
-        key={f.fileId} file={f} room={room} onWatch={onWatch} onWatchJoin={onWatchJoin}
-        watchCount={watchCounts[f.fileId] || 0} onAssignFile={onAssignFile}
-        selecting={selecting} selected={selected.has(f.fileId)} onToggleSelect={toggleSelect}
-        getDragIds={getDragIds} viewPrefs={viewPrefs} highlightQuery={fileQuery}
-      />
-    ))
+  const renderFileRow = (f: RoomFile) => (
+    <RoomFileRow
+      key={f.fileId} file={f} room={room} onWatch={onWatch} onWatchJoin={onWatchJoin}
+      watchCount={watchCounts[f.fileId] || 0} onAssignFile={onAssignFile}
+      selecting={selecting} selected={selected.has(f.fileId)} onToggleSelect={toggleSelect}
+      getDragIds={getDragIds} viewPrefs={viewPrefs} highlightQuery={fileQuery}
+    />
   );
+  const renderFolderFiles = (files: RoomFile[]) => files.map(renderFileRow);
 
   // One header for both levels (sections and their subfolders): collapse toggle,
   // fetch-cycle with the EFFECTIVE inherited state in the tooltip, add-into,
@@ -1170,7 +1192,7 @@ const RoomFilesPanel: React.FC<FilesPanelProps> = ({ room, onAddFiles, onDropFil
             <Icon name={sortDir === 'asc' ? 'arrow-up' : 'arrow-down'} size={13} />
           </button>
           <span className="room-file-chips">
-            {([['all', t('rooms.filter.all')], ['video', t('rooms.filter.video')], ['audio', t('rooms.filter.audio')], ['other', t('rooms.filter.other')]] as const).map(([k, label]) => (
+            {([['all', t('rooms.filter.all')], ['video', t('rooms.filter.video')], ['audio', t('rooms.filter.audio')], ['image', t('rooms.filter.image')], ['other', t('rooms.filter.other')]] as const).map(([k, label]) => (
               <button
                 key={k}
                 type="button"
@@ -1257,7 +1279,7 @@ const RoomFilesPanel: React.FC<FilesPanelProps> = ({ room, onAddFiles, onDropFil
         />
       )}
 
-      <div className="room-files-scroll">
+      <div className="room-files-scroll" ref={filesScrollRef}>
       {!hasFolders ? (
         room.files.length === 0 ? (
           // Empty-room onboarding: the three steps that bring a room to life.
@@ -1288,7 +1310,19 @@ const RoomFilesPanel: React.FC<FilesPanelProps> = ({ room, onAddFiles, onDropFil
         ) : visibleFiles.length === 0 ? (
           <div className="room-files-empty">{t('rooms.fileSearchEmpty')}</div>
         ) : (
-          <div className="room-files">{renderFolderFiles(visibleFiles)}</div>
+          <div className="room-files room-files-virtual" style={{ height: fileVirtualizer.getTotalSize(), position: 'relative' }}>
+            {fileVirtualizer.getVirtualItems().map((vItem) => (
+              <div
+                key={vItem.key}
+                data-index={vItem.index}
+                ref={fileVirtualizer.measureElement}
+                className="room-files-vrow"
+                style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${vItem.start}px)` }}
+              >
+                {renderFileRow(visibleFiles[vItem.index])}
+              </div>
+            ))}
+          </div>
         )
       ) : grouped.length === 0 ? (
         <div className="room-files-empty">{t('rooms.fileSearchEmpty')}</div>
@@ -2110,6 +2144,17 @@ const RoomVoicePanel: React.FC<{ room: RoomState; onWatchShare: (memberId: strin
                   title={self ? nameOf(p.memberId) : t('rooms.voice.volume')}
                 >
                   <Avatar seed={seedOf(p.memberId)} img={memberOf(p.memberId)?.avatarImg} size={30} />
+                  {/* OUR link quality to this peer (never for self): a colored dot
+                      on the avatar, pulsing red while the link is re-establishing. */}
+                  {!self && p.quality && (
+                    <span
+                      className={`room-voice-quality q-${p.quality}${p.reconnecting ? ' reconnecting' : ''}`}
+                      title={p.reconnecting ? t('rooms.voice.reconnecting')
+                        : p.quality === 'poor' ? t('rooms.voice.qualityPoor')
+                        : p.quality === 'fair' ? t('rooms.voice.qualityFair')
+                        : t('rooms.voice.qualityGood')}
+                    />
+                  )}
                 </button>
                 <span className="room-voice-pname" style={memberOf(p.memberId)?.color ? { color: memberOf(p.memberId)?.color } : undefined}>{nameOf(p.memberId)}</span>
                 {/* One inline glyph row (a bare list would stack vertically in
@@ -2193,6 +2238,16 @@ const RoomMembersList: React.FC<{ room: RoomState }> = ({ room }) => {
         .catch((e) => toast.error(String(e instanceof Error ? e.message : e)));
     }
   };
+  const transferOwner = (m: RoomMember) => async () => {
+    // Be honest about compat too: pre-transfer clients never learn 'transfer' —
+    // for them the old owner stays owner and the new owner's commands are dropped.
+    const message = `${t('rooms.transferConfirm')} ${t('rooms.transferConfirmCompat')}`;
+    if (await confirm({ message, danger: true })) {
+      window.api.rooms.transferOwner(room.roomId, m.memberId)
+        .then(() => toast.success(t('rooms.transferred')))
+        .catch((e) => toast.error(String(e instanceof Error ? e.message : e)));
+    }
+  };
   return (
     <div className="room-members">
       {cardMember && cardFor && (
@@ -2204,6 +2259,7 @@ const RoomMembersList: React.FC<{ room: RoomState }> = ({ room }) => {
           onClose={() => setCardFor(null)}
           onMuteToggle={muteToggle(cardMember)}
           onKick={kick(cardMember)}
+          onTransfer={transferOwner(cardMember)}
         />
       )}
       {room.members.map((m) => (
@@ -2797,6 +2853,28 @@ const highlightName = (name: string, query: string): React.ReactNode => {
   );
 };
 
+// Full-screen image viewer (double-click an image row / click its thumbnail).
+// A bare portal overlay — not the Modal card — so the image is full-bleed;
+// backdrop click, the × button, or Escape all close it.
+const ImageLightbox: React.FC<{ url: string; name: string; onClose: () => void }> = ({ url, name, onClose }) => {
+  const { t } = useTranslation();
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return createPortal(
+    <div className="room-lightbox" role="dialog" aria-label={name} onClick={onClose}>
+      <button type="button" className="room-lightbox-close" title={t('common.close')} onClick={onClose}>
+        <Icon name="x" size={22} />
+      </button>
+      <img className="room-lightbox-img" src={url} alt={name} onClick={(e) => e.stopPropagation()} />
+      <div className="room-lightbox-name" onClick={(e) => e.stopPropagation()}>{name}</div>
+    </div>,
+    document.body,
+  );
+};
+
 const RoomFileRow: React.FC<{ file: RoomFile; room: RoomState; onWatch: (file: RoomFile) => void; onWatchJoin?: (file: RoomFile) => void; watchCount?: number; onAssignFile: (fileId: string, folderId: string | null) => void; selecting?: boolean; selected?: boolean; onToggleSelect?: (fileId: string) => void; getDragIds?: (fileId: string) => string[]; viewPrefs?: RoomFilesPrefs; highlightQuery?: string }> = ({ file, room, onWatch, onWatchJoin, watchCount = 0, onAssignFile, selecting = false, selected = false, onToggleSelect, getDragIds, viewPrefs, highlightQuery }) => {
   const { t } = useTranslation();
   const { confirm } = useConfirm();
@@ -2807,9 +2885,27 @@ const RoomFileRow: React.FC<{ file: RoomFile; room: RoomState; onWatch: (file: R
   const haveCount = membersWithFile(room, file.fileId);
   const downloading = tr && tr.status === 'downloading';
   const haveLocally = tr?.haveLocally;
-  const canWatch = haveLocally && isPlayable(file.name);
   // Manual mode: the file is listed but nothing has fetched it yet.
   const awaitingFetch = !room.autoFetch && !haveLocally && !downloading;
+  // Watch-while-downloading: a non-E2E, browser-native file can play live off
+  // the torrent before it finishes (or auto-start its fetch on the first play).
+  // E2E rooms have no plaintext until decrypt; transcode-only formats need the
+  // whole file — both stay gated to `haveLocally` below.
+  const canStream = !haveLocally && !room.e2e && isDirectlyPlayable(file.name) && (downloading || awaitingFetch);
+  const canWatch = (haveLocally && isPlayable(file.name)) || canStream;
+  // Image preview: once downloaded, fetch a loopback URL (cast server) for the
+  // row thumbnail + a full-size lightbox. A failed load falls back to the icon.
+  const isImg = isImage(file.name);
+  const [imgUrl, setImgUrl] = useState<string | null>(null);
+  const [lightbox, setLightbox] = useState(false);
+  useEffect(() => {
+    if (!isImg || !haveLocally) { setImgUrl(null); return; }
+    let alive = true;
+    window.api.rooms.imageUrl(room.roomId, file.fileId)
+      .then((r) => { if (alive) setImgUrl(r.url); })
+      .catch(() => { /* no thumbnail — the icon stays */ });
+    return () => { alive = false; };
+  }, [isImg, haveLocally, room.roomId, file.fileId]);
 
   // Reactions: fileId → emoji → memberIds from the engine; a click toggles ours.
   const selfId = room.members.find((m) => m.isSelf)?.memberId;
@@ -2847,6 +2943,7 @@ const RoomFileRow: React.FC<{ file: RoomFile; room: RoomState; onWatch: (file: R
         // hover action must not also open/watch the file.
         if ((e.target as HTMLElement).closest('button, input, a')) return;
         if (canWatch) onWatch(file);
+        else if (isImg && haveLocally) setLightbox(true);
         else if (haveLocally) window.api.rooms.openFile(room.roomId, file.fileId);
         else if (awaitingFetch) window.api.rooms.fetchFile(room.roomId, file.fileId).catch((err) => toast.error(String(err instanceof Error ? err.message : err)));
       }}
@@ -2863,12 +2960,25 @@ const RoomFileRow: React.FC<{ file: RoomFile; room: RoomState; onWatch: (file: R
       </div>
       <div className="room-file-main">
         <div className="room-file-name" title={file.name}>
-          {viewPrefs?.typeIcons !== false && (() => {
-            const kind = classifyMediaKind(file.name);
-            const archive = /\.(zip|7z|rar|tar|gz)$/i.test(file.name);
-            const icon: IconName = kind === 'video' ? 'film' : kind === 'audio' ? 'music' : archive ? 'archive' : 'file';
-            return <Icon name={icon} size={13} className={`room-file-kind kind-${kind}`} />;
-          })()}
+          {viewPrefs?.typeIcons !== false && (
+            isImg && imgUrl ? (
+              <img
+                className="room-file-thumb"
+                src={imgUrl}
+                alt=""
+                loading="lazy"
+                decoding="async"
+                title={t('rooms.viewImage')}
+                onError={() => setImgUrl(null)}
+                onClick={(e) => { e.stopPropagation(); setLightbox(true); }}
+              />
+            ) : (() => {
+              const kind = classifyMediaKind(file.name);
+              const archive = /\.(zip|7z|rar|tar|gz)$/i.test(file.name);
+              const icon: IconName = kind === 'video' ? 'film' : kind === 'audio' ? 'music' : isImg ? 'image' : archive ? 'archive' : 'file';
+              return <Icon name={icon} size={13} className={`room-file-kind kind-${isImg ? 'image' : kind}`} />;
+            })()
+          )}
           {highlightQuery ? highlightName(file.name, highlightQuery) : file.name}
         </div>
         <div className="room-file-sub">
@@ -3053,6 +3163,7 @@ const RoomFileRow: React.FC<{ file: RoomFile; room: RoomState; onWatch: (file: R
           <span className="room-status queued" title={t('rooms.queued')}><Icon name="download" size={16} /></span>
         )}
       </div>
+      {lightbox && imgUrl && <ImageLightbox url={imgUrl} name={file.name} onClose={() => setLightbox(false)} />}
     </div>
   );
 };
@@ -3360,6 +3471,12 @@ const RoomPlayer: React.FC<{ room: RoomState; roomId: string; file: RoomFile; se
       setCover(info.coverUrl || null);
       const v = videoRef.current;
       if (!v) return;
+      // Watch-while-downloading is served no-cors by WebTorrent's own stream
+      // server (it sends no ACAO); the cast server used for completed files DOES
+      // send ACAO, so keep crossOrigin there for the WebAudio spectrum tap. Set
+      // before src so the load uses the right mode.
+      if (info.streaming) v.removeAttribute('crossorigin');
+      else v.crossOrigin = 'anonymous';
       if (info.direct) {
         v.src = info.directUrl;
       } else if (Hls.isSupported()) {

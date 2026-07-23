@@ -525,6 +525,10 @@ export function setupIpcHandlers(window: BrowserWindow): void {
     async (_event, roomId: string, fileId: string) => roomManager.watchFile(roomId, fileId)
   ));
 
+  ipcMain.handle('rooms:imageUrl', wrapHandler('rooms:imageUrl',
+    async (_event, roomId: string, fileId: string) => roomManager.imageUrl(roomId, fileId)
+  ));
+
   ipcMain.handle('rooms:subtitleList', wrapHandler('rooms:subtitleList',
     async (_event, roomId: string, fileId: string) => roomManager.subtitleList(roomId, fileId)
   ));
@@ -681,6 +685,10 @@ export function setupIpcHandlers(window: BrowserWindow): void {
 
   ipcMain.handle('rooms:kick', wrapHandler('rooms:kick',
     async (_event, roomId: string, memberId: string) => roomManager.kick(roomId, memberId)
+  ));
+
+  ipcMain.handle('rooms:transferOwner', wrapHandler('rooms:transferOwner',
+    async (_event, roomId: string, memberId: string) => roomManager.transferOwner(roomId, memberId)
   ));
 
   ipcMain.handle('rooms:sendChat', wrapHandler('rooms:sendChat',

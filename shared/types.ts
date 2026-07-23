@@ -198,11 +198,11 @@ export interface RoomChatMessage {
 export interface RoomEvent {
   id: string;
   at: number;
-  type: 'created' | 'joined' | 'left' | 'file-added' | 'file-removed' | 'kicked' | 'rekeyed';
+  type: 'created' | 'joined' | 'left' | 'file-added' | 'file-removed' | 'kicked' | 'rekeyed' | 'ownership-transferred';
   actorId: string;       // who did it (memberId), '' if unknown
   actorName: string;
   fileName?: string;     // for file-added / file-removed
-  targetName?: string;   // for kicked (the removed member's name)
+  targetName?: string;   // for kicked / ownership-transferred (the removed member's / new owner's name)
 }
 
 /** Local transfer status of one room file on this machine. */
@@ -255,6 +255,10 @@ export interface RoomState {
   folderFetch?: Record<string, boolean>;
 }
 
+/** Connection quality of OUR link to a voice peer (from WebRTC getStats: RTT +
+ *  packet loss). Absent for self and for peers we have no direct PC to. */
+export type VoiceQuality = 'good' | 'fair' | 'poor';
+
 /** A participant currently in a room's voice channel. */
 export interface RoomVoiceParticipant {
   memberId: string;
@@ -264,6 +268,10 @@ export interface RoomVoiceParticipant {
   speaking: boolean;
   /** This member is sharing their screen (click to watch). */
   sharing: boolean;
+  /** OUR link quality to this peer (RTT + loss); absent until first sampled. */
+  quality?: VoiceQuality;
+  /** The link dropped and is re-establishing (ICE disconnected / reconnecting). */
+  reconnecting?: boolean;
 }
 
 /** A shareable screen/window from desktopCapturer (picker entry). */
@@ -1125,7 +1133,8 @@ export interface IpcApi {
     openFolder: (roomId: string) => Promise<void>;
     openFile: (roomId: string, fileId: string) => Promise<void>;
     revealFile: (roomId: string, fileId: string) => Promise<void>;
-    watchFile: (roomId: string, fileId: string) => Promise<{ directUrl: string; hlsUrl: string; playerUrl: string; coverUrl?: string; direct: boolean; kind: string; name: string }>;
+    watchFile: (roomId: string, fileId: string) => Promise<{ directUrl: string; hlsUrl: string; playerUrl: string; coverUrl?: string; direct: boolean; kind: string; name: string; streaming?: boolean }>;
+    imageUrl: (roomId: string, fileId: string) => Promise<{ url: string }>;
     subtitleList: (roomId: string, fileId: string) => Promise<Array<{ key: string; label: string; lang?: string; source: 'embedded' | 'external' }>>;
     subtitleGet: (roomId: string, fileId: string, key: string) => Promise<string>;
     releaseFile: (roomId: string, fileId: string) => Promise<{ ok: boolean }>;
@@ -1151,6 +1160,7 @@ export interface IpcApi {
     fetchFile: (roomId: string, fileId: string) => Promise<RoomState>;
     setLimits: (roomId: string, upKbps: number, downKbps: number) => Promise<{ ok: boolean }>;
     kick: (roomId: string, memberId: string) => Promise<{ ok: boolean }>;
+    transferOwner: (roomId: string, memberId: string) => Promise<RoomState>;
     sendChat: (roomId: string, text: string) => Promise<{ ok: boolean }>;
     typing: (roomId: string) => void;
     reactFile: (roomId: string, fileId: string, emoji: string) => Promise<void>;

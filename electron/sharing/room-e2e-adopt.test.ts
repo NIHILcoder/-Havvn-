@@ -17,7 +17,10 @@
  *     adopt-once secret — and the owner's signed config RECOVERS a member that
  *     a hostile peer got to first;
  *   • kick/rekey keeps the marker, ROTATES the content secret (the outgoing
- *     one joins the signed decrypt-only keyring) and re-signs for the new topic.
+ *     one joins the signed decrypt-only keyring) and re-signs for the new topic;
+ *   • ownership transfer (M8): the CURRENT owner's signed handover applies at
+ *     every member, chains verifiably back to the invite pin for late joiners,
+ *     survives restart, and re-anchors the E2E config on the new owner.
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import fs from 'fs';
@@ -167,7 +170,8 @@ function makeKeys(): { pub: string; priv: string } {
 }
 
 function joinPayload(o: { roomId: string; code: string; memberId: string; folder: string;
-  ownerId?: string; ownerPin?: string; e2e?: boolean; secret?: string; e2eCfg?: any; keys?: { pub: string; priv: string } }) {
+  ownerId?: string; ownerPin?: string; e2e?: boolean; secret?: string; e2eCfg?: any; keys?: { pub: string; priv: string };
+  transferChain?: any[] }) {
   return {
     type: 'join',
     payload: {
@@ -176,6 +180,7 @@ function joinPayload(o: { roomId: string; code: string; memberId: string; folder
       useTurn: false, turnServers: [],
       tombstones: {}, manifest: [], ownerId: o.ownerId ?? '', ownerPin: o.ownerPin ?? '', mutes: [], history: [], chat: [],
       identities: {}, e2e: o.e2e ?? false, secret: o.secret ?? '', e2eCfg: o.e2eCfg ?? null,
+      transferChain: o.transferChain ?? [],
       cacheDir: path.join(o.folder, 'enc'),
     },
   };
@@ -541,4 +546,309 @@ describe('room rename: owner-only, signed, last-writer-wins', () => {
     await cmd(M, joinPayload({ roomId, code, memberId: 'member-M', ownerId: OWNER, keys: makeKeys(), folder: newFolder() }));
     await expect(cmd(M, { type: 'rename', roomId, name: 'Nope' })).rejects.toThrow(/owner/i);
   });
+});
+
+describe('ownership transfer: signed chain over the invite pin (M8)', () => {
+  const ownerKeys = makeKeys();
+  const OWNER = deriveMemberId(ownerKeys.pub);
+  const aKeys = makeKeys();
+  const A_ID = deriveMemberId(aKeys.pub);
+
+  /** Sign one transfer link exactly like the engine does — the signature domain
+   *  is the chain's GENESIS owner id (chain[0].by), stable across rekeys, NOT the
+   *  rotating topic. */
+  function signTransfer(rootOwnerId: string, by: string, newOwnerId: string, at: number, priv: string): string {
+    const canon = Buffer.from(JSON.stringify(['th-room-transfer:v1', rootOwnerId, by, newOwnerId, at]), 'utf8');
+    return crypto.sign(null, canon, crypto.createPrivateKey(priv)).toString('base64');
+  }
+
+  /** The last ownership-transfer chain an engine persisted (room-transfer IPC). */
+  const chainPersists = (inst: Engine) =>
+    inst.sent.filter((s) => s.channel === 'room-transfer').map((s) => s.payload);
+
+  it('a transfer applies at every live member and the new owner can kick', async () => {
+    const code = generateRoomCode();
+    const roomId = 'r-transfer';
+    const O = await makeEngine();
+    await cmd(O, joinPayload({ roomId, code, memberId: OWNER, ownerId: OWNER, ownerPin: OWNER, keys: ownerKeys, folder: newFolder() }));
+    O.tracker = H.trackers[H.trackers.length - 1];
+    const A = await makeEngine();
+    await cmd(A, joinPayload({ roomId, code, memberId: A_ID, ownerPin: OWNER, keys: aKeys, folder: newFolder() }));
+    A.tracker = H.trackers[H.trackers.length - 1];
+    const B = await makeEngine();
+    await cmd(B, joinPayload({ roomId, code, memberId: 'member-B', ownerPin: OWNER, keys: makeKeys(), folder: newFolder() }));
+    B.tracker = H.trackers[H.trackers.length - 1];
+    connect(O, A);
+    connect(O, B);
+    connect(A, B);
+    await flush();
+    expect((await cmd(B, { type: 'snapshot', roomId })).ownerId).toBe(OWNER);
+
+    const after = await cmd(O, { type: 'transferOwner', roomId, memberId: A_ID });
+    expect(after.ownerId).toBe(A_ID);
+    expect(after.canManage).toBe(false); // the old owner is a regular member now
+    await flush();
+
+    // Every live member converges on the new owner and persists both the id and the chain.
+    expect((await cmd(A, { type: 'snapshot', roomId })).ownerId).toBe(A_ID);
+    expect((await cmd(A, { type: 'snapshot', roomId })).canManage).toBe(true);
+    expect((await cmd(B, { type: 'snapshot', roomId })).ownerId).toBe(A_ID);
+    expect(chainPersists(B).at(-1)?.chain).toHaveLength(1);
+    expect(chainPersists(B).at(-1)?.chain[0]?.newOwnerId).toBe(A_ID);
+    // The handover lands in the activity log on both sides.
+    const hist = (await cmd(B, { type: 'snapshot', roomId })).history;
+    expect(hist.some((ev: any) => ev.type === 'ownership-transferred' && ev.targetName === A_ID)).toBe(true);
+
+    // The NEW owner kicks B; the OLD owner applies the rekey (it accepts A's authority).
+    await cmd(A, { type: 'kick', roomId, memberId: 'member-B' });
+    await new Promise((r) => setTimeout(r, 400)); // kickMember defers the rekey 300ms
+    await flush();
+    expect((await cmd(B, { type: 'snapshot', roomId })).kicked).toBe(true);
+    const rekey = O.sent.filter((s) => s.channel === 'room-rekey').map((s) => s.payload).at(-1);
+    expect(rekey?.code).toBeTruthy();
+    expect(rekey.code).not.toBe(code);
+
+    // And the OLD owner's own commands are refused now.
+    await expect(cmd(O, { type: 'rename', roomId, name: 'Nope' })).rejects.toThrow(/owner/i);
+  }, 25000);
+
+  it('a pin-joiner on the OLD invite reaches the new owner through the chain', async () => {
+    const code = generateRoomCode();
+    const roomId = 'r-chainwalk';
+    const O = await makeEngine();
+    await cmd(O, joinPayload({ roomId, code, memberId: OWNER, ownerId: OWNER, ownerPin: OWNER, keys: ownerKeys, folder: newFolder() }));
+    O.tracker = H.trackers[H.trackers.length - 1];
+    const A = await makeEngine();
+    await cmd(A, joinPayload({ roomId, code, memberId: A_ID, ownerPin: OWNER, keys: aKeys, folder: newFolder() }));
+    A.tracker = H.trackers[H.trackers.length - 1];
+    connect(O, A);
+    await flush();
+    await cmd(O, { type: 'transferOwner', roomId, memberId: A_ID });
+    await flush();
+
+    // J joins via the ORIGINAL invite (pin = the FIRST owner) and reaches only A.
+    // A's re-served chain proves pin → A, so J adopts A despite the pin mismatch.
+    const J = await makeEngine();
+    await cmd(J, joinPayload({ roomId, code, memberId: 'member-J', ownerPin: OWNER, folder: newFolder() }));
+    J.tracker = H.trackers[H.trackers.length - 1];
+    connect(A, J);
+    await flush();
+    expect((await cmd(J, { type: 'snapshot', roomId })).ownerId).toBe(A_ID);
+    expect(chainPersists(J).at(-1)?.chain).toHaveLength(1);
+  }, 25000);
+
+  it('a forged link kills the chain: the owner stays the last verified one', async () => {
+    const code = generateRoomCode();
+    const att = makeKeys();
+    const MAL = deriveMemberId(att.pub);
+
+    // Chain [pin → MAL] claiming by=OWNER but signed by the ATTACKER's key: the
+    // very first link fails to verify, so nothing is adopted.
+    const J1 = await makeEngine();
+    await cmd(J1, joinPayload({ roomId: 'r-forged1', code, memberId: 'member-J1', ownerPin: OWNER, folder: newFolder() }));
+    J1.tracker = H.trackers[H.trackers.length - 1];
+    const forged = { newOwnerId: MAL, at: Date.now() - 1000, by: OWNER, pub: att.pub, sig: signTransfer(OWNER, OWNER, MAL, Date.now() - 1000, att.priv) };
+    hostilePeer(J1).send(helloFrame(code, { ownerId: MAL, transferChain: [forged] }));
+    await flush();
+    expect((await cmd(J1, { type: 'snapshot', roomId: 'r-forged1' })).ownerId).toBe('');
+    expect(chainPersists(J1)).toHaveLength(0);
+
+    // Chain [pin → A (genuine), A → MAL (wrong key)]: the walk stops at the
+    // break — A (the last verified hop) stays owner, the forged tail is dead.
+    const J2 = await makeEngine();
+    await cmd(J2, joinPayload({ roomId: 'r-forged2', code, memberId: 'member-J2', ownerPin: OWNER, folder: newFolder() }));
+    J2.tracker = H.trackers[H.trackers.length - 1];
+    const at1 = Date.now() - 2000;
+    const at2 = Date.now() - 1000;
+    // Domain = the chain's genesis owner (OWNER) for BOTH links.
+    const good = { newOwnerId: A_ID, at: at1, by: OWNER, pub: ownerKeys.pub, sig: signTransfer(OWNER, OWNER, A_ID, at1, ownerKeys.priv) };
+    const bad = { newOwnerId: MAL, at: at2, by: A_ID, pub: aKeys.pub, sig: signTransfer(OWNER, A_ID, MAL, at2, att.priv) };
+    hostilePeer(J2).send(helloFrame(code, { ownerId: MAL, transferChain: [good, bad] }));
+    await flush();
+    expect((await cmd(J2, { type: 'snapshot', roomId: 'r-forged2' })).ownerId).toBe(A_ID);
+    expect(chainPersists(J2).at(-1)?.chain).toHaveLength(1);
+  });
+
+  it('a transfer from a non-owner is dropped', async () => {
+    const code = generateRoomCode();
+    const roomId = 'r-nonowner';
+    const J = await makeEngine();
+    await cmd(J, joinPayload({ roomId, code, memberId: 'member-J', ownerId: OWNER, ownerPin: OWNER, folder: newFolder() }));
+    J.tracker = H.trackers[H.trackers.length - 1];
+    const att = makeKeys();
+    const MAL = deriveMemberId(att.pub);
+    const mal = hostilePeer(J);
+
+    // A validly-SIGNED transfer whose signer simply isn't the owner: its chain
+    // roots at MAL, which the pin (OWNER) does not anchor — dropped.
+    const at = Date.now();
+    mal.send(encrypt(deriveKey(code), { t: 'transfer', newOwnerId: 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6', at, by: MAL, pub: att.pub, sig: signTransfer(MAL, MAL, 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6', at, att.priv) }));
+    // An owner-CLAIMED transfer signed with the attacker's key: signature dies.
+    mal.send(encrypt(deriveKey(code), { t: 'transfer', newOwnerId: MAL, at: at + 1, by: OWNER, pub: att.pub, sig: signTransfer(OWNER, OWNER, MAL, at + 1, att.priv) }));
+    await flush();
+    expect((await cmd(J, { type: 'snapshot', roomId })).ownerId).toBe(OWNER);
+    expect(chainPersists(J)).toHaveLength(0);
+
+    // And a member engine refuses the local command outright.
+    await expect(cmd(J, { type: 'transferOwner', roomId, memberId: OWNER })).rejects.toThrow(/owner/i);
+  });
+
+  it('after the transfer the NEW owner\'s signed E2E config is accepted (verify walk)', async () => {
+    const S = generateRoomSecret();
+    const code = generateRoomCode(true);
+    const roomId = 'r-transfer-e2e';
+    const O = await makeEngine();
+    await cmd(O, joinPayload({ roomId, code, memberId: OWNER, ownerId: OWNER, ownerPin: OWNER, e2e: true, secret: S, keys: ownerKeys, folder: newFolder() }));
+    O.tracker = H.trackers[H.trackers.length - 1];
+    const A = await makeEngine();
+    await cmd(A, joinPayload({ roomId, code, memberId: A_ID, ownerPin: OWNER, keys: aKeys, folder: newFolder() }));
+    A.tracker = H.trackers[H.trackers.length - 1];
+    connect(O, A);
+    await flush();
+    expect(e2ePersists(A).at(-1)?.secret).toBe(S); // A adopted the OLD owner's cfg
+
+    await cmd(O, { type: 'transferOwner', roomId, memberId: A_ID });
+    await flush();
+
+    // A (now the owner) re-minted the config under ITS key, same topic + secret.
+    const minted = e2ePersists(A).at(-1);
+    expect(minted?.cfg?.ownerId).toBe(A_ID);
+    expect(minted?.secret).toBe(S);
+    expect(cfgVerifies(minted.cfg, topicHash(code), aKeys.pub)).toBe(true);
+    // The OLD owner adopted the new owner's config too (its own became stale).
+    const oldOwners = e2ePersists(O).at(-1);
+    expect(oldOwners?.cfg?.ownerId).toBe(A_ID);
+
+    // A pin-joiner on the OLD invite: chain walk first, then the NEW owner's
+    // cfg verifies against the chain-proven owner — it gets the secret from A.
+    const J = await makeEngine();
+    await cmd(J, joinPayload({ roomId, code, memberId: 'member-J', ownerPin: OWNER, folder: newFolder() }));
+    J.tracker = H.trackers[H.trackers.length - 1];
+    connect(A, J);
+    await flush();
+    const adopted = e2ePersists(J).at(-1);
+    expect(adopted?.secret).toBe(S);
+    expect(adopted?.cfg?.ownerId).toBe(A_ID);
+    expect((await cmd(J, { type: 'snapshot', roomId })).ownerId).toBe(A_ID);
+  }, 25000);
+
+  it('restart: the chain persists, restores past the pin and is re-served', async () => {
+    const code = generateRoomCode();
+    const roomId = 'r-restart';
+    const O = await makeEngine();
+    await cmd(O, joinPayload({ roomId, code, memberId: OWNER, ownerId: OWNER, ownerPin: OWNER, keys: ownerKeys, folder: newFolder() }));
+    O.tracker = H.trackers[H.trackers.length - 1];
+    const A = await makeEngine();
+    await cmd(A, joinPayload({ roomId, code, memberId: A_ID, ownerPin: OWNER, keys: aKeys, folder: newFolder() }));
+    A.tracker = H.trackers[H.trackers.length - 1];
+    connect(O, A);
+    await flush();
+    await cmd(O, { type: 'transferOwner', roomId, memberId: A_ID });
+    await flush();
+    const chain = chainPersists(A).at(-1)?.chain;
+    expect(chain).toHaveLength(1);
+
+    // "Restart" A's install: a fresh engine fed the persisted ownerId + chain.
+    // The pin no longer matches the owner — only the re-verified chain restores it.
+    const R = await makeEngine();
+    await cmd(R, joinPayload({ roomId, code, memberId: A_ID, ownerId: A_ID, ownerPin: OWNER, keys: aKeys, transferChain: chain, folder: newFolder() }));
+    R.tracker = H.trackers[H.trackers.length - 1];
+    expect((await cmd(R, { type: 'snapshot', roomId })).ownerId).toBe(A_ID);
+    expect((await cmd(R, { type: 'snapshot', roomId })).canManage).toBe(true);
+
+    // A TAMPERED persisted chain is rejected wholesale — the pin guard zeroes
+    // the (non-pin) persisted owner and the room re-learns from peers.
+    const T = await makeEngine();
+    const tampered = [{ ...chain[0], newOwnerId: 'deadbeefdeadbeefdeadbeefdeadbeef' }];
+    await cmd(T, joinPayload({ roomId: 'r-restart-bad', code, memberId: 'member-T', ownerId: A_ID, ownerPin: OWNER, transferChain: tampered, folder: newFolder() }));
+    expect((await cmd(T, { type: 'snapshot', roomId: 'r-restart-bad' })).ownerId).toBe('');
+
+    // The restarted install re-serves the chain: a fresh pin-joiner converges.
+    const J = await makeEngine();
+    await cmd(J, joinPayload({ roomId, code, memberId: 'member-J', ownerPin: OWNER, folder: newFolder() }));
+    J.tracker = H.trackers[H.trackers.length - 1];
+    connect(R, J);
+    await flush();
+    expect((await cmd(J, { type: 'snapshot', roomId })).ownerId).toBe(A_ID);
+  }, 25000);
+
+  it('transfer then a KICK (topic rotates) then restart still restores ownership', async () => {
+    const code = generateRoomCode();
+    const roomId = 'r-transfer-kick';
+    const O = await makeEngine();
+    await cmd(O, joinPayload({ roomId, code, memberId: OWNER, ownerId: OWNER, ownerPin: OWNER, keys: ownerKeys, folder: newFolder() }));
+    O.tracker = H.trackers[H.trackers.length - 1];
+    const A = await makeEngine();
+    await cmd(A, joinPayload({ roomId, code, memberId: A_ID, ownerPin: OWNER, keys: aKeys, folder: newFolder() }));
+    A.tracker = H.trackers[H.trackers.length - 1];
+    const B = await makeEngine();
+    await cmd(B, joinPayload({ roomId, code, memberId: 'member-B', ownerPin: OWNER, keys: makeKeys(), folder: newFolder() }));
+    B.tracker = H.trackers[H.trackers.length - 1];
+    connect(O, A);
+    connect(O, B);
+    connect(A, B);
+    await flush();
+
+    await cmd(O, { type: 'transferOwner', roomId, memberId: A_ID });
+    await flush();
+    const chain = chainPersists(A).at(-1)?.chain;
+    expect(chain).toHaveLength(1);
+
+    // The new owner A kicks B — this ROTATES the room code and topic. Transfer
+    // links are signed over the stable genesis root, NOT the topic, so they must
+    // still verify after the rotation.
+    await cmd(A, { type: 'kick', roomId, memberId: 'member-B' });
+    await new Promise((r) => setTimeout(r, 400));
+    await flush();
+    const rekey = A.sent.filter((s) => s.channel === 'room-rekey').map((s) => s.payload).find((p) => p?.code);
+    const newCode = rekey.code as string;
+    expect(newCode).not.toBe(code);
+    const chainAfterKick = chainPersists(A).at(-1)?.chain;
+
+    // "Restart" A with the ROTATED code (the persisted post-kick code) + the
+    // chain signed under the ORIGINAL topic. Ownership must survive.
+    const R = await makeEngine();
+    await cmd(R, joinPayload({ roomId, code: newCode, memberId: A_ID, ownerId: A_ID, ownerPin: OWNER, keys: aKeys, transferChain: chainAfterKick, folder: newFolder() }));
+    R.tracker = H.trackers[H.trackers.length - 1];
+    expect((await cmd(R, { type: 'snapshot', roomId })).ownerId).toBe(A_ID);
+    expect((await cmd(R, { type: 'snapshot', roomId })).canManage).toBe(true);
+    // The restarted owner can still administer the room (rename doesn't throw).
+    await expect(cmd(R, { type: 'rename', roomId, name: 'Still Mine' })).resolves.toBeTruthy();
+  }, 25000);
+
+  it('a mid-chain-pinned member re-serves the FULL chain, so an old-invite joiner converges without the root online', async () => {
+    const code = generateRoomCode();
+    const roomId = 'r-fullchain';
+    const O = await makeEngine();
+    await cmd(O, joinPayload({ roomId, code, memberId: OWNER, ownerId: OWNER, ownerPin: OWNER, keys: ownerKeys, folder: newFolder() }));
+    O.tracker = H.trackers[H.trackers.length - 1];
+    const A = await makeEngine();
+    await cmd(A, joinPayload({ roomId, code, memberId: A_ID, ownerPin: OWNER, keys: aKeys, folder: newFolder() }));
+    A.tracker = H.trackers[H.trackers.length - 1];
+    const [pOA] = connect(O, A);
+    await flush();
+    await cmd(O, { type: 'transferOwner', roomId, memberId: A_ID });
+    await flush();
+
+    // E joins via A's NEW invite (pins the CURRENT owner A, mid-chain), reaching
+    // only A. E must store and later re-serve the FULL chain [O→A], not a suffix.
+    const E = await makeEngine();
+    await cmd(E, joinPayload({ roomId, code, memberId: 'member-E', ownerPin: A_ID, folder: newFolder() }));
+    E.tracker = H.trackers[H.trackers.length - 1];
+    connect(A, E);
+    await flush();
+    expect((await cmd(E, { type: 'snapshot', roomId })).ownerId).toBe(A_ID);
+    expect(chainPersists(E).at(-1)?.chain).toHaveLength(1); // the full [O→A], not empty
+
+    // The root owner O drops off; a joiner D on the ORIGINAL invite (pin=O)
+    // reaches only the mid-chain member E. E's re-served full chain lets D walk
+    // pin O → A even though O is gone.
+    pOA.destroy();
+    const D = await makeEngine();
+    await cmd(D, joinPayload({ roomId, code, memberId: 'member-D', ownerPin: OWNER, folder: newFolder() }));
+    D.tracker = H.trackers[H.trackers.length - 1];
+    connect(E, D);
+    await flush();
+    expect((await cmd(D, { type: 'snapshot', roomId })).ownerId).toBe(A_ID);
+  }, 25000);
 });

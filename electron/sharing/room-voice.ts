@@ -102,6 +102,8 @@ export interface VoiceAdapter {
   log(msg: string): void;
 }
 
+export type VoiceQuality = 'good' | 'fair' | 'poor';
+
 export interface VoiceParticipant {
   memberId: string;
   muted: boolean;
@@ -109,6 +111,8 @@ export interface VoiceParticipant {
   deafened?: boolean;
   speaking: boolean;
   sharing: boolean;        // this member is sharing their screen
+  quality?: VoiceQuality;  // OUR link quality to this peer (getStats RTT + loss)
+  reconnecting?: boolean;  // the link dropped and is re-establishing (ICE)
 }
 
 export interface VoiceState {
@@ -158,6 +162,13 @@ async function applyShareCaps(sender: RTCRtpSender, maxBitrate: number): Promise
     await sender.setParameters(p);
   } catch { /* caps are best-effort */ }
 }
+
+// Voice-link quality poll cadence + thresholds (RTT ms / loss fraction). A poll
+// reads each peer's getStats and downgrades the tile dot; friendly for a mesh of
+// ≤8, cheap enough at 3s.
+const QUALITY_POLL_MS = 3000;
+const RTT_FAIR_MS = 200, RTT_POOR_MS = 400;
+const LOSS_FAIR = 0.03, LOSS_POOR = 0.08;
 
 // Speaking detection tuning (0-255 average magnitude; empirical for voice).
 const VAD_THRESHOLD = 14;
@@ -259,7 +270,9 @@ class MediaPeer {
     // theirs — the fresh PC then can't complete against their stale one, so its
     // DTLS/ICE ultimately fails). Reap it so the session re-creates a clean pair.
     this.pc.onconnectionstatechange = () => {
-      if (!this.closed && (this.pc.connectionState === 'failed')) this.onFailed();
+      const s = this.pc.connectionState;
+      if (s === 'connected') this.everConnected = true; // arms the "reconnecting" state (vs a first-time connect)
+      if (!this.closed && s === 'failed') this.onFailed();
     };
     this.pc.onicecandidate = ({ candidate }) => { if (candidate) this.a.sendSignal(this.id, 'ice', candidate); };
     this.pc.ontrack = ({ track, streams }) => {
@@ -400,6 +413,44 @@ class MediaPeer {
     }
   }
 
+  /** True only when the audio link is up right now (else it is (re)connecting). */
+  linkConnected(): boolean { return this.pc.connectionState === 'connected'; }
+  /** True once the link has connected at least once — so a later drop reads as
+   *  "reconnecting", while a first-time handshake shows no quality yet. */
+  private everConnected = false;
+  wasConnected(): boolean { return this.everConnected; }
+
+  private lastRtp: { lost: number; recv: number } | null = null;
+  /** Sample OUR link quality to this peer: round-trip time (nominated candidate
+   *  pair) and the incoming-audio loss fraction over the window since the last
+   *  sample. getStats can reject on a closing PC — swallow to a neutral reading. */
+  async sampleQuality(): Promise<{ rttMs: number; loss: number }> {
+    let rttMs = 0;
+    let loss = 0;
+    try {
+      const stats = await this.pc.getStats();
+      let curLost = 0, curRecv = 0, haveRtp = false;
+      stats.forEach((r: any) => {
+        if (r.type === 'candidate-pair' && r.nominated && typeof r.currentRoundTripTime === 'number') {
+          rttMs = r.currentRoundTripTime * 1000;
+        } else if (r.type === 'inbound-rtp' && r.kind === 'audio') {
+          haveRtp = true;
+          curLost += Number(r.packetsLost) || 0;
+          curRecv += Number(r.packetsReceived) || 0;
+        }
+      });
+      if (haveRtp) {
+        if (this.lastRtp) {
+          const dl = Math.max(0, curLost - this.lastRtp.lost);
+          const dr = Math.max(0, curRecv - this.lastRtp.recv);
+          loss = dl + dr > 0 ? dl / (dl + dr) : 0;
+        }
+        this.lastRtp = { lost: curLost, recv: curRecv };
+      }
+    } catch { /* getStats on a closing PC — leave the neutral reading */ }
+    return { rttMs, loss };
+  }
+
   close(): void {
     this.closed = true;
     this.vad?.stop(); this.vad = null;
@@ -515,6 +566,8 @@ export class VoiceSession {
   private localVad: Vad | null = null;
   private localSpeaking = false;
   private peers = new Map<string, MediaPeer>();               // memberId → media connection
+  private quality = new Map<string, { level: VoiceQuality; reconnecting: boolean }>(); // memberId → OUR link quality (getStats poll)
+  private statsTimer: any = null;                             // ~3s getStats poll while in voice
   private roster = new Map<string, { muted: boolean; deafened?: boolean }>();     // OTHER members currently in voice
   private speaking = new Map<string, boolean>();              // memberId → speaking (remote)
   private volumes = new Map<string, number>();                // memberId → 0..1
@@ -690,6 +743,7 @@ export class VoiceSession {
       : null;
     this.a.announce(true, this.muted, this.nextAt(), this.deafened);
     for (const id of this.roster.keys()) this.ensurePeer(id); // connect to everyone already here
+    if (!this.statsTimer) this.statsTimer = setInterval(() => { void this.pollQuality(); }, QUALITY_POLL_MS);
     this.a.onChange();
     // Settings may have changed while getUserMedia was in flight (the engine's
     // room-cmd handler is not serialized across awaits). Reconcile BOTH the live
@@ -714,6 +768,8 @@ export class VoiceSession {
     this.pendingShares.clear();
     for (const p of this.peers.values()) p.close();
     this.peers.clear();
+    if (this.statsTimer) { clearInterval(this.statsTimer); this.statsTimer = null; }
+    this.quality.clear();
     this.localVad?.stop(); this.localVad = null;
     this.vadStream?.getTracks().forEach((t) => t.stop());
     this.vadStream = null;
@@ -1162,11 +1218,43 @@ export class VoiceSession {
     this.a.onChange();
   }
 
+  /** Sample OUR link quality to every peer (RTT + loss) and flag reconnecting
+   *  ones, then push if anything changed. Runs every QUALITY_POLL_MS while in
+   *  voice. A peer that has never connected yet gets NO entry (no dot); one that
+   *  connected and then dropped reads as poor + reconnecting. */
+  private async pollQuality(): Promise<void> {
+    if (!this.active) return;
+    let changed = false;
+    const seen = new Set<string>();
+    for (const [id, p] of this.peers) {
+      let entry: { level: VoiceQuality; reconnecting: boolean } | null = null;
+      if (p.linkConnected()) {
+        const { rttMs, loss } = await p.sampleQuality();
+        const level: VoiceQuality = (rttMs > RTT_POOR_MS || loss > LOSS_POOR) ? 'poor'
+          : (rttMs > RTT_FAIR_MS || loss > LOSS_FAIR) ? 'fair' : 'good';
+        entry = { level, reconnecting: false };
+      } else if (p.wasConnected()) {
+        entry = { level: 'poor', reconnecting: true }; // dropped, re-establishing
+      }
+      if (!entry) continue; // still doing the first handshake — no dot yet
+      seen.add(id);
+      const prev = this.quality.get(id);
+      if (!prev || prev.level !== entry.level || prev.reconnecting !== entry.reconnecting) changed = true;
+      this.quality.set(id, entry);
+    }
+    for (const id of Array.from(this.quality.keys())) if (!seen.has(id)) { this.quality.delete(id); changed = true; } // gone / torn down
+    if (changed) this.a.onChange();
+  }
+
   getState(): VoiceState {
     const participants: VoiceParticipant[] = [];
     if (this.active) participants.push({ memberId: this.a.selfId, muted: this.muted, deafened: this.deafened, speaking: this.localSpeaking && !this.muted, sharing: this.isSharing() });
     for (const [id, st] of this.roster) {
-      participants.push({ memberId: id, muted: st.muted, deafened: !!st.deafened, speaking: !!this.speaking.get(id) && !st.muted, sharing: this.remoteShares.has(id) });
+      const q = this.quality.get(id);
+      participants.push({
+        memberId: id, muted: st.muted, deafened: !!st.deafened, speaking: !!this.speaking.get(id) && !st.muted, sharing: this.remoteShares.has(id),
+        ...(q ? { quality: q.level, ...(q.reconnecting ? { reconnecting: true } : {}) } : {}),
+      });
     }
     return { inVoice: this.active, muted: this.muted, deafened: this.deafened, transmitting: this.transmitting(), inputMode: this.inputMode, sharing: this.isSharing(), participants };
   }

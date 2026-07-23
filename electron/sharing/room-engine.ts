@@ -71,7 +71,7 @@ const MAX_REACT_FILES = 200;      // reaction map ceiling per room (kept + hello
 // just another member. Targeted/keyed messages (rekey, kicked) are NOT flooded.
 const RELAY_TTL = 4;                 // max hops a gossip message travels
 const SEEN_GID_CAP = 4096;           // dedup memory per room (FIFO)
-const RELAYABLE = new Set(['hello', 'ping', 'add', 'have', 'del', 'chat', 'sync', 'bye', 'typing', 'react-file', 'prog', 'folder', 'assign', 'rename', 'topic', 'react-chat', 'voice-state', 'voice-signal', 'voice-share', 'profile']);
+const RELAYABLE = new Set(['hello', 'ping', 'add', 'have', 'del', 'chat', 'sync', 'bye', 'typing', 'react-file', 'prog', 'folder', 'assign', 'rename', 'topic', 'react-chat', 'voice-state', 'voice-signal', 'voice-share', 'profile', 'transfer']);
 
 // ── Gossip input hardening ────────────────────────────────────────────────────
 // Decryption already proves a peer holds the room code, but a *malicious member*
@@ -94,6 +94,11 @@ function log(msg: string): void { try { ipcRenderer.send('room-log', msg); } cat
 // signature over delCanonical, so it re-verifies wherever it gossips.
 type TombProof = { at: number; by: string; pub: string; sig: string };
 
+// One applied ownership transfer: the then-current owner's Ed25519 signature
+// over transferCanonical. The ordered list of these (transferChain) lets anyone
+// holding only the ORIGINAL invite pin walk hop-by-hop to the current owner.
+type TransferLink = { newOwnerId: string; at: number; by: string; pub: string; sig: string };
+
 // ── Gossip message shapes (post-decrypt) ───────────────────────────────────
 type Msg =
   // `tombs` lists deleted fileIds (legacy shape, kept so older peers converge);
@@ -107,7 +112,7 @@ type Msg =
   // whose owner runs an older build that doesn't sign.
   // `fileReacts` is a clamped summary of this member's reaction view (fileId →
   // emoji → memberIds) so late joiners converge by unioning member sets.
-  | { t: 'hello'; memberId: string; name: string; avatarSeed: string; pub?: string; have: string[]; files: RoomFile[]; tombs: string[]; tombsAt?: Record<string, number>; tombSigs?: Record<string, TombProof>; roomName: string; nameAt?: number; topicMsg?: { text: string; at: number; by: string; pub: string; sig: string }; ownerId: string; e2e: boolean; secret: string; cfg?: E2ECfg; fileReacts?: Record<string, Record<string, string[]>>; chatReacts?: Record<string, Record<string, string[]>>; folders?: RoomFolder[]; folderTombs?: Record<string, number>; chatAt?: number }
+  | { t: 'hello'; memberId: string; name: string; avatarSeed: string; pub?: string; have: string[]; files: RoomFile[]; tombs: string[]; tombsAt?: Record<string, number>; tombSigs?: Record<string, TombProof>; roomName: string; nameAt?: number; topicMsg?: { text: string; at: number; by: string; pub: string; sig: string }; ownerId: string; e2e: boolean; secret: string; cfg?: E2ECfg; fileReacts?: Record<string, Record<string, string[]>>; chatReacts?: Record<string, Record<string, string[]>>; folders?: RoomFolder[]; folderTombs?: Record<string, number>; chatAt?: number; transferChain?: TransferLink[] }
   | { t: 'add'; file: RoomFile }
   // A folder/section was created, renamed/recolored (upsert) or deleted (del).
   // Last-writer-wins by `at`; unknown to older peers, who ignore it and keep
@@ -137,6 +142,11 @@ type Msg =
   // Explicit notice to the member being removed, OWNER-SIGNED so it can't be
   // spoofed to make a member think they were kicked.
   | { t: 'kicked'; targetId: string; by: string; byName: string; pub: string; sig: string }
+  // The owner hands the room to another member. Signed by the CURRENT owner,
+  // LWW by `at` (same future-clock cutoff as rename/topic). Every applied
+  // transfer joins room.transferChain, which full HELLOs re-serve so a joiner
+  // holding an OLD invite can walk pin → transfer#1 → … → current owner.
+  | { t: 'transfer'; newOwnerId: string; at: number; by: string; pub: string; sig: string }
   // Sent when a member leaves voluntarily so peers drop them at once instead of
   // keeping a 45s offline ghost in the list.
   | { t: 'bye'; memberId: string }
@@ -221,6 +231,8 @@ interface Room {
   self: { memberId: string; name: string; avatarSeed: string; color: string; status: string; avatarImg: string; pub: string; priv: string };
   ownerId: string;                       // memberId of the owner ('' until learned)
   ownerPin: string;                      // owner memberId pinned from the invite ('' = TOFU); only this identity may be adopted as owner
+  transferChain: TransferLink[];         // applied ownership transfers, in order — each verified when it applied; re-served in full HELLOs + persisted
+  transferAt: number;                    // `at` of the last applied transfer (the chain's LWW clock)
   e2e: boolean;                          // end-to-end encryption (ciphertext on the wire)
   secret: string;                        // E2E content key (32-byte hex; '' until learned)
   e2eCfg: E2ECfg | null;                 // owner-signed E2E config we hold + re-serve to joiners
@@ -270,6 +282,13 @@ interface Room {
 // two rooms sharing identical content stop colliding on one infoHash).
 const clients = new Map<string, any>();  // roomId → WebTorrent client
 const rooms = new Map<string, Room>();
+// Watch-while-downloading: WebTorrent's own per-torrent HTTP stream server, one
+// per watched file, keyed `${roomId}:${fileId}`. It serves Range requests over
+// the live torrent — blocking on and prioritizing not-yet-downloaded pieces — so
+// a directly-playable file plays before it finishes. Bound to 127.0.0.1 (no
+// firewall prompt); closed on room teardown. E2E rooms never use it (the swarm
+// carries ciphertext — there is no plaintext to stream until decrypt).
+const streamServers = new Map<string, { server: any; port: number }>();
 // VPN kill-switch: while true, NO room may bring up networking. This is the
 // authoritative gate — the manager's flag is only a fast-fail hint and is
 // race-prone (a 'join' can reach us AFTER 'netSuspend' via an await interleave
@@ -677,6 +696,7 @@ function helloMsg(room: Room, full = true): Msg {
     e2e: room.e2e, // E2E mode + content key ride the encrypted gossip channel
     secret: room.secret,
     ...(room.e2eCfg ? { cfg: room.e2eCfg } : {}), // owner-signed config, re-served for joiners
+    ...(room.transferChain.length ? { transferChain: room.transferChain } : {}), // ownership-transfer chain — lets a joiner walk pin → current owner
     ...(room.fileReacts.size ? { fileReacts: reactsToRecord(room) } : {}), // late joiners union this in
     ...(room.chatReacts.size ? { chatReacts: chatReactsToRecord(room) } : {}),
     ...(room.folders.size ? { folders: Array.from(room.folders.values()) } : {}), // section overlay
@@ -694,6 +714,7 @@ function helloMsg(room: Room, full = true): Msg {
     m.secret = ''; m.files = []; m.have = []; m.tombs = [];
     delete m.tombsAt; delete m.tombSigs; delete m.cfg; delete m.fileReacts;
     delete m.chatReacts; delete m.folders; delete m.folderTombs; delete m.chatAt;
+    delete m.transferChain; // not secret, but rides only the FULL hello like everything else post-identification
   }
   return m as Msg;
 }
@@ -781,9 +802,15 @@ function verifyE2ECfg(room: Room, cfg: any): cfg is E2ECfg {
   // With an invite owner pin, ONLY the pinned owner's config counts — otherwise a
   // hostile member reaching a fresh joiner first could plant a wrong E2E secret
   // (a decrypt-DoS) even though the pin blocks it from being adopted as owner.
-  if (!ownerPinAllows(room, cfg.ownerId)) { log('e2e cfg owner not the pinned one — dropped'); return false; }
-  // If a signed config already established the owner, only that same owner counts.
-  if (room.e2eSigned && room.ownerId && cfg.ownerId !== room.ownerId) {
+  // A PAST owner on the verified transfer chain also counts: the content secret
+  // never rotates on transfer, so a previous owner's signed config still
+  // authenticates it — the recovery path that lets a new owner (or a joiner)
+  // learn the secret before the new owner re-mints its own config. Ownership is
+  // not rolled back to a past owner (maybeAdoptE2E gates that on ownerPinAllows).
+  if (!ownerChainAllows(room, cfg.ownerId)) { log('e2e cfg owner neither pinned nor a chain owner — dropped'); return false; }
+  // If a signed config already established the CURRENT owner, only that same owner
+  // counts — but a past chain owner's config still passes above for the secret.
+  if (room.e2eSigned && room.ownerId && cfg.ownerId !== room.ownerId && !room.transferChain.some((l) => l.by === cfg.ownerId || l.newOwnerId === cfg.ownerId)) {
     log('e2e cfg from a different claimed owner — dropped'); return false;
   }
   const bound = room.identities.get(cfg.ownerId);
@@ -865,12 +892,25 @@ function maybeAdoptE2E(room: Room, e2e?: boolean, secret?: string, cfg?: E2ECfg)
       else if (secret && secret !== room.secret) log('conflicting unsigned e2e secret — ignored');
     }
   }
+  // Late E2E-config mint for a new owner: an ownership transfer can make us the
+  // owner while we still lack the secret (a member never synced in an -e2e room),
+  // so adoptChain's mint was skipped. Once we DO hold the secret (learned just
+  // above from a PAST owner's still-valid config), mint our OWN config and
+  // re-greet so peers converge onto it — otherwise no one ever serves a config
+  // that names the current owner and future joiners can't authenticate the secret.
+  let remintOwner = false;
+  if (room.ownerId === room.self.memberId && room.e2e && room.secret &&
+      (!room.e2eCfg || room.e2eCfg.ownerId !== room.self.memberId)) {
+    const mine = signE2ECfg(room);
+    if (mine) { room.e2eCfg = mine; room.e2eSigned = true; changed = true; remintOwner = true; }
+  }
   if (changed) {
     persistE2E(room);
     // A just-learned (or corrected) secret may unblock ciphertext we already hold.
     if (room.secret) void decryptPending(room);
     pushState(room);
   }
+  if (remintOwner) broadcast(room, helloMsg(room));
 }
 
 /**
@@ -932,9 +972,12 @@ async function decryptPending(room: Room): Promise<void> {
   }
 }
 
-/** Append an activity-log event (in memory + persisted) and refresh the UI. */
-function logEvent(room: Room, ev: Omit<RoomEvent, 'id' | 'at'>): void {
-  const full: RoomEvent = { id: crypto.randomBytes(8).toString('hex'), at: Date.now(), ...ev };
+/** Append an activity-log event (in memory + persisted) and refresh the UI. A
+ *  caller may pass `at` to stamp the event with its real time (e.g. a transfer
+ *  caught up from a chain days later) instead of now. */
+function logEvent(room: Room, ev: Omit<RoomEvent, 'id' | 'at'> & { at?: number }): void {
+  const { at, ...rest } = ev;
+  const full: RoomEvent = { id: crypto.randomBytes(8).toString('hex'), at: at ?? Date.now(), ...rest };
   room.history.push(full);
   if (room.history.length > 200) room.history = room.history.slice(-200);
   try { ipcRenderer.send('room-history-add', { roomId: room.roomId, event: full }); } catch { /* ignore */ }
@@ -1051,6 +1094,24 @@ function kickedCanonical(topic: string, m: { targetId: string; by: string }): Bu
 /** Bytes the owner signs to rename the room (owner-gated + last-writer-wins). */
 function renameCanonical(topic: string, m: { name: string; at: number; by: string }): Buffer {
   return Buffer.from(JSON.stringify(['rename', topic, m.name, m.at, m.by]), 'utf8');
+}
+
+/** Bytes the CURRENT owner signs to hand the room to `newOwnerId`. The chain of
+ *  these is what a joiner walks from the invite's pinned FIRST owner to the
+ *  current one, so the canonical binds the signer (`by`) explicitly.
+ *
+ *  The domain is `rootOwnerId` (the chain's GENESIS owner id) — NOT the rotating
+ *  `topic`: a kick rotates the code/topic (applyLocalRekey), and unlike e2eCfg /
+ *  tombSigs the new owner CANNOT re-mint historical links (they bear previous
+ *  owners' keys). A code-derived domain would therefore make the whole persisted
+ *  chain unverifiable after any post-transfer kick, permanently orphaning the
+ *  room on restart. The genesis owner id is stable for the room's whole life and
+ *  every walker knows it (it is the chain root / the pin). Cross-room replay is
+ *  bounded: a link only re-applies in another room whose GENESIS owner is the
+ *  same identity AND where `by` is currently owner — a same-person-owns-both edge
+ *  with no privilege gain (they already control both rooms). See the design doc. */
+function transferCanonical(rootOwnerId: string, m: { by: string; newOwnerId: string; at: number }): Buffer {
+  return Buffer.from(JSON.stringify(['th-room-transfer:v1', rootOwnerId, m.by, m.newOwnerId, m.at]), 'utf8');
 }
 
 /** Bytes the owner signs over a topic change (same discipline as rename). */
@@ -1209,9 +1270,175 @@ function tombSigsToRecord(room: Room): Record<string, TombProof> {
 }
 
 /** With an owner PIN from the invite, ONLY the pinned identity may be adopted as
- *  owner — so a member can't self-declare owner to a fresh joiner. No pin → TOFU. */
+ *  owner — so a member can't self-declare owner to a fresh joiner. No pin → TOFU.
+ *  Once an ownership-transfer chain applied, the CHAIN-proven owner supersedes
+ *  the pin: every link was verified back to the pin/TOFU root when it applied,
+ *  and anything else (incl. a stale claim by a PREVIOUS owner) is refused. */
 function ownerPinAllows(room: Room, id?: string): boolean {
+  if (room.transferChain.length) return id === room.ownerId;
   return !room.ownerPin || id === room.ownerPin;
+}
+
+/** True when `id` is (or WAS) a legitimate owner of this room: the current owner,
+ *  or any signer/recipient on the verified transfer chain. Used to keep accepting
+ *  a PAST owner's signed E2E config after a transfer — the content secret does not
+ *  rotate on transfer, so a previous owner's cfg still authenticates it, which is
+ *  what lets a new owner (or a fresh joiner) still learn the secret before the new
+ *  owner has re-minted its own cfg. Ownership itself is never rolled back to a past
+ *  owner (maybeAdoptE2E still gates that on ownerPinAllows). */
+function ownerChainAllows(room: Room, id?: string): boolean {
+  if (!id) return false;
+  if (ownerPinAllows(room, id)) return true;
+  return room.transferChain.some((l) => l.by === id || l.newOwnerId === id);
+}
+
+// ── Ownership transfer (M8 — docs/rooms-ownership-transfer.md) ───────────────
+// ownerId is otherwise fixed at creation (TOFU + optional invite pin). A signed
+// transfer moves it: the CURRENT owner signs over the new owner's id, everyone
+// verifies the WHOLE chain and adopts the final owner, and the full chain is
+// re-served in HELLOs so a joiner who only trusts the ORIGINAL pin (or a MID-
+// chain pin from a newer invite) can always walk to the current owner. Every
+// member stores and re-serves the COMPLETE chain — never a suffix — so no
+// ownership history is lost as membership churns.
+
+const MAX_TRANSFER_CHAIN = 8; // documented cap — a room changes hands at most 8 times
+
+/** Coerce a peer-supplied/persisted transfer link to a sane shape, or null. */
+function clampTransferLink(l: any): TransferLink | null {
+  if (!l || typeof l !== 'object') return null;
+  const newOwnerId = clampStr(l.newOwnerId, MAX_STR);
+  const by = clampStr(l.by, MAX_STR);
+  const at = Number(l.at);
+  const pub = clampStr(l.pub, MAX_STR * 2);
+  const sig = clampStr(l.sig, MAX_STR);
+  if (!newOwnerId || !by || !pub || !sig || !Number.isFinite(at)) return null;
+  return { newOwnerId, at, by, pub, sig };
+}
+
+/**
+ * Verify a transfer chain and return its longest valid genesis-rooted PREFIX
+ * (capped at MAX_TRANSFER_CHAIN — the tail past the cap is dropped identically on
+ * every peer, so the cap fires consistently). Each link must hand off from the
+ * previous (`by` = the prior `newOwnerId`), be no self-transfer, carry a strictly
+ * increasing non-future `at`, and be signed by `by` over the STABLE genesis-root
+ * domain. On the FIRST malformed/forged/non-contiguous link the walk stops and
+ * the valid prefix so far is returned — so a broken or forged link leaves the
+ * owner at the last verified hop (per the design doc) rather than voiding the
+ * whole chain. Trust anchoring (does this chain belong to OUR room?) is the
+ * caller's job. Returns null when not even the first link verifies.
+ */
+function verifyChainLinks(room: Room, links: unknown): TransferLink[] | null {
+  if (!Array.isArray(links) || !links.length) return null;
+  const out: TransferLink[] = [];
+  let root = '';
+  let prevNewOwner = '';
+  let prevAt = 0;
+  for (const raw of links.slice(0, MAX_TRANSFER_CHAIN)) {
+    const l = clampTransferLink(raw);
+    if (!l) break;                                              // malformed — keep the valid prefix
+    if (l.newOwnerId === l.by) break;                           // self-transfer
+    if (out.length === 0) root = l.by;                          // genesis owner = first signer (the signature domain)
+    else if (l.by !== prevNewOwner) break;                      // not a contiguous hand-off
+    if (l.at <= prevAt) break;                                  // `at` must strictly increase along the chain
+    if (l.at > Date.now() + 60_000) break;                      // no future-dated clock wedge
+    if (!verifySignedBy(room, l.by, l.pub, l.sig, transferCanonical(root, l))) break;
+    out.push(l);
+    prevNewOwner = l.newOwnerId;
+    prevAt = l.at;
+  }
+  return out.length ? out : null;
+}
+
+/** Does this verified chain belong to OUR room's ownership line — i.e. can WE
+ *  trust it to name the owner? Pinned: our pin must appear in it (as the root or
+ *  a later recipient — we may have joined mid-chain via a newer invite). No pin
+ *  (TOFU): trust it if we hold no chain yet (first-seen), or it extends the same
+ *  genesis root / passes through our current owner. */
+function chainAnchored(room: Room, chain: TransferLink[]): boolean {
+  const root = chain[0].by;
+  if (room.ownerPin) {
+    return root === room.ownerPin || chain.some((l) => l.newOwnerId === room.ownerPin);
+  }
+  const knownRoot = room.transferChain.length ? room.transferChain[0].by : room.ownerId;
+  if (!knownRoot) return true; // TOFU, nothing established yet — trust the first sound chain
+  return root === knownRoot || chain.some((l) => l.by === knownRoot || l.newOwnerId === knownRoot);
+}
+
+/**
+ * Verify + adopt a full transfer chain (a HELLO re-serve, a live single-link
+ * transfer appended to ours, or a persisted chain on restart). Adopts the chain
+ * only when it is authentic (verifyChainLinks), belongs to our room (chainAnchored),
+ * and advances ownership (its final `at` is newer than ours, or it is a strictly
+ * longer/equal history at the same clock). Stores the COMPLETE chain and sets the
+ * owner to its final recipient.
+ * `quiet` = restoring from disk: state applies but nothing is re-persisted,
+ * logged, re-minted or broadcast (startRoom's own owner-mint block runs after).
+ */
+function adoptChain(room: Room, links: unknown, quiet = false): boolean {
+  const chain = verifyChainLinks(room, links);
+  if (!chain) return false;
+  if (!chainAnchored(room, chain)) return false;
+  const finalOwner = chain[chain.length - 1].newOwnerId;
+  const finalAt = chain[chain.length - 1].at;
+  // LWW on ownership, with chain LENGTH as the tiebreaker so a more complete
+  // history (same final clock) still replaces a suffix we may be holding.
+  if (finalAt < room.transferAt) return false;
+  if (finalAt === room.transferAt && chain.length <= room.transferChain.length) return false;
+  if (!quiet && room.bans.has(finalOwner)) return false; // never hand a live room to a rekey victim
+  const changedOwner = room.ownerId !== finalOwner;
+  const oldOwnerId = room.ownerId || chain[chain.length - 1].by;
+  room.ownerId = finalOwner;
+  room.transferAt = finalAt;
+  room.transferChain = chain;
+  if (quiet) return true;
+  try { ipcRenderer.send('room-owner', { roomId: room.roomId, ownerId: finalOwner }); } catch { /* ignore */ }
+  try { ipcRenderer.send('room-transfer', { roomId: room.roomId, chain: room.transferChain }); } catch { /* ignore */ }
+  if (changedOwner) {
+    const nameOf = (id: string) => id === room.self.memberId ? (room.self.name || 'You') : (room.members.get(id)?.name || '?');
+    // Stamp the event with the transfer's OWN clock (finalAt), not now — a fresh
+    // joiner catching the chain days later must not show it as "just happened".
+    logEvent(room, { type: 'ownership-transferred', actorId: oldOwnerId, actorName: nameOf(oldOwnerId), targetName: nameOf(finalOwner), at: Math.min(finalAt, Date.now()) });
+  }
+  if (finalOwner === room.self.memberId) {
+    // WE are the new owner: re-mint everything owner-signed under OUR key (the
+    // same re-mint set as applyLocalRekey). The E2E secret and topic do not
+    // rotate on transfer — only the signing authority — so new joiners would
+    // otherwise reject the previous owner's E2E config, tombstones and topic.
+    if (room.e2e && room.secret) {
+      room.e2eCfg = signE2ECfg(room);
+      room.e2eSigned = !!room.e2eCfg;
+      persistE2E(room);
+    }
+    const by = room.self.memberId;
+    for (const [fileId, at] of room.tombstones) {
+      const sig = signBytes(room, delCanonical(room.topic, { fileId, memberId: by, at }));
+      room.tombSigs.set(fileId, { by, pub: room.self.pub, sig });
+      try { ipcRenderer.send('room-tomb', { roomId: room.roomId, fileId, at, by, pub: room.self.pub, sig }); } catch { /* ignore */ }
+    }
+    // Re-sign the room topic (if any) so post-transfer joiners don't reject it
+    // (applySignedTopic gates on `by === current owner`). Bump topicAt so the
+    // re-mint wins LWW; keep the text.
+    if (room.topicText) {
+      const at = Math.max(Date.now(), room.topicAt + 1);
+      const sig = signBytes(room, topicCanonical(room.topic, { text: room.topicText, at, by }));
+      room.topicAt = at;
+      room.topicMsg = { text: room.topicText, at, by, pub: room.self.pub, sig };
+      try { ipcRenderer.send('room-topic', { roomId: room.roomId, text: room.topicText, at, by, pub: room.self.pub, sig }); } catch { /* ignore */ }
+    }
+    // Re-greet so peers pick up the fresh cfg/tombSigs/topic/chain at once.
+    broadcast(room, helloMsg(room));
+  }
+  pushState(room, true);
+  return true;
+}
+
+/** Apply a single LIVE transfer link: append it to the chain we already hold and
+ *  adopt the extended chain (so the full-chain checks run over the whole history,
+ *  not just the one link). */
+function applyTransferMsg(room: Room, raw: unknown): boolean {
+  const l = clampTransferLink(raw);
+  if (!l) return false;
+  return adoptChain(room, [...room.transferChain, l]);
 }
 
 /** Learn who the room owner is from a peer (joiners start not knowing). First
@@ -1337,6 +1564,8 @@ function clampGossip(msg: any): void {
   if ('roomName' in msg) msg.roomName = clampStr(msg.roomName, MAX_STR);
   if ('avatarSeed' in msg) msg.avatarSeed = clampStr(msg.avatarSeed, MAX_STR);
   if ('ownerId' in msg) msg.ownerId = clampStr(msg.ownerId, MAX_STR);
+  if ('by' in msg) msg.by = clampStr(msg.by, MAX_STR);                   // actor id on signed commands (del/rekey/rename/topic/transfer)
+  if ('newOwnerId' in msg) msg.newOwnerId = clampStr(msg.newOwnerId, MAX_STR); // transfer target
   if ('to' in msg) msg.to = clampStr(msg.to, MAX_STR);       // voice-signal target
   if ('kind' in msg) msg.kind = clampStr(msg.kind, 16);      // voice-signal kind (offer/answer/ice)
   if ('streamId' in msg) msg.streamId = clampStr(msg.streamId, MAX_STR); // voice-share stream id (msid)
@@ -1426,6 +1655,11 @@ function clampGossip(msg: any): void {
       }
     }
     msg.folderTombs = out;
+  }
+  if ('transferChain' in msg) {
+    msg.transferChain = Array.isArray(msg.transferChain)
+      ? msg.transferChain.slice(0, MAX_TRANSFER_CHAIN).map(clampTransferLink).filter(Boolean)
+      : [];
   }
   if ('pct' in msg) {
     const p = Math.round(Number(msg.pct));
@@ -1518,6 +1752,11 @@ function onMessage(room: Room, wire: Wire, raw: any): void {
       if (msg.topicMsg) {
         applySignedTopic(room, msg.topicMsg);
       }
+      // Ownership-transfer chain BEFORE the bare ownerId claim: a joiner on an
+      // old invite walks pin → current owner here, instead of rejecting the new
+      // owner's id against the pin below (and E2E cfg verification right after
+      // depends on the post-walk owner).
+      adoptChain(room, msg.transferChain);
       maybeAdoptOwner(room, msg.ownerId);
       maybeAdoptE2E(room, msg.e2e, msg.secret, msg.cfg);
       if (isNew) logEvent(room, { type: 'joined', actorId: msg.memberId, actorName: msg.name || '?' });
@@ -1712,6 +1951,12 @@ function onMessage(room: Room, wire: Wire, raw: any): void {
       if (!room.ownerId || msg.by !== room.ownerId) break;
       if (!verifySignedBy(room, msg.by, msg.pub, msg.sig, kickedCanonical(room.topic, { targetId: msg.targetId, by: msg.by }))) break;
       markKicked(room, msg.byName || '?');
+      break;
+    }
+    case 'transfer': {
+      // Ownership handover, CURRENT-OWNER-signed (all rules in applyTransferMsg).
+      // Relayed verbatim, so multi-hop members verify the owner, not the relayer.
+      applyTransferMsg(room, msg);
       break;
     }
     case 'rename': {
@@ -2502,6 +2747,7 @@ function suspendAllNetworking(): void {
     room.tracker = null;
     for (const wire of room.wires.values()) { try { wire.peer.destroy(); } catch { /* ignore */ } }
     room.wires.clear();
+    closeStreamServers(room.roomId); // a live stream server keeps the real IP off loopback, but stop it with the rest
     const c = clients.get(room.roomId);
     clients.delete(room.roomId);
     try { c?.destroy(); } catch { /* ignore */ }
@@ -2524,6 +2770,7 @@ function markKicked(room: Room, byName: string): void {
   room.tracker = null;
   for (const wire of room.wires.values()) { try { wire.peer.destroy(); } catch { /* ignore */ } }
   room.wires.clear();
+  closeStreamServers(room.roomId);
   room.started = false;
   pushState(room, true);
 }
@@ -2562,9 +2809,33 @@ function kickMember(room: Room, memberId: string): void {
   }, 300);
 }
 
+/** Owner-only: hand the room to another member. Signs a transfer every member
+ *  (and every future joiner, via the re-served chain) can verify, applies it
+ *  locally — we become a regular member — then gossips it. */
+function transferOwnership(roomId: string, memberId: string): RoomState {
+  const room = rooms.get(roomId);
+  if (!room) throw new Error('Room not active');
+  if (room.ownerId !== room.self.memberId) throw new Error('Only the room owner can transfer ownership');
+  const newOwnerId = String(memberId || '');
+  if (!newOwnerId || newOwnerId === room.self.memberId) throw new Error('Pick another member to transfer ownership to');
+  if (!room.members.has(newOwnerId)) throw new Error('That member is not in this room');
+  if (room.bans.has(newOwnerId)) throw new Error('That member was removed from this room');
+  if (room.transferChain.length >= MAX_TRANSFER_CHAIN) throw new Error('This room has already changed hands the maximum number of times');
+  const by = room.self.memberId;
+  const at = Math.max(Date.now(), room.transferAt + 1); // strictly newer, never in the past
+  // The signature domain is the chain's GENESIS owner (stable across rekeys) —
+  // ours if we are the first to transfer (empty chain = we are the genesis owner).
+  const root = room.transferChain.length ? room.transferChain[0].by : by;
+  const sig = signBytes(room, transferCanonical(root, { by, newOwnerId, at }));
+  const msg: Msg = { t: 'transfer', newOwnerId, at, by, pub: room.self.pub, sig };
+  if (!applyTransferMsg(room, msg)) throw new Error('Ownership transfer failed');
+  broadcast(room, msg);
+  return buildState(room);
+}
+
 // ── Room lifecycle ───────────────────────────────────────────────────────────
 function startRoom(p: { roomId: string; name: string; code: string; folder: string;
-  self: { memberId: string; name: string; avatarSeed: string; color?: string; status?: string; avatarImg?: string; pub: string; priv: string }; useTurn: boolean; turnServers?: any[]; tombstones?: Record<string, number>; tombSigs?: Record<string, { by: string; pub: string; sig: string }>; revives?: Record<string, number>; manifest?: PersistedRoomFile[]; folders?: RoomFolder[]; folderTombs?: Record<string, number>; ownerId?: string; ownerPin?: string; nameAt?: number; topicText?: string; topicAt?: number; topicMsg?: { text: string; at: number; by: string; pub: string; sig: string } | null; mutes?: string[]; history?: RoomEvent[]; chat?: RoomChatMessage[]; reacts?: Record<string, Record<string, string[]>>; chatReacts?: Record<string, Record<string, string[]>>; identities?: Record<string, string>; e2e?: boolean; secret?: string; prevSecrets?: string[]; bans?: string[]; e2eCfg?: E2ECfg | null; cacheDir?: string; autoFetch?: boolean; folderFetch?: Record<string, boolean>; upKbps?: number; downKbps?: number }): RoomState {
+  self: { memberId: string; name: string; avatarSeed: string; color?: string; status?: string; avatarImg?: string; pub: string; priv: string }; useTurn: boolean; turnServers?: any[]; tombstones?: Record<string, number>; tombSigs?: Record<string, { by: string; pub: string; sig: string }>; revives?: Record<string, number>; manifest?: PersistedRoomFile[]; folders?: RoomFolder[]; folderTombs?: Record<string, number>; ownerId?: string; ownerPin?: string; transferChain?: TransferLink[]; nameAt?: number; topicText?: string; topicAt?: number; topicMsg?: { text: string; at: number; by: string; pub: string; sig: string } | null; mutes?: string[]; history?: RoomEvent[]; chat?: RoomChatMessage[]; reacts?: Record<string, Record<string, string[]>>; chatReacts?: Record<string, Record<string, string[]>>; identities?: Record<string, string>; e2e?: boolean; secret?: string; prevSecrets?: string[]; bans?: string[]; e2eCfg?: E2ECfg | null; cacheDir?: string; autoFetch?: boolean; folderFetch?: Record<string, boolean>; upKbps?: number; downKbps?: number }): RoomState {
   // Authoritative kill-switch gate: refuse to bring up ANY room networking while
   // the VPN is down, no matter how this join raced past the manager's flag. The
   // manager clears this via 'netResume' before it re-joins on VPN restore.
@@ -2600,6 +2871,8 @@ function startRoom(p: { roomId: string; name: string; code: string; folder: stri
     // match it (it'd be a pre-pin or tampered value) — re-learn under the pin.
     ownerId: (p.ownerPin && p.ownerId && p.ownerId !== p.ownerPin) ? '' : (p.ownerId || ''),
     ownerPin: p.ownerPin || '',
+    transferChain: [],
+    transferAt: 0,
     // The invite code is the E2E source of truth for new-format rooms: even if
     // the persisted flag is missing/stale, a "-e2e" code must never run plaintext.
     e2e: p.e2e || codeIsE2E(p.code),
@@ -2655,6 +2928,16 @@ function startRoom(p: { roomId: string; name: string; code: string; folder: stri
   };
   rooms.set(p.roomId, room);
   room.voice = createVoiceSession(room);
+
+  // Ownership-transfer chain: re-verify the persisted chain from the pin/TOFU
+  // root (the store may have been tampered with — same discipline as identities
+  // and e2eCfg) and let IT, not the bare persisted ownerId, decide the owner.
+  // Runs BEFORE the E2E block below so the owner-mint check sees the final id.
+  if (Array.isArray(p.transferChain) && p.transferChain.length) {
+    const fallbackOwner = room.ownerId;
+    room.ownerId = ''; // the chain roots at the pin (or its own root under TOFU)
+    if (!adoptChain(room, p.transferChain, true)) room.ownerId = fallbackOwner; // rejected wholesale — fall back
+  }
 
   // E2E authenticity: the owner mints the signed config fresh (it holds the
   // private key, so no persistence is needed); everyone else restores the
@@ -2986,6 +3269,7 @@ function leaveRoom(roomId: string): void {
   rooms.delete(roomId);
   const c = clients.get(roomId);
   clients.delete(roomId);
+  closeStreamServers(roomId);
   const teardown = (): void => {
     try { room.tracker?.stop(); room.tracker?.destroy(); } catch { /* ignore */ }
     for (const wire of room.wires.values()) { try { wire.peer.destroy(); } catch { /* ignore */ } }
@@ -3025,6 +3309,63 @@ function reseedFile(roomId: string, fileId: string): void {
   if (tr) tr.released = false;
   ensureLocal(room, file); // idempotent — re-seeds from disk or re-downloads
   pushState(room, true);
+}
+
+/**
+ * Watch-while-downloading: start (or reuse) WebTorrent's own HTTP stream server
+ * for one non-E2E room file and hand the renderer a 127.0.0.1 URL to play. The
+ * server serves Range requests straight off the live torrent — it blocks on and
+ * prioritizes the not-yet-downloaded pieces the player asks for — so a directly-
+ * playable file plays before the download finishes. Auto-starts the download if
+ * the file isn't being fetched yet (manual mode), and waits for metadata so the
+ * torrent's file index actually resolves. Refused for E2E rooms: the swarm
+ * carries ciphertext, so there is no plaintext to stream until decrypt.
+ */
+async function watchStream(roomId: string, fileId: string): Promise<{ port: number; index: number }> {
+  if (netSuspended) throw new Error('Rooms are paused: the VPN is down (kill-switch)');
+  const room = rooms.get(roomId);
+  if (!room) throw new Error('Room not active');
+  if (room.e2e) throw new Error('Encrypted room files can only be watched once fully downloaded');
+  const file = room.files.get(fileId);
+  if (!file) throw new Error('File not found in this room');
+  const key = `${roomId}:${fileId}`;
+  const existing = streamServers.get(key);
+  if (existing) return { port: existing.port, index: 0 };
+  const c = ensureClient(room);
+  let t = c.get(file.infoHash);
+  if (!t) { ensureLocal(room, file); t = c.get(file.infoHash); } // manual mode: kick off the fetch
+  if (!t) throw new Error('Could not start streaming this file');
+  // Serving /0 needs the torrent's file list, which arrives with metadata (a
+  // magnet download fetches it from peers first). Wait, bounded, for a sleeping room.
+  if (!t.ready) {
+    await new Promise<void>((resolve, reject) => {
+      const to = setTimeout(() => reject(new Error('Timed out waiting for file info from peers — is anyone online with this file?')), 25000);
+      const done = () => { clearTimeout(to); resolve(); };
+      t.once('ready', done);
+      t.once('metadata', done);
+    });
+  }
+  // A room started/torn down while we awaited metadata — don't leak a server.
+  if (netSuspended || !rooms.has(roomId)) throw new Error('The room session ended');
+  const server = t.createServer({ origin: 'th-room-stream', hostname: '127.0.0.1' }); // origin sentinel: no ACAO for real sites (see manager.getStreamUrl)
+  await new Promise<void>((resolve, reject) => {
+    try { server.listen(0, '127.0.0.1', () => resolve()); server.on('error', reject); }
+    catch (e) { reject(e); }
+  });
+  const port = server.address().port;
+  streamServers.set(key, { server, port });
+  log('room stream server started for ' + file.name + ' on 127.0.0.1:' + port);
+  return { port, index: 0 };
+}
+
+/** Close every stream server a room opened (leave / kick / VPN suspend). */
+function closeStreamServers(roomId: string): void {
+  for (const [key, s] of Array.from(streamServers)) {
+    if (key === roomId || key.startsWith(roomId + ':')) {
+      try { s.server.close(); } catch { /* ignore */ }
+      streamServers.delete(key);
+    }
+  }
 }
 
 /** Broadcast a chat message to the room and record it locally (so we see our own). */
@@ -3137,6 +3478,7 @@ ipcRenderer.on('room-cmd', async (_e, msg: any) => {
     else if (type === 'profile') { updateProfile(msg.payload || {}); data = { ok: true }; }
     else if (type === 'releaseFile') { releaseFile(msg.roomId, msg.fileId); data = { ok: true }; }
     else if (type === 'reseedFile') { reseedFile(msg.roomId, msg.fileId); data = { ok: true }; }
+    else if (type === 'watchStream') data = await watchStream(msg.roomId, String(msg.fileId || ''));
     else if (type === 'removeFile') {
       const r = rooms.get(msg.roomId);
       if (r) { broadcastDelete(r, msg.fileId, Number(msg.at) || Date.now()); pushState(r, true); }
@@ -3157,6 +3499,7 @@ ipcRenderer.on('room-cmd', async (_e, msg: any) => {
       kickMember(r, String(msg.memberId || ''));
       data = { ok: true };
     }
+    else if (type === 'transferOwner') data = transferOwnership(msg.roomId, String(msg.memberId || ''));
     else if (type === 'mute') {
       // Locally hide a member on THIS install (never broadcast, fully reversible).
       // Future shares from them are ignored (see mergeFile); already-downloaded

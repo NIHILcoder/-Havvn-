@@ -281,6 +281,7 @@ class TorrentManagerProxy {
   castUnpublish(...a: Parameters<Cast['unpublish']>): Promise<void> { return this.rpc('castUnpublish', a); }
   castTvMedia(...a: Parameters<Cast['tvMedia']>): Fwd<Cast['tvMedia']> { return this.rpc('castTvMedia', a); }
   castPublishDiskFile(...a: Parameters<Cast['publishDiskFile']>): Fwd<Cast['publishDiskFile']> { return this.rpc('castPublishDiskFile', a); }
+  castPublishImage(...a: Parameters<Cast['publishImage']>): Fwd<Cast['publishImage']> { return this.rpc('castPublishImage', a); }
 }
 
 let proxy: TorrentManagerProxy | null = null;

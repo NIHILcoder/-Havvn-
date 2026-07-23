@@ -94,11 +94,12 @@ process.on('unhandledRejection', (reason) => {
 let manager: EngineManager | null = null;
 
 // cast* method names are served by the cast server, not the manager.
-const CAST_METHODS: Record<string, 'publish' | 'unpublish' | 'tvMedia' | 'publishDiskFile'> = {
+const CAST_METHODS: Record<string, 'publish' | 'unpublish' | 'tvMedia' | 'publishDiskFile' | 'publishImage'> = {
   castPublish: 'publish',
   castUnpublish: 'unpublish',
   castTvMedia: 'tvMedia',
   castPublishDiskFile: 'publishDiskFile',
+  castPublishImage: 'publishImage',
 };
 
 /** Push the values main mirrors for its synchronous getters. */

@@ -617,8 +617,10 @@ const api: IpcApi = {
     openFolder: (roomId: string): Promise<void> => ipcRenderer.invoke('rooms:openFolder', roomId),
     openFile: (roomId: string, fileId: string): Promise<void> => ipcRenderer.invoke('rooms:openFile', roomId, fileId),
     revealFile: (roomId: string, fileId: string): Promise<void> => ipcRenderer.invoke('rooms:revealFile', roomId, fileId),
-    watchFile: (roomId: string, fileId: string): Promise<{ directUrl: string; hlsUrl: string; playerUrl: string; coverUrl?: string; direct: boolean; kind: string; name: string }> =>
+    watchFile: (roomId: string, fileId: string): Promise<{ directUrl: string; hlsUrl: string; playerUrl: string; coverUrl?: string; direct: boolean; kind: string; name: string; streaming?: boolean }> =>
       ipcRenderer.invoke('rooms:watchFile', roomId, fileId),
+    imageUrl: (roomId: string, fileId: string): Promise<{ url: string }> =>
+      ipcRenderer.invoke('rooms:imageUrl', roomId, fileId),
     subtitleList: (roomId: string, fileId: string): Promise<Array<{ key: string; label: string; lang?: string; source: 'embedded' | 'external' }>> =>
       ipcRenderer.invoke('rooms:subtitleList', roomId, fileId),
     subtitleGet: (roomId: string, fileId: string, key: string): Promise<string> =>
@@ -691,6 +693,8 @@ const api: IpcApi = {
       ipcRenderer.invoke('rooms:setLimits', roomId, upKbps, downKbps),
     kick: (roomId: string, memberId: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke('rooms:kick', roomId, memberId),
+    transferOwner: (roomId: string, memberId: string): Promise<RoomState> =>
+      ipcRenderer.invoke('rooms:transferOwner', roomId, memberId),
     sendChat: (roomId: string, text: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke('rooms:sendChat', roomId, text),
     typing: (roomId: string): void => {

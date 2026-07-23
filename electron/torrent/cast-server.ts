@@ -195,6 +195,23 @@ export class CastServer {
   }
 
   /**
+   * Publish a local IMAGE file for in-app thumbnail/lightbox display and return
+   * a loopback URL. Unlike publishDiskFile this bypasses the media-kind gate
+   * (images are 'other' to classifyMediaKind); the /image route streams the raw
+   * bytes with an image content-type. Loopback host — the in-app <img> loads it.
+   */
+  async publishImage(absPath: string): Promise<{ url: string }> {
+    const stat = fs.statSync(absPath); // throws ENOENT if missing
+    const name = path.basename(absPath);
+    await this.ensureServer();
+    const id = 'img_' + crypto.createHash('sha1').update(absPath).digest('hex').slice(0, 16);
+    this.diskPublished.set(`${id}/0`, { name, length: stat.size, diskPath: absPath, complete: true, kind: 'other', direct: true });
+    this.published.add(`${id}/0`);
+    // &v= busts the browser cache when a same-path file changes (revive/re-share).
+    return { url: `http://127.0.0.1:${this.port}/image/${encodeURIComponent(id)}/0?k=${this.token}&v=${Math.round(stat.mtimeMs)}` };
+  }
+
+  /**
    * Build a direct media URL + content type for a TV (Chromecast/DLNA), which
    * fetches the URL itself. Browser-playable files go via /direct (seekable);
    * everything else via HLS, which Chromecast plays natively.
@@ -250,6 +267,7 @@ export class CastServer {
       if (route === 'direct') return this.serveDirect(req, res, info);
       if (route === 'stream') return this.serveProgressive(req, res, info, id); // single-pass MP4 fallback
       if (route === 'cover') return void this.serveCover(res, info);
+      if (route === 'image') return this.serveImage(res, info);
       if (route === 'hls') {
         if (parts[3] === 'master.m3u8') return void this.serveMaster(res, id, fileIndex);
         const variant = parts[3];
@@ -370,6 +388,19 @@ export class CastServer {
       stream.on('error', () => { try { res.destroy(); } catch { /* ignore */ } });
       stream.pipe(res);
     }
+  }
+
+  // ── Image (thumbnail / lightbox) ─────────────────────────────────────────────
+  /** Stream a local image file's raw bytes with an image content-type — the
+   *  in-app file list loads it into a lazy <img> (small in a row, full in the
+   *  lightbox). No transcode; the browser does the downscale for the row. */
+  private serveImage(res: http.ServerResponse, info: FileInfo): void {
+    let size: number;
+    try { size = fs.statSync(info.diskPath).size; } catch { res.writeHead(404); res.end(); return; }
+    res.writeHead(200, { 'Content-Type': imageContentType(info.name), 'Content-Length': size, 'Cache-Control': 'max-age=86400' });
+    const stream = fs.createReadStream(info.diskPath);
+    stream.on('error', () => { try { res.destroy(); } catch { /* ignore */ } });
+    stream.pipe(res);
   }
 
   /** Serve the bundled hls.js (no CDN needed). Cached after first read. */
@@ -603,6 +634,15 @@ function directContentType(name: string): string {
     mp4: 'video/mp4', m4v: 'video/mp4', mov: 'video/mp4', webm: 'video/webm', ogv: 'video/ogg',
     mp3: 'audio/mpeg', m4a: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg', oga: 'audio/ogg',
     opus: 'audio/ogg', wav: 'audio/wav', flac: 'audio/flac',
+  };
+  return map[ext] || 'application/octet-stream';
+}
+
+function imageContentType(name: string): string {
+  const ext = name.split('.').pop()?.toLowerCase() || '';
+  const map: Record<string, string> = {
+    jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp',
+    bmp: 'image/bmp', svg: 'image/svg+xml', avif: 'image/avif', ico: 'image/x-icon', tif: 'image/tiff', tiff: 'image/tiff',
   };
   return map[ext] || 'application/octet-stream';
 }

@@ -437,8 +437,82 @@ mute» в Room settings (P3) + опциональный тихий звук вх
 6. M17 deep-link.
 
 ### Волна 4 — медиа/движок
-M10 watch-while-downloading → M19 качество связи → M15 миниатюры →
-M12 виртуализация (по замерам) → M20 звук скриншера.
+> 🔄 **Начата.** **M10 watch-while-downloading СДЕЛАН** (не запушено): комнатный
+> файл проигрывается по мере скачивания через СОБСТВЕННЫЙ HTTP-сервер WebTorrent,
+> поднятый в окне движка (`torrent.createServer()` на 127.0.0.1 — сам держит Range
+> + блокировку/приоритет недокачанных кусков). Маршрутизация в `RoomManager.watchFile`:
+> завершённый файл → прежний дисковый cast-путь (HLS-транскод/сабы/обложка), НЕзавершённый
+> не-E2E прямого формата → engine-команда `watchStream` → `{port,index}` → плеер грузит
+> `http://127.0.0.1:<port>/0` **no-cors** (сервер без ACAO — crossOrigin снимается).
+> Гейт в UI: `canStream = !haveLocally && !room.e2e && isDirectlyPlayable && (downloading||awaitingFetch)`;
+> сложён в `canWatch`. `watchStream` авто-стартует загрузку для manual-режима и ждёт
+> метаданные (кап 25с). Сервера закрываются на leave/kick/VPN-suspend.
+> **Осознанные ограничения (сужение объёма):** только НЕ-E2E комнаты (у E2E нет
+> плейнтекста до полного decrypt) и только browser-native форматы (mkv/HEVC/avi
+> нужен транскод от полного файла — остаются под гейтом до завершения); сабы/обложка
+> для недокачанного недоступны (нужен ffmpeg по готовому файлу с диска). Тесты:
+> electron/sharing/room-watch-stream.test.ts (порт/переиспользование/leave-cleanup,
+> E2E-отказ, авто-fetch manual). Механизм провалидирован пробой (webtorrent 1.9.7
+> createServer → 206 + корректный content-range на Range). ЖИВОЙ двухинстансовый
+> смоук пройден: A зашарил 40MB mp4, B поймали mid-download (0.7%), watchFile →
+> streaming-URL, реальный Range-GET → 206 + content-range bytes 0-65535/40337910.
+> **M19 индикация качества голоса СДЕЛАН** (не запушено): движок раз в 3с опрашивает
+> `pc.getStats()` каждого голосового пира (`MediaPeer.sampleQuality` — RTT по номинированной
+> candidate-pair + доля потерь inbound-rtp за окно), выводит уровень good/fair/poor в
+> `VoiceParticipant.quality` (+ `reconnecting` при падении уже соединявшегося линка через
+> `everConnected`/connectionState). Пороги: RTT 200/400мс, loss 3%/8%. Таймер `statsTimer`
+> живёт от join до leave; `pollQuality` пушит через `onChange` только при смене. UI:
+> цветная точка `.room-voice-quality` на аватаре плитки (зелёная/янтарь/красная, пульс при
+> reconnecting), не для self, тултипы `rooms.voice.quality*`/`reconnecting` (en+ru). Типы в
+> обоих местах (room-voice VoiceParticipant + shared RoomVoiceParticipant). ЖИВОЙ смоук
+> пройден (fake-mic, два инстанса): B видит пира с `quality:"good"`, self без качества.
+> **M15 миниатюры/лайтбокс картинок СДЕЛАН** (не запушено): категория `image` —
+> отдельный хелпер `isImage` в shared/media (НЕ трогая classifyMediaKind, у которого
+> стриминг-семантика: image остаётся 'other', неиграбельным). Доставка байтов —
+> новый лёгкий роут `/image` в cast-сервере (`serveImage` стримит сырые байты с
+> image/* content-type, `publishImage` минует media-kind-гейт), проброшен как
+> `castPublishImage` (host CAST_METHODS + manager-proxy) → `RoomManager.imageUrl` →
+> IPC `rooms:imageUrl`. UI: фильтр-чип «Изображения» (typeFilter += image, фильтр
+> через `fileTypeOf`), ленивая `<img loading="lazy">`-миниатюра в строке вместо
+> глифа (клик/двойной клик → лайтбокс), беспоручный портал-оверлей `ImageLightbox`
+> (Esc/клик по фону/×). Только для скачанных (`haveLocally`); i18n rooms.filter.image
+> (уже был) + rooms.viewImage en+ru. ЖИВОЙ смоук пройден (шар PNG → imageUrl → HTTP
+> GET `/image` → 200 image/png 61530 байт). Осознанное сужение: без ffmpeg-даунскейла
+> (миниатюра = полный файл, downscale браузером + loading=lazy) — true-thumbs через
+> `/thumb`-роут возможны как follow-up.
+> **M12 ЗАМЕРЕН (2026-07-23), реализация НЕ начата.** Живой замер (CDP, реальный
+> рендер, GPU включён) на комнате с N файлами (все строки рендерятся, виртуализации
+> нет):
+> | N | DOM-узлов | heap | скролл FPS | кадров>33мс | кадров>100мс | фильтр 0→N (React-ререндер) |
+> |---|---|---|---|---|---|---|
+> | 200 | 13 209 | 22 МБ | 59 | 2 | 0 | 210 мс |
+> | 600 | 38 809 | 57 МБ | 57 | 5 | 0 | 599 мс |
+> | 1000 | 64 409 | 65 МБ | 41 | 25 | 3 | 909 мс |
+> ~64 узла/строку (линейно). **Вывод:** СКРОЛЛ гладок до ~600 (GPU-композитинг
+> тянет статичный DOM), деградирует к 1000 (41fps). Реальная боль — **ЛАТЕНТНОСТЬ
+> ПЕРЕРЕНДЕРА** (фильтр/поиск/сорт/открытие/фоновый room-update): ~линейна, 210→599→
+> 909 мс, т.е. видимый фриз ≥0.5с уже на 600, и он бьёт на КАЖДОМ изменении стейта
+> (а стейт пушится пингами/прогрессом каждые секунды). Виртуализация оправдана
+> с ~500-600 файлов. NB: важное осложнение — список ГРУППИРОВАН по папкам/секциям
+> (renderFolderFiles), оконная виртуализация сложнее плоского списка. Дешёвый
+> частичный выигрыш до полного windowing: `React.memo` на RoomFileRow (сейчас
+> каждый фоновый room-update перерисовывает все строки). Скрипт: scratchpad/smoke-m12.js.
+> **M12 РЕАЛИЗОВАН (2026-07-23, не запушено).** Виртуализирован ПЛОСКИЙ (без папок)
+> файловый список через `@tanstack/react-virtual` (уже был в депсах, паттерн из
+> DownloadsPage): `useVirtualizer` в RoomFilesPanel, ref на `.room-files-scroll`,
+> абсолютные строки с `measureElement` (высоты варьируются), estimateSize 72. Гейт
+> `flatList = !hasFolders && visibleFiles.length>0` — count=0 в сгруппированном
+> режиме (тот оставлен как есть: секции ограничены, collapse/drag-drop не ложатся
+> на плоское окно). Load-bearing CSS: `.room-files-virtual { flex: none }` — scroll-
+> контейнер display:flex, а absolute-строки дают ~0 intrinsic height, без flex:none
+> контейнер схлопывается и не скроллится. ЗАМЕР ПОСЛЕ (GPU, живой CDP): 600 файлов
+> 38.8k→**1.2k DOM**, фильтр 599→**19мс**, скролл **60fps**; 1000 файлов так же
+> (12 строк в окне, maxIdx доходит до последнего — корректность подтверждена
+> scrollTop=scrollHeight-clientHeight). **ЧАТ: виртуализация НЕ нужна** — buildState
+> отдаёт `chat.slice(-100)`, т.е. RoomState КАПИТ рендер чата на 100 сообщений;
+> замер (100 сообщений) = 60fps, 0 джанка. Т.е. чат уже ограничен на уровне стейта.
+> Сьют 410/410, тайпчек+lint(0 err) чисты. Скрипты: scratchpad/smoke-m12.js (+chat).
+> Дальше: M20 звук скриншера; и отложенные мелочи волн 2-3.
 
 ### Чем НЕ заниматься
 - QR-код в invite — уже осознанно удалён (desktop-only), не возвращать.

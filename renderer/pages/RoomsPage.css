@@ -744,7 +744,68 @@
 .room-file-kind { flex-shrink: 0; margin-right: 6px; vertical-align: -2px; }
 .room-file-kind.kind-video { color: var(--color-accent-primary); }
 .room-file-kind.kind-audio { color: var(--color-success, #22c55e); }
+.room-file-kind.kind-image { color: var(--color-accent-secondary, #adb87c); }
 .room-file-kind.kind-other { color: var(--color-text-tertiary); }
+/* Image row thumbnail (M15): a small preview in place of the type glyph. */
+.room-file-thumb {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  margin-right: 6px;
+  border-radius: var(--radius-sm, 4px);
+  object-fit: cover;
+  vertical-align: middle;
+  background: var(--color-bg-tertiary);
+  cursor: zoom-in;
+}
+/* Full-screen image lightbox — a bare portal overlay above everything. */
+.room-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.86);
+  cursor: zoom-out;
+}
+.room-lightbox-img {
+  max-width: 92vw;
+  max-height: 86vh;
+  object-fit: contain;
+  border-radius: var(--radius-md, 8px);
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
+  cursor: default;
+}
+.room-lightbox-name {
+  max-width: 92vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 12px;
+  cursor: default;
+}
+.room-lightbox-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  cursor: pointer;
+}
+.room-lightbox-close:hover { background: rgba(255, 255, 255, 0.22); }
 .room-file-mark { background: color-mix(in srgb, var(--color-accent-primary) 30%, transparent); color: inherit; border-radius: 2px; }
 .room-file-acts { display: inline-flex; gap: 2px; flex-shrink: 0; opacity: 0; transition: opacity var(--transition-fast); }
 .room-file:hover .room-file-acts, .room-file:focus-within .room-file-acts { opacity: 1; }
@@ -1368,6 +1429,13 @@
 }
 
 .room-files { display: flex; flex-direction: column; }
+/* Virtualized flat file list (M12): absolutely-positioned windowed rows inside a
+   relative box sized to the full list height. `flex: none` is load-bearing — the
+   scroll container is display:flex, and the absolute rows give this box ~0
+   intrinsic height, so a shrinkable flex item would collapse to the viewport and
+   never overflow (no scroll). flex:none preserves its explicit height. */
+.room-files-virtual { display: block; flex: none; }
+.room-files-vrow { contain: layout paint; }
 .room-files-empty {
   padding: var(--space-6);
   text-align: center;
@@ -2231,6 +2299,26 @@
   background: none;
   cursor: pointer;
   padding: 2px;
+  position: relative; /* anchors the quality dot to the avatar */
+}
+/* Voice-link quality dot (M19): OUR connection to this peer — green good, amber
+   fair, red poor; a ring in the panel bg lifts it off the avatar. */
+.room-voice-quality {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-full);
+  border: 2px solid var(--color-bg-secondary);
+  background: var(--color-success);
+  pointer-events: none; /* clicks fall through to the ring button (volume popover) */
+}
+.room-voice-quality.q-fair { background: var(--color-warning); }
+.room-voice-quality.q-poor { background: var(--color-error); }
+.room-voice-quality.reconnecting {
+  background: var(--color-error);
+  animation: room-voice-live-pulse 1s ease-in-out infinite;
 }
 .room-voice-vol {
   width: 100%;

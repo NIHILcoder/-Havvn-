@@ -12,6 +12,16 @@ const AUDIO_EXTS = new Set([
 
 export type MediaKind = 'video' | 'audio' | 'other';
 
+// Image extensions the room file list previews as thumbnails. Kept SEPARATE
+// from classifyMediaKind (which drives the streaming/cast path, where an image
+// must stay 'other' — not playable): images are a display concern, not media.
+const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'avif', 'ico', 'tif', 'tiff']);
+
+/** True for a still-image file (thumbnail/lightbox candidate). */
+export function isImage(name: string): boolean {
+  return IMAGE_EXTS.has(name.split('.').pop()?.toLowerCase() || '');
+}
+
 // Containers/codecs the built-in Chromium player can usually play directly,
 // so they can be served as-is (no transcoding). Everything else streamable
 // (avi, mkv, wmv, flv, mpg, ts, wma, …) is transcoded on the fly via ffmpeg.

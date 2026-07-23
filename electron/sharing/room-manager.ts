@@ -19,6 +19,7 @@ import { t } from '../i18n';
 import * as db from '../db/store';
 import { RoomState, RoomSummary, RoomProfile, VoiceSettings, VoiceDeviceInfo } from '../../shared/types';
 import { generateRoomCode, normalizeCode, codeIsE2E, parseInvite } from './room-crypto';
+import { classifyMediaKind, isDirectlyPlayable } from '../../shared/media';
 import { listSubtitleTracks, getSubtitleVtt, SubtitleTrackItem } from '../torrent/subtitle-probe';
 import { generateRoomSecret } from './room-e2e';
 import { decideGlobalPtt, isGlobalPttAvailable, resolveUiohookKeycode, startGlobalPtt, stopGlobalPtt } from '../utils/global-ptt';
@@ -251,6 +252,23 @@ export class RoomManager {
         }
       } catch { /* ignore */ }
     });
+    // An ownership transfer applied (or the chain grew) — persist the WHOLE
+    // chain (capped) so a restart re-verifies and re-serves it to joiners.
+    ipcMain.on('room-transfer', (_e, payload: { roomId: string; chain: db.PersistedRoom['transferChain'] }) => {
+      try {
+        if (!payload?.roomId || !Array.isArray(payload.chain)) return;
+        const r = db.getPersistedRooms().find((x) => x.roomId === payload.roomId);
+        if (!r) return;
+        const chain = payload.chain.slice(0, 8).map((l) => ({
+          newOwnerId: String(l?.newOwnerId || ''), at: Number(l?.at) || 0,
+          by: String(l?.by || ''), pub: String(l?.pub || ''), sig: String(l?.sig || ''),
+        })).filter((l) => l.newOwnerId && l.by && l.pub && l.sig && l.at > 0);
+        if (JSON.stringify(r.transferChain || []) !== JSON.stringify(chain)) {
+          db.savePersistedRoom({ ...r, transferChain: chain });
+          log.info('Room ownership-transfer chain persisted', { roomId: payload.roomId, links: chain.length });
+        }
+      } catch { /* ignore */ }
+    });
     // The room was rekeyed (a member was kicked) — persist the new invite code so
     // reconnecting/restarting lands on the new swarm, not the abandoned one.
     ipcMain.on('room-rekey', (_e, payload: { roomId: string; code: string; banId?: string }) => {
@@ -441,6 +459,7 @@ export class RoomManager {
         folderTombs: db.getRoomFolderTombstones(roomId),
         ownerId: ownerId ?? '',
         ownerPin: ownerPin ?? '',
+        transferChain: persisted?.transferChain ?? [],
         nameAt: persisted?.nameAt ?? 0,
         topicText: persisted?.topic ?? '',
         topicAt: persisted?.topicAt ?? 0,
@@ -670,14 +689,39 @@ export class RoomManager {
   }
 
   /**
-   * Resolve a downloaded room file on disk and publish it on the cast server,
-   * returning ready media URLs for the in-app player.
+   * Resolve a room file for the in-app player. A COMPLETE file goes through the
+   * cast server's disk path (full features: direct/HLS transcode, cover art,
+   * subtitles). A still-DOWNLOADING file (non-E2E, directly-playable only) is
+   * streamed live from the engine's WebTorrent stream server — watch-while-
+   * downloading. `streaming` tells the renderer to load it no-cors (the stream
+   * server emits no ACAO) and that HLS/cover/subtitles aren't available yet.
    */
-  async watchFile(roomId: string, fileId: string): Promise<{ directUrl: string; hlsUrl: string; playerUrl: string; coverUrl?: string; direct: boolean; kind: string; name: string }> {
+  async watchFile(roomId: string, fileId: string): Promise<{ directUrl: string; hlsUrl: string; playerUrl: string; coverUrl?: string; direct: boolean; kind: string; name: string; streaming?: boolean }> {
+    const state = this.cache.get(roomId);
+    const file = state?.files.find((f) => f.fileId === fileId);
+    const tr = state?.transfers?.[fileId];
+    if (file && !tr?.haveLocally) {
+      // Not on disk yet → watch while it downloads. Constrained to what actually
+      // works without the full file: plaintext (non-E2E) and a browser-native
+      // container (no live transcode). Anything else stays gated until complete.
+      if (state?.e2e) throw new Error('Encrypted room files can only be watched once fully downloaded.');
+      if (!isDirectlyPlayable(file.name)) throw new Error('This format can only be watched once it has finished downloading.');
+      const { port, index } = await this.call<{ port: number; index: number }>('watchStream', { roomId, fileId }, 30000);
+      return { directUrl: `http://127.0.0.1:${port}/${index}`, hlsUrl: '', playerUrl: '', direct: true, kind: classifyMediaKind(file.name), name: file.name, streaming: true };
+    }
     const abs = this.resolveLocalPath(roomId, fileId);
     // The cast server runs in the torrent host; publish the room file there.
     const { getTorrentManager } = await import('../torrent');
     return getTorrentManager().castPublishDiskFile(abs);
+  }
+
+  /** Publish a DOWNLOADED room image on the cast server and return a loopback URL
+   *  for an in-app <img> (row thumbnail + lightbox). Throws until the file is
+   *  fully on disk (resolveLocalPath). */
+  async imageUrl(roomId: string, fileId: string): Promise<{ url: string }> {
+    const abs = this.resolveLocalPath(roomId, fileId);
+    const { getTorrentManager } = await import('../torrent');
+    return getTorrentManager().castPublishImage(abs);
   }
 
   /**
@@ -967,6 +1011,11 @@ export class RoomManager {
   /** Owner-only: remove a member by rotating the room code (engine enforces it). */
   async kick(roomId: string, memberId: string): Promise<{ ok: boolean }> {
     return this.call<{ ok: boolean }>('kick', { roomId, memberId }, 8000);
+  }
+
+  /** Owner-only: hand the room to another member (engine signs + gossips it). */
+  async transferOwner(roomId: string, memberId: string): Promise<RoomState> {
+    return this.call<RoomState>('transferOwner', { roomId, memberId }, 8000);
   }
 
   /** Locally hide/ignore a member on this install (reversible, never broadcast). */

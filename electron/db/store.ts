@@ -122,6 +122,11 @@ export interface PersistedRoom {
   // the engine can re-verify the secret's provenance and re-serve it to joiners
   // after a restart; the engine always re-verifies before trusting it.
   e2eCfg?: { ownerId: string; e2e: boolean; secret: string; pub: string; sig: string };
+  // Ownership-transfer chain: every applied owner handover in order, each signed
+  // by the then-current owner (Ed25519 over th-room-transfer:v1). The engine
+  // re-verifies the whole chain from the invite pin / TOFU root on every
+  // restart — never trusted raw — and re-serves it to joiners in HELLOs.
+  transferChain?: Array<{ newOwnerId: string; at: number; by: string; pub: string; sig: string }>;
   autoFetch?: boolean; // auto-download files peers share (absent = true, the historical behavior)
   upKbps?: number;     // per-room upload ceiling, KB/s (absent/0 = unlimited)
   downKbps?: number;   // per-room download ceiling, KB/s (absent/0 = unlimited)
