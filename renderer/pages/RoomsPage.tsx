@@ -12,7 +12,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { createPortal } from 'react-dom';
 import Hls from 'hls.js';
 import toast from 'react-hot-toast';
-import { RoomState, RoomSummary, RoomProfile, RoomFile, RoomFolder, RoomMember } from '../../shared/types';
+import { RoomState, RoomSummary, RoomProfile, RoomFile, RoomFolder, RoomMember, RoomChatMessage } from '../../shared/types';
 import { Button, Icon, IconName, EmptyState, Identicon, Avatar, ProfileCard, TransferPickerModal, Toggle, PlayerControls, Modal, useConfirm, VoiceSettingsModal, ScreenSourcePicker, ScreenView, Select, Tabs, DropdownMenu } from '../components';
 import { VoicePrefs, VOICE_PREFS_EVENT, loadVoicePrefs, saveVoicePrefs, toVoiceSettings, PeerVoicePref, loadPeerVoicePrefs, savePeerVoicePref, effectivePeerGain } from '../utils/voicePrefs';
 import { loadRoomLayout, saveRoomLayout, RAIL_MIN, RAIL_MAX, CHAT_MIN, CHAT_MAX } from '../utils/roomLayout';
@@ -25,7 +25,7 @@ import { sanitizeProfileColor, sanitizeProfileStatus, PROFILE_COLOR_RE } from '.
 import { parseChatSegments, isCopyworthy, splitLinks } from '../../shared/chat-format';
 import { CHAT_REACT_EMOJIS } from '../../shared/reactions';
 import { classifyMediaKind, isDirectlyPlayable, isImage } from '../../shared/media';
-import { formatBytes, formatSpeed } from '../utils/format-helpers';
+import { formatBytes, formatSpeed, cleanError } from '../utils/format-helpers';
 import { useTranslation } from '../utils/i18nContext';
 import './RoomsPage.css';
 
@@ -304,7 +304,7 @@ const RoomsPage: React.FC<RoomsPageProps> = ({ focusRoomId, onFocusHandled, onRo
       setDialog(null);
       setJoinCode('');
       toast.success(t('rooms.joined'));
-    } catch (e) { toast.error(String(e instanceof Error ? e.message : e)); }
+    } catch (e) { toast.error(t(joinErrorKey(e))); }
     finally { setBusy(false); }
   };
 
@@ -765,6 +765,21 @@ type StageView =
  *  hand-typed codes with unknown words still pass. */
 const INVITE_SHAPE_RE = /^[a-z]+-[a-z]+-[a-z]+-[a-z]+-\d{4}(-e2e)?(~[0-9a-f]{32})?$/i;
 
+/** Map the few raw strings the join promise can actually reject with to a
+ *  friendly, localized key. This is a SERVERLESS mesh — a wrong/expired code,
+ *  a ban, or a full room don't throw here (a bad code just finds no peers,
+ *  handled by the dialog's serverless hint; a ban surfaces later via the kicked
+ *  banner), so only the real throws are mapped. cleanError strips the Electron
+ *  IPC wrapper first, or the substring tests would never match. */
+const joinErrorKey = (e: unknown):
+  'rooms.joinErr.vpn' | 'rooms.joinErr.empty' | 'rooms.joinErr.engine' | 'rooms.joinErr.generic' => {
+  const m = cleanError(e);
+  if (/vpn|kill-switch|Rooms are paused/i.test(m)) return 'rooms.joinErr.vpn';
+  if (/empty room code|room code is required/i.test(m)) return 'rooms.joinErr.empty';
+  if (/engine crashed|networking stopped/i.test(m)) return 'rooms.joinErr.engine';
+  return 'rooms.joinErr.generic';
+};
+
 // ── Files panel (the Stage's default surface) ─────────────────────────────
 // The room's shared files: list/folders, search/sort/filter, bulk selection,
 // request-a-file, speed limits. Extracted from RoomDetail so the Stage can swap
@@ -797,7 +812,7 @@ const RoomFilesPanel: React.FC<FilesPanelProps> = ({ room, onAddFiles, onDropFil
   const [pickTransfer, setPickTransfer] = useState(false);
   // Client-side file filter/sort + bulk selection (all room-local, no engine calls).
   const [fileQuery, setFileQuery] = useState('');
-  const [sortKey, setSortKeyRaw] = useState<'added' | 'name' | 'size' | 'status'>(() => loadRoomSort(room.roomId));
+  const [sortKey, setSortKeyRaw] = useState<'added' | 'name' | 'size' | 'status' | 'author'>(() => loadRoomSort(room.roomId));
   const [sortDir, setSortDirRaw] = useState<RoomFilesSortDir>(() => loadRoomSortDir(room.roomId, loadRoomSort(room.roomId)));
   // Switching the sort key resets the direction to that key's natural one.
   const setSortKey = (k: typeof sortKey) => {
@@ -855,17 +870,26 @@ const RoomFilesPanel: React.FC<FilesPanelProps> = ({ room, onAddFiles, onDropFil
     if (typeFilter !== 'all') arr = arr.filter((f) => fileTypeOf(f.name) === typeFilter);
     if (onlyMine) arr = arr.filter((f) => f.addedBy === selfId);
     if (onlyMissing) arr = arr.filter((f) => !room.transfers?.[f.fileId]?.haveLocally);
+    // Uploader display name, resolved once per member (live name wins over the
+    // message's denormalized snapshot; falls back to it for departed members).
+    // Built only for the author sort so the common paths pay nothing.
+    const nameOf = sortKey === 'author'
+      ? new Map(room.members.map((m) => [m.memberId, m.name]))
+      : null;
+    const authorName = (f: RoomFile) => (nameOf?.get(f.addedBy) || f.addedByName || '').toLowerCase();
     // Ascending comparators; the direction toggle flips the whole order.
     const cmp = (a: RoomFile, b: RoomFile): number => {
       if (sortKey === 'name') return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
       if (sortKey === 'size') return (a.size || 0) - (b.size || 0);
+      // Group files by uploader; recency tiebreak keeps one author's files stable.
+      if (sortKey === 'author') return authorName(a).localeCompare(authorName(b), undefined, { numeric: true, sensitivity: 'base' }) || (a.addedAt || 0) - (b.addedAt || 0);
       // Status keeps its historical newest-first tiebreak WITHIN a rank (the
       // direction toggle flips ranks; equal-rank recency reads better fixed).
       if (sortKey === 'status') return statusRank(a) - statusRank(b) || (b.addedAt || 0) - (a.addedAt || 0);
       return (a.addedAt || 0) - (b.addedAt || 0);
     };
     return [...arr].sort((a, b) => (sortDir === 'asc' ? cmp(a, b) : -cmp(a, b)));
-  }, [room.files, room.transfers, fileQuery, typeFilter, onlyMine, onlyMissing, selfId, sortKey, sortDir, statusRank]);
+  }, [room.files, room.transfers, room.members, fileQuery, typeFilter, onlyMine, onlyMissing, selfId, sortKey, sortDir, statusRank]);
   const toggleSelect = useCallback((fileId: string) => {
     setSelected((prev) => { const next = new Set(prev); if (next.has(fileId)) next.delete(fileId); else next.add(fileId); return next; });
   }, []);
@@ -1180,6 +1204,7 @@ const RoomFilesPanel: React.FC<FilesPanelProps> = ({ room, onAddFiles, onDropFil
               { value: 'name', label: t('rooms.sort.name') },
               { value: 'size', label: t('rooms.sort.size') },
               { value: 'status', label: t('rooms.sort.status') },
+              { value: 'author', label: t('rooms.sort.author') },
             ]}
           />
           <button
@@ -1809,6 +1834,14 @@ const RoomDetail: React.FC<DetailProps> = ({ room, suspended, notifyMuted, onTog
             />
             {settingsOpen && (
               <div className="room-settings-pop">
+                {/* Encryption state — read-only for everyone (E2E is fixed at
+                    creation). The header badge only shows the ON case; this is
+                    also where the OFF case becomes visible. */}
+                <div className="room-settings-status" title={room.e2e ? t('rooms.e2eHint') : t('rooms.e2eOffWarn')}>
+                  <Icon name={room.e2e ? 'lock' : 'globe'} size={13} />
+                  <span>{room.e2e ? t('rooms.encrypted') : t('rooms.notEncrypted')}</span>
+                </div>
+                <div className="room-settings-sep" />
                 <div className="room-settings-row" title={t('rooms.autoFetchHint')}>
                   <span>{t('rooms.autoFetch')}</span>
                   <Toggle size="small" checked={room.autoFetch} onChange={onToggleAutoFetch} ariaLabel={t('rooms.autoFetch')} />
@@ -2326,9 +2359,31 @@ const renderWithMention = (text: string, selfName?: string): React.ReactNode => 
   return parts;
 };
 
+// Highlight the active chat-search query inside a plain run, then mention-
+// highlight the gaps. Search hits win over mention marks where they overlap, so
+// the two passes never nest the same <mark>. `query` arrives pre-trimmed and
+// lowercased (the filter's `q`); empty → mention-only (and no indexOf('') loop).
+const highlightRun = (text: string, selfName: string | undefined, query?: string): React.ReactNode => {
+  if (!query) return renderWithMention(text, selfName);
+  const lower = text.toLowerCase();
+  let hit = lower.indexOf(query);
+  if (hit < 0) return renderWithMention(text, selfName);
+  const parts: React.ReactNode[] = [];
+  let i = 0, k = 0;
+  while (hit >= 0) {
+    if (hit > i) parts.push(<React.Fragment key={k++}>{renderWithMention(text.slice(i, hit), selfName)}</React.Fragment>);
+    // Slice from the ORIGINAL text to keep display casing (match is case-insensitive).
+    parts.push(<mark key={k++} className="room-chat-search-hit">{text.slice(hit, hit + query.length)}</mark>);
+    i = hit + query.length;
+    hit = lower.indexOf(query, i);
+  }
+  if (i < text.length) parts.push(<React.Fragment key={k++}>{renderWithMention(text.slice(i), selfName)}</React.Fragment>);
+  return parts;
+};
+
 // One chat message body, split into text / fenced-code segments, with a copy
 // button for anything multiline (pasted scripts etc.).
-const RoomChatBody: React.FC<{ text: string; copyLabel: string; copiedLabel: string; selfName?: string }> = ({ text, copyLabel, copiedLabel, selfName }) => {
+const RoomChatBody: React.FC<{ text: string; copyLabel: string; copiedLabel: string; selfName?: string; query?: string }> = ({ text, copyLabel, copiedLabel, selfName, query }) => {
   const segments = useMemo(() => parseChatSegments(text), [text]);
   const copy = (e: React.MouseEvent) => {
     // Use the clicked element's OWN realm: in the detached chat window the main
@@ -2348,8 +2403,8 @@ const RoomChatBody: React.FC<{ text: string; copyLabel: string; copiedLabel: str
             {/* http(s)-only linkify; main routes target=_blank to the system
                 browser (setWindowOpenHandler), incl. from the detached window. */}
             {splitLinks(s.text).map((r, j) => r.kind === 'link'
-              ? <a key={j} className="room-chat-link" href={r.href} target="_blank" rel="noreferrer" title={r.href}>{r.text}</a>
-              : <React.Fragment key={j}>{renderWithMention(r.text, selfName)}</React.Fragment>)}
+              ? <a key={j} className="room-chat-link" href={r.href} target="_blank" rel="noreferrer" title={r.href}>{highlightRun(r.text, undefined, query)}</a>
+              : <React.Fragment key={j}>{highlightRun(r.text, selfName, query)}</React.Fragment>)}
           </span>
         ))}
       {isCopyworthy(text) && (
@@ -2380,6 +2435,11 @@ const RoomChat: React.FC<{ room: RoomState; onAttachRequest?: () => void }> = ({
   const chatQueryRef = useRef('');
   chatQueryRef.current = chatQuery.trim().toLowerCase();
   useEffect(() => { setSearchOpen(false); setChatQuery(''); }, [room.roomId]);
+  // Reply/edit targets. `editing` swaps the composer into edit mode (prefilled);
+  // `replyingTo` prepends a quote to the next send. Reset on room switch.
+  const [replyingTo, setReplyingTo] = useState<RoomChatMessage | null>(null);
+  const [editing, setEditing] = useState<RoomChatMessage | null>(null);
+  useEffect(() => { setReplyingTo(null); setEditing(null); }, [room.roomId]);
   // Author avatar click → info-only profile card (actions live in the rail).
   // Reset on room switch AND on detach/reattach — the card's anchor element
   // belongs to the previous document and dies with it.
@@ -2442,7 +2502,9 @@ const RoomChat: React.FC<{ room: RoomState; onAttachRequest?: () => void }> = ({
     const doc = listRef.current?.ownerDocument ?? document;
     const onDown = (e: MouseEvent) => {
       const el = e.target as HTMLElement | null;
-      if (el && !el.closest('.room-chat-react-pop') && !el.closest('.room-chat-react-add')) setReactFor(null);
+      // Exclude the palette AND the action cluster (the '+' trigger lives there now,
+      // renamed from .room-chat-react-add) so re-clicking the trigger toggles cleanly.
+      if (el && !el.closest('.room-chat-react-pop') && !el.closest('.room-chat-actions')) setReactFor(null);
     };
     doc.addEventListener('mousedown', onDown);
     return () => doc.removeEventListener('mousedown', onDown);
@@ -2483,14 +2545,37 @@ const RoomChat: React.FC<{ room: RoomState; onAttachRequest?: () => void }> = ({
     window.api.rooms.typing(room.roomId);
   };
 
+  const focusCompose = () => {
+    const el = composeRef.current;
+    if (!el) return;
+    const win = el.ownerDocument.defaultView ?? window;
+    win.requestAnimationFrame(() => { el.focus(); const n = el.value.length; el.selectionStart = el.selectionEnd = n; });
+  };
+  const startReply = (m: RoomChatMessage) => { setEditing(null); setReplyingTo(m); focusCompose(); };
+  const startEdit = (m: RoomChatMessage) => {
+    setReplyingTo(null); setEditing(m);
+    setText(room.chatEdits?.[m.id]?.text ?? m.text); // prefill with the current (edited) text
+    focusCompose();
+  };
+  // Cancel clears both targets; an edit also drops its prefilled draft.
+  const cancelCompose = () => { if (editing) setText(''); setReplyingTo(null); setEditing(null); };
+
   const send = async () => {
     const body = text.trim();
     if (!body || sending) return;
+    const wasEditing = editing, wasReply = replyingTo;
     setSending(true);
     setText('');
-    try { await window.api.rooms.sendChat(room.roomId, body); }
-    catch (e) { toast.error(String(e instanceof Error ? e.message : e)); setText(body); }
-    finally { setSending(false); }
+    setEditing(null); setReplyingTo(null);
+    try {
+      if (wasEditing) await window.api.rooms.editChat(room.roomId, wasEditing.id, body);
+      else await window.api.rooms.sendChat(room.roomId, body, wasReply?.id);
+    } catch (e) {
+      // Restore the draft AND the reply/edit context so a failed send isn't lost.
+      toast.error(String(e instanceof Error ? e.message : e));
+      setText(body);
+      if (wasEditing) setEditing(wasEditing); else if (wasReply) setReplyingTo(wasReply);
+    } finally { setSending(false); }
   };
 
   // @mention autocomplete: track a trailing "@word" at the caret; the popup
@@ -2541,6 +2626,7 @@ const RoomChat: React.FC<{ room: RoomState; onAttachRequest?: () => void }> = ({
       if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); insertMention(mentionCandidates[mentionActiveIdx].name); return; }
       if (e.key === 'Escape') { setMention(null); return; }
     }
+    if (e.key === 'Escape' && (editing || replyingTo)) { e.preventDefault(); cancelCompose(); return; }
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); return; }
     if (e.key === 'Tab') {
       e.preventDefault();
@@ -2630,7 +2716,10 @@ const RoomChat: React.FC<{ room: RoomState; onAttachRequest?: () => void }> = ({
           ) : (() => {
             const q = chatQuery.trim().toLowerCase();
             const shown = (q
-              ? messages.filter((m) => m.text.toLowerCase().includes(q) || (m.name || '').toLowerCase().includes(q))
+              // Match the EDITED body (what's rendered), not the stale original —
+              // else an edit-in text is missed and an edited-out term matches with
+              // no visible highlight.
+              ? messages.filter((m) => (room.chatEdits?.[m.id]?.text ?? m.text).toLowerCase().includes(q) || (m.name || '').toLowerCase().includes(q))
               : messages
             ).slice(-100);
             if (q && shown.length === 0) return <div className="room-files-empty">{t('rooms.chatSearchEmpty')}</div>;
@@ -2645,6 +2734,10 @@ const RoomChat: React.FC<{ room: RoomState; onAttachRequest?: () => void }> = ({
               // Continuation: same author within 5 min on the same day —
               // collapse the avatar/name so bursts read as one block.
               const cont = !!prev && !newDay && prev.memberId === m.memberId && m.at - prev.at < 5 * 60_000;
+              // An author edit overlays the original text (the stored message is
+              // never mutated); `edit` present → show an "edited" marker.
+              const edit = room.chatEdits?.[m.id];
+              const body = edit?.text ?? m.text;
               return (
                 <React.Fragment key={m.id}>
                   {newDay && (
@@ -2667,12 +2760,26 @@ const RoomChat: React.FC<{ room: RoomState; onAttachRequest?: () => void }> = ({
                     ))}
                     <div className="room-chat-bubble-wrap">
                       {!mine && !cont && <span className="room-chat-author" style={live?.color ? { color: live.color } : undefined}>{live?.name || m.name || '?'}</span>}
-                      {m.text.startsWith('🙋') ? (
+                      {/* Reply quote — resolve the live parent by id (edited text
+                          wins), fall back to the carried snapshot for a parent that
+                          scrolled out of the capped window or never arrived. */}
+                      {m.replyTo && (() => {
+                        const parent = messages.find((p) => p.id === m.replyTo);
+                        const pName = parent?.name || m.replyName;
+                        const pText = (parent ? (room.chatEdits?.[parent.id]?.text ?? parent.text) : m.replyText) || '';
+                        return (
+                          <span className="room-chat-quote" title={pText.replace(/^🙋\s*/, '')}>
+                            <span className="room-chat-quote-name">{pName || t('rooms.chatReplyUnknown')}</span>
+                            {pText && <span className="room-chat-quote-text">{pText.replace(/^🙋\s*/, '')}</span>}
+                          </span>
+                        );
+                      })()}
+                      {body.startsWith('🙋') ? (
                         // A file request (the 🙋 prefix rides the plain chat
                         // pipeline) — render as a card with an attach shortcut.
                         <span className="room-chat-request">
                           <span className="room-chat-request-head"><Icon name="file-question" size={12} /> {t('rooms.request.title')}</span>
-                          <span className="room-chat-request-text">{m.text.replace(/^🙋\s*/, '')}</span>
+                          <span className="room-chat-request-text">{highlightRun(body.replace(/^🙋\s*/, ''), undefined, q)}</span>
                           {!mine && onAttachRequest && (
                             <button type="button" className="room-chat-request-attach" onClick={onAttachRequest}>
                               <Icon name="file-plus" size={12} /> {t('rooms.request.attach')}
@@ -2680,7 +2787,7 @@ const RoomChat: React.FC<{ room: RoomState; onAttachRequest?: () => void }> = ({
                           )}
                         </span>
                       ) : (
-                        <RoomChatBody text={m.text} copyLabel={t('rooms.chatCopy')} copiedLabel={t('rooms.chatCopied')} selfName={mine ? undefined : selfName} />
+                        <RoomChatBody text={body} copyLabel={t('rooms.chatCopy')} copiedLabel={t('rooms.chatCopied')} selfName={mine ? undefined : selfName} query={q} />
                       )}
                       {/* Reaction pills — the row exists only when reactions do
                           (an always-present row would pad EVERY message). */}
@@ -2709,28 +2816,39 @@ const RoomChat: React.FC<{ room: RoomState; onAttachRequest?: () => void }> = ({
                           </span>
                         );
                       })()}
-                      <span className="room-chat-time">{timeOnly(m.at)}</span>
+                      <span className="room-chat-time">{timeOnly(m.at)}{edit && <span className="room-chat-edited"> · {t('rooms.chatEdited')}</span>}</span>
                     </div>
-                    {/* Hover "+": absolutely positioned — costs no layout height. */}
-                    <button
-                      type="button"
-                      className="room-chat-react-add"
-                      title={t('rooms.chatReact')}
-                      onClick={(e) => {
-                        const btn = e.currentTarget as HTMLElement;
-                        const win = btn.ownerDocument.defaultView ?? window;
-                        const r = btn.getBoundingClientRect();
-                        setReactFor((cur) => {
-                          if (cur?.msgId === m.id) return null;
-                          const w = 8 * 26 + 12; // palette width approximation
-                          const x = Math.max(4, Math.min(r.left, win.innerWidth - w - 4));
-                          const y = r.top - 38 < 4 ? r.bottom + 4 : r.top - 38;
-                          return { msgId: m.id, x, y };
-                        });
-                      }}
-                    >
-                      <Icon name="plus" size={10} />
-                    </button>
+                    {/* Hover actions: reply / edit(own) / react. Absolutely
+                        positioned as a cluster — costs no layout height. */}
+                    <div className="room-chat-actions">
+                      <button type="button" className="room-chat-act" title={t('rooms.chatReply')} onClick={() => startReply(m)}>
+                        <Icon name="reply" size={11} />
+                      </button>
+                      {mine && (
+                        <button type="button" className="room-chat-act" title={t('rooms.chatEdit')} onClick={() => startEdit(m)}>
+                          <Icon name="edit-2" size={11} />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="room-chat-act"
+                        title={t('rooms.chatReact')}
+                        onClick={(e) => {
+                          const btn = e.currentTarget as HTMLElement;
+                          const win = btn.ownerDocument.defaultView ?? window;
+                          const r = btn.getBoundingClientRect();
+                          setReactFor((cur) => {
+                            if (cur?.msgId === m.id) return null;
+                            const w = 8 * 26 + 12; // palette width approximation
+                            const x = Math.max(4, Math.min(r.left, win.innerWidth - w - 4));
+                            const y = r.top - 38 < 4 ? r.bottom + 4 : r.top - 38;
+                            return { msgId: m.id, x, y };
+                          });
+                        }}
+                      >
+                        <Icon name="plus" size={11} />
+                      </button>
+                    </div>
                   </div>
                 </React.Fragment>
               );
@@ -2778,6 +2896,19 @@ const RoomChat: React.FC<{ room: RoomState; onAttachRequest?: () => void }> = ({
           )}
         </div>
         <div className="room-chat-compose">
+          {(editing || replyingTo) && (
+            <div className="room-chat-compose-ctx">
+              <Icon name={editing ? 'edit-2' : 'reply'} size={12} />
+              <span className="room-chat-compose-ctx-label">
+                {editing ? t('rooms.chatEditing') : t('rooms.chatReplyingTo')}
+                {replyingTo && <b> {replyingTo.name || '?'}</b>}
+              </span>
+              {replyingTo && <span className="room-chat-compose-ctx-quote">{(room.chatEdits?.[replyingTo.id]?.text ?? replyingTo.text).replace(/^🙋\s*/, '')}</span>}
+              <button type="button" className="room-chat-compose-ctx-x" onClick={cancelCompose} title={t('rooms.chatCancel')}>
+                <Icon name="x" size={12} />
+              </button>
+            </div>
+          )}
           {mention && mentionCandidates.length > 0 && (
             <div className="room-chat-mention-pop">
               {mentionCandidates.map((m, i) => (

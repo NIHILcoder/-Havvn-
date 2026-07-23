@@ -71,7 +71,7 @@ const MAX_REACT_FILES = 200;      // reaction map ceiling per room (kept + hello
 // just another member. Targeted/keyed messages (rekey, kicked) are NOT flooded.
 const RELAY_TTL = 4;                 // max hops a gossip message travels
 const SEEN_GID_CAP = 4096;           // dedup memory per room (FIFO)
-const RELAYABLE = new Set(['hello', 'ping', 'add', 'have', 'del', 'chat', 'sync', 'bye', 'typing', 'react-file', 'prog', 'folder', 'assign', 'rename', 'topic', 'react-chat', 'voice-state', 'voice-signal', 'voice-share', 'profile', 'transfer']);
+const RELAYABLE = new Set(['hello', 'ping', 'add', 'have', 'del', 'chat', 'chat-edit', 'sync', 'bye', 'typing', 'react-file', 'prog', 'folder', 'assign', 'rename', 'topic', 'react-chat', 'voice-state', 'voice-signal', 'voice-share', 'profile', 'transfer']);
 
 // ── Gossip input hardening ────────────────────────────────────────────────────
 // Decryption already proves a peer holds the room code, but a *malicious member*
@@ -112,7 +112,7 @@ type Msg =
   // whose owner runs an older build that doesn't sign.
   // `fileReacts` is a clamped summary of this member's reaction view (fileId →
   // emoji → memberIds) so late joiners converge by unioning member sets.
-  | { t: 'hello'; memberId: string; name: string; avatarSeed: string; pub?: string; have: string[]; files: RoomFile[]; tombs: string[]; tombsAt?: Record<string, number>; tombSigs?: Record<string, TombProof>; roomName: string; nameAt?: number; topicMsg?: { text: string; at: number; by: string; pub: string; sig: string }; ownerId: string; e2e: boolean; secret: string; cfg?: E2ECfg; fileReacts?: Record<string, Record<string, string[]>>; chatReacts?: Record<string, Record<string, string[]>>; folders?: RoomFolder[]; folderTombs?: Record<string, number>; chatAt?: number; transferChain?: TransferLink[] }
+  | { t: 'hello'; memberId: string; name: string; avatarSeed: string; pub?: string; have: string[]; files: RoomFile[]; tombs: string[]; tombsAt?: Record<string, number>; tombSigs?: Record<string, TombProof>; roomName: string; nameAt?: number; topicMsg?: { text: string; at: number; by: string; pub: string; sig: string }; ownerId: string; e2e: boolean; secret: string; cfg?: E2ECfg; fileReacts?: Record<string, Record<string, string[]>>; chatReacts?: Record<string, Record<string, string[]>>; chatEdits?: Record<string, { text: string; at: number; by: string; pub: string; sig: string }>; folders?: RoomFolder[]; folderTombs?: Record<string, number>; chatAt?: number; transferChain?: TransferLink[] }
   | { t: 'add'; file: RoomFile }
   // A folder/section was created, renamed/recolored (upsert) or deleted (del).
   // Last-writer-wins by `at`; unknown to older peers, who ignore it and keep
@@ -158,7 +158,17 @@ type Msg =
   // `pub` is the sender's Ed25519 public key (PEM) and `sig` an Ed25519 signature
   // over the immutable fields — proves authorship, so no keyholder can post under
   // another member's id (anti-spoofing on top of the room-key confidentiality).
-  | { t: 'chat'; id: string; memberId: string; name: string; avatarSeed: string; text: string; at: number; pub: string; sig: string }
+  // `replyTo`/`replyName`/`replyText` ride OUTSIDE the signed chat canonical (an
+  // unsigned quote pointer, like voice `deafened`) — older peers ignore them and
+  // still verify/relay the message; a relay could tamper the quote but not the
+  // signed body, and the parent is resolved by id regardless.
+  | { t: 'chat'; id: string; memberId: string; name: string; avatarSeed: string; text: string; at: number; pub: string; sig: string; replyTo?: string; replyName?: string; replyText?: string }
+  // Author edits their own message. A SEPARATE signed type (NOT a mutation of the
+  // 'chat' message — that would break dedupe-by-id and older peers) over a domain-
+  // tagged editCanonical; receivers enforce memberId === the target's author. LWW
+  // by `at`. Applied as an overlay (room.chatEdits) so the original stays intact
+  // for backfill self-verification.
+  | { t: 'chat-edit'; msgId: string; memberId: string; text: string; at: number; pub: string; sig: string }
   // Backfill: a UNICAST reply to a peer whose HELLO said it was behind — the
   // messages it missed while offline, each carrying its own pub/sig so they
   // re-verify independently of who re-served them. Never broadcast/relayed.
@@ -261,6 +271,8 @@ interface Room {
   lastTypingSent: number;                // rate-limit for OUR outgoing typing broadcasts
   fileReacts: Map<string, Map<string, Set<string>>>; // fileId → emoji → reacting memberIds (persisted)
   chatReacts: Map<string, Map<string, Set<string>>>; // chat msgId → emoji → reacting memberIds (persisted)
+  chatEdits: Map<string, { text: string; at: number; by: string; pub: string; sig: string }>; // chat msgId → author's latest signed edit (LWW by at, persisted)
+  pendingEdits: Map<string, { text: string; at: number; by: string; pub: string; sig: string }>; // VERIFIED edits whose target message we don't hold yet — flushed by addChat when it arrives (session-only, capped)
   memberProg: Map<string, Map<string, number>>;      // memberId → fileId → coarse download % (session-only)
   progSent: Map<string, number>;         // fileId → last PROG_STEP % WE gossiped (throttle)
   identities: Map<string, string>;       // memberId → Ed25519 public key (PEM), TOFU-bound
@@ -502,6 +514,111 @@ function pruneChatReacts(room: Room): boolean {
   return changed;
 }
 
+// ── Chat edits (author-signed overlay on the chat log) ───────────────────────
+// An edit never mutates the stored message (that would break dedupe-by-id and
+// backfill self-verification) — it rides a separate map, LWW by `at`, applied
+// only to messages we hold and only by the message's own author.
+
+/** Apply a (already verified) edit: LWW by `at`, author-only, capped. Returns
+ *  true when it changed the overlay so callers persist + push state. */
+function applyChatEdit(room: Room, msgId: string, edit: { text: string; at: number; by: string; pub: string; sig: string }): boolean {
+  const target = room.chat.find((c) => c.id === msgId);
+  if (!target) return false;                        // only messages we hold (cap discipline)
+  if (edit.by !== target.memberId) return false;    // authorship: only the author edits their message
+  const cur = room.chatEdits.get(msgId);
+  // LWW by `at`, with a DETERMINISTIC signature tiebreak on equal `at` so every
+  // peer converges even if a modified client signs two edits with the same clock.
+  if (cur && (cur.at > edit.at || (cur.at === edit.at && cur.sig >= edit.sig))) return false;
+  if (!cur && room.chatEdits.size >= MAX_REACT_MSGS) return false; // cap new entries at the ceiling
+  room.chatEdits.set(msgId, edit);
+  return true;
+}
+
+/** Buffer a VERIFIED edit whose target message we don't hold yet, so it can be
+ *  applied the moment the message arrives (via addChat) — covers a late joiner
+ *  whose HELLO edits precede the chat-log backfill, and live relay reordering.
+ *  Keeps only the highest-`at` per msgId; FIFO-capped so it can't grow unbounded. */
+function bufferPendingEdit(room: Room, msgId: string, edit: { text: string; at: number; by: string; pub: string; sig: string }): void {
+  const cur = room.pendingEdits.get(msgId);
+  if (cur && (cur.at > edit.at || (cur.at === edit.at && cur.sig >= edit.sig))) return;
+  if (!cur && room.pendingEdits.size >= MAX_REACT_MSGS) {
+    const oldest = room.pendingEdits.keys().next().value; // FIFO eviction (insertion-ordered Map)
+    if (oldest !== undefined) room.pendingEdits.delete(oldest);
+  }
+  room.pendingEdits.set(msgId, edit);
+}
+
+/** Serialize the edit overlay for HELLO + persistence (carries pub/sig so a
+ *  peer/reload can re-verify). */
+function chatEditsToRecord(room: Room): Record<string, { text: string; at: number; by: string; pub: string; sig: string }> {
+  const out: Record<string, { text: string; at: number; by: string; pub: string; sig: string }> = {};
+  for (const [msgId, e] of room.chatEdits) out[msgId] = { text: e.text, at: e.at, by: e.by, pub: e.pub, sig: e.sig };
+  return out;
+}
+
+/** The renderer-facing view: just the edited text + clock (no pub/sig). */
+function chatEditsToState(room: Room): Record<string, { text: string; at: number }> {
+  const out: Record<string, { text: string; at: number }> = {};
+  for (const [msgId, e] of room.chatEdits) out[msgId] = { text: e.text, at: e.at };
+  return out;
+}
+
+/** Union a peer's HELLO edit overlay into ours — each edit RE-VERIFIED against
+ *  the target's author (so a keyholder can't rewrite others' messages via HELLO),
+ *  filtered to messages we hold, LWW by `at`. */
+function mergeChatEdits(room: Room, rec?: Record<string, { text: string; at: number; by: string; pub: string; sig: string }>): boolean {
+  if (!rec || typeof rec !== 'object' || Array.isArray(rec)) return false;
+  let changed = false;
+  const known = new Set(room.chat.map((c) => c.id));
+  for (const [rawId, raw] of Object.entries(rec).slice(0, MAX_REACT_MSGS)) {
+    const msgId = clampStr(rawId, MAX_STR);
+    if (!msgId || !raw || typeof raw !== 'object') continue;
+    const edit = {
+      text: clampStr((raw as any).text, MAX_TEXT), at: Number((raw as any).at) || 0,
+      by: clampStr((raw as any).by, MAX_STR), pub: clampStr((raw as any).pub, MAX_STR * 2), sig: clampStr((raw as any).sig, MAX_STR),
+    };
+    if (!edit.text || !edit.at) continue;
+    if (room.mutes.has(edit.by)) continue;    // a muted member's edits stay hidden (mirror the live/backfill paths)
+    if (!verifyEdit(room, { msgId, memberId: edit.by, at: edit.at, text: edit.text, pub: edit.pub, sig: edit.sig })) continue;
+    // Target not held yet (fresh joiner merges HELLO edits BEFORE the chat-log
+    // backfill delivers the messages) → buffer, don't drop; addChat flushes it.
+    if (!known.has(msgId)) { bufferPendingEdit(room, msgId, edit); continue; }
+    if (applyChatEdit(room, msgId, edit)) changed = true;
+  }
+  return changed;
+}
+
+/** Rehydrate the persisted edit overlay (OUR disk — trusted, not re-verified,
+ *  same as persisted chat isn't). Bounds every field defensively anyway. */
+function chatEditsFromRecord(rec?: Record<string, { text: string; at: number; by: string; pub: string; sig: string }>): Map<string, { text: string; at: number; by: string; pub: string; sig: string }> {
+  const map = new Map<string, { text: string; at: number; by: string; pub: string; sig: string }>();
+  if (!rec || typeof rec !== 'object' || Array.isArray(rec)) return map;
+  for (const [rawId, raw] of Object.entries(rec).slice(0, MAX_REACT_MSGS)) {
+    const msgId = clampStr(rawId, MAX_STR);
+    const text = clampStr((raw as any)?.text, MAX_TEXT);
+    const at = Number((raw as any)?.at) || 0;
+    if (!msgId || !text || !at) continue;
+    map.set(msgId, { text, at, by: clampStr((raw as any).by, MAX_STR), pub: clampStr((raw as any).pub, MAX_STR * 2), sig: clampStr((raw as any).sig, MAX_STR) });
+  }
+  return map;
+}
+
+function persistChatEdits(room: Room): void {
+  try { ipcRenderer.send('room-chat-edits', { roomId: room.roomId, edits: chatEditsToRecord(room) }); } catch { /* ignore */ }
+}
+
+/** Drop edits whose message aged out of the capped chat window (mirrors
+ *  pruneChatReacts — they render nowhere and would squat the cap). */
+function pruneChatEdits(room: Room): boolean {
+  if (!room.chatEdits.size) return false;
+  const known = new Set(room.chat.map((c) => c.id));
+  let changed = false;
+  for (const id of Array.from(room.chatEdits.keys())) {
+    if (!known.has(id)) { room.chatEdits.delete(id); changed = true; }
+  }
+  return changed;
+}
+
 /** Gossip OUR coarse download progress: only while downloading, and only when a
  *  new PROG_STEP boundary is crossed per file (completion rides 'have'). */
 function maybeBroadcastProg(room: Room, fileId: string, progress: number, done: boolean): void {
@@ -613,6 +730,7 @@ function buildState(room: Room): RoomState {
     typingMemberIds,
     fileReacts: reactsToRecord(room),
     chatReacts: chatReactsToRecord(room),
+    ...(room.chatEdits.size ? { chatEdits: chatEditsToState(room) } : {}),
     memberProg,
     voice: room.voice.getState(),
   };
@@ -699,6 +817,7 @@ function helloMsg(room: Room, full = true): Msg {
     ...(room.transferChain.length ? { transferChain: room.transferChain } : {}), // ownership-transfer chain — lets a joiner walk pin → current owner
     ...(room.fileReacts.size ? { fileReacts: reactsToRecord(room) } : {}), // late joiners union this in
     ...(room.chatReacts.size ? { chatReacts: chatReactsToRecord(room) } : {}),
+    ...(room.chatEdits.size ? { chatEdits: chatEditsToRecord(room) } : {}), // author-signed edits — receivers re-verify
     ...(room.folders.size ? { folders: Array.from(room.folders.values()) } : {}), // section overlay
     ...(room.folderTombstones.size ? { folderTombs: Object.fromEntries(room.folderTombstones) } : {}), // deleted sections
     // How caught-up our chat is — a reconnecting peer replies with a chat-log of
@@ -713,7 +832,7 @@ function helloMsg(room: Room, full = true): Msg {
     // as a reply once the peer identifies (see case 'hello').
     m.secret = ''; m.files = []; m.have = []; m.tombs = [];
     delete m.tombsAt; delete m.tombSigs; delete m.cfg; delete m.fileReacts;
-    delete m.chatReacts; delete m.folders; delete m.folderTombs; delete m.chatAt;
+    delete m.chatReacts; delete m.chatEdits; delete m.folders; delete m.folderTombs; delete m.chatAt;
     delete m.transferChain; // not secret, but rides only the FULL hello like everything else post-identification
   }
   return m as Msg;
@@ -991,9 +1110,18 @@ function logEvent(room: Room, ev: Omit<RoomEvent, 'id' | 'at'> & { at?: number }
 function addChat(room: Room, msg: RoomChatMessage, backfill = false): void {
   if (room.chat.some((m) => m.id === msg.id)) return;
   room.chat.push(msg);
+  // A verified edit that arrived before this message (fresh-joiner HELLO ahead of
+  // the backfill, or relay reorder) was buffered — apply it now that its target
+  // exists. applyChatEdit re-checks authorship against the real message.
+  const pending = room.pendingEdits.get(msg.id);
+  if (pending) {
+    room.pendingEdits.delete(msg.id);
+    if (applyChatEdit(room, msg.id, pending)) persistChatEdits(room);
+  }
   if (room.chat.length > 200) {
     room.chat = room.chat.slice(-200);
     if (pruneChatReacts(room)) persistChatReacts(room); // aged-out msgs free their cap slots
+    if (pruneChatEdits(room)) persistChatEdits(room);   // and their edit overlay
   }
   // `backfill` = historical catch-up (not live) — the main process persists + badges
   // it but does NOT fire an OS notification, so a reconnect can't detonate a toast storm.
@@ -1078,6 +1206,16 @@ function signChat(room: Room, m: { id: string; at: number; memberId: string; tex
 }
 function verifyChat(room: Room, msg: { id: string; at: number; memberId: string; text: string; pub: string; sig: string }): boolean {
   return verifySignedBy(room, msg.memberId, msg.pub, msg.sig, chatCanonical(room.topic, msg));
+}
+
+/** Stable bytes for a chat EDIT. Domain-tagged ('chat-edit') so an edit signature
+ *  can never be replayed as a plain chat/other command. Bound to the target msgId,
+ *  the author, the new text, and the edit clock (LWW). */
+function editCanonical(topic: string, m: { msgId: string; memberId: string; at: number; text: string }): Buffer {
+  return Buffer.from(JSON.stringify(['chat-edit', topic, m.msgId, m.memberId, m.at, m.text]), 'utf8');
+}
+function verifyEdit(room: Room, msg: { msgId: string; memberId: string; at: number; text: string; pub: string; sig: string }): boolean {
+  return verifySignedBy(room, msg.memberId, msg.pub, msg.sig, editCanonical(room.topic, msg));
 }
 
 /* Authority commands — the type tag in each canonical is domain separation so a
@@ -1582,6 +1720,9 @@ function clampGossip(msg: any): void {
   if ('sharing' in msg) msg.sharing = msg.sharing === true;
   if ('fileId' in msg) msg.fileId = clampStr(msg.fileId, MAX_STR);
   if ('msgId' in msg) msg.msgId = clampStr(msg.msgId, MAX_STR);
+  if ('replyTo' in msg) msg.replyTo = clampStr(msg.replyTo, MAX_STR);      // chat reply pointer (unsigned)
+  if ('replyName' in msg) msg.replyName = clampStr(msg.replyName, MAX_STR); // reply quote author snapshot
+  if ('replyText' in msg) msg.replyText = clampStr(msg.replyText, MAX_TEXT); // reply quote body snapshot
   if ('secret' in msg) msg.secret = clampStr(msg.secret, MAX_SECRET);
   if ('text' in msg) msg.text = clampStr(msg.text, MAX_TEXT);
   if ('emoji' in msg) msg.emoji = clampStr(msg.emoji, 16);
@@ -1830,6 +1971,7 @@ function onMessage(room: Room, wire: Wire, raw: any): void {
       // Union the peer's reaction view into ours (late-join convergence).
       if (mergeReacts(room, msg.fileReacts)) persistReacts(room);
       if (mergeChatReacts(room, msg.chatReacts)) persistChatReacts(room);
+      if (mergeChatEdits(room, msg.chatEdits)) persistChatEdits(room);
       // Chat backfill: if this peer is behind our chat (or hasn't said how caught-up
       // it is), UNICAST it the messages it's missing — only ones we can re-serve with
       // a signature, so they self-authenticate on its side. Only on a DIRECT hello,
@@ -2086,7 +2228,32 @@ function onMessage(room: Room, wire: Wire, raw: any): void {
       const m = room.members.get(msg.memberId);
       if (m) m.lastSeen = Date.now();
       // Keep pub/sig so this message can be re-served as backfill and still verify.
-      addChat(room, { id: String(msg.id), at: Number(msg.at) || Date.now(), memberId: msg.memberId, name: msg.name || '?', avatarSeed: msg.avatarSeed || msg.memberId, text, pub: msg.pub, sig: msg.sig });
+      // Reply fields ride outside the canonical (clampGossip already bounded them).
+      addChat(room, {
+        id: String(msg.id), at: Number(msg.at) || Date.now(), memberId: msg.memberId,
+        name: msg.name || '?', avatarSeed: msg.avatarSeed || msg.memberId, text, pub: msg.pub, sig: msg.sig,
+        ...(msg.replyTo ? { replyTo: String(msg.replyTo), replyName: msg.replyName ? String(msg.replyName) : undefined, replyText: msg.replyText ? String(msg.replyText) : undefined } : {}),
+      });
+      break;
+    }
+    case 'chat-edit': {
+      if (room.mutes.has(msg.memberId)) break;             // a muted member's edits stay hidden
+      const text = String(msg.text || '').slice(0, 2000);
+      if (!text) break;
+      const at = Number(msg.at) || 0;
+      if (at > Date.now() + 60_000) break;                  // no future-dated edits (skews LWW)
+      const msgId = String(msg.msgId || '');
+      if (!verifyEdit(room, { msgId, memberId: msg.memberId, at, text, pub: msg.pub, sig: msg.sig })) break;
+      const edit = { text, at, by: msg.memberId, pub: msg.pub, sig: msg.sig };
+      const target = room.chat.find((c) => c.id === msgId);
+      // Message not here yet (relay reorder / edit raced its target) → buffer it;
+      // addChat applies it (with the authorship check) when the message arrives.
+      if (!target) { bufferPendingEdit(room, msgId, edit); break; }
+      if (msg.memberId !== target.memberId) break;          // authorship: only the author may edit their message
+      if (applyChatEdit(room, msgId, edit)) {
+        persistChatEdits(room);
+        pushState(room);
+      }
       break;
     }
     case 'typing': {
@@ -2845,7 +3012,7 @@ function transferOwnership(roomId: string, memberId: string): RoomState {
 
 // ── Room lifecycle ───────────────────────────────────────────────────────────
 function startRoom(p: { roomId: string; name: string; code: string; folder: string;
-  self: { memberId: string; name: string; avatarSeed: string; color?: string; status?: string; avatarImg?: string; pub: string; priv: string }; useTurn: boolean; turnServers?: any[]; tombstones?: Record<string, number>; tombSigs?: Record<string, { by: string; pub: string; sig: string }>; revives?: Record<string, number>; manifest?: PersistedRoomFile[]; folders?: RoomFolder[]; folderTombs?: Record<string, number>; ownerId?: string; ownerPin?: string; transferChain?: TransferLink[]; nameAt?: number; topicText?: string; topicAt?: number; topicMsg?: { text: string; at: number; by: string; pub: string; sig: string } | null; mutes?: string[]; history?: RoomEvent[]; chat?: RoomChatMessage[]; reacts?: Record<string, Record<string, string[]>>; chatReacts?: Record<string, Record<string, string[]>>; identities?: Record<string, string>; e2e?: boolean; secret?: string; prevSecrets?: string[]; bans?: string[]; e2eCfg?: E2ECfg | null; cacheDir?: string; autoFetch?: boolean; folderFetch?: Record<string, boolean>; upKbps?: number; downKbps?: number }): RoomState {
+  self: { memberId: string; name: string; avatarSeed: string; color?: string; status?: string; avatarImg?: string; pub: string; priv: string }; useTurn: boolean; turnServers?: any[]; tombstones?: Record<string, number>; tombSigs?: Record<string, { by: string; pub: string; sig: string }>; revives?: Record<string, number>; manifest?: PersistedRoomFile[]; folders?: RoomFolder[]; folderTombs?: Record<string, number>; ownerId?: string; ownerPin?: string; transferChain?: TransferLink[]; nameAt?: number; topicText?: string; topicAt?: number; topicMsg?: { text: string; at: number; by: string; pub: string; sig: string } | null; mutes?: string[]; history?: RoomEvent[]; chat?: RoomChatMessage[]; reacts?: Record<string, Record<string, string[]>>; chatReacts?: Record<string, Record<string, string[]>>; chatEdits?: Record<string, { text: string; at: number; by: string; pub: string; sig: string }>; identities?: Record<string, string>; e2e?: boolean; secret?: string; prevSecrets?: string[]; bans?: string[]; e2eCfg?: E2ECfg | null; cacheDir?: string; autoFetch?: boolean; folderFetch?: Record<string, boolean>; upKbps?: number; downKbps?: number }): RoomState {
   // Authoritative kill-switch gate: refuse to bring up ANY room networking while
   // the VPN is down, no matter how this join raced past the manager's flag. The
   // manager clears this via 'netResume' before it re-joins on VPN restore.
@@ -2919,6 +3086,8 @@ function startRoom(p: { roomId: string; name: string; code: string; folder: stri
     lastTypingSent: 0,
     fileReacts: reactsFromRecord(p.reacts),
     chatReacts: reactsFromRecordIn(p.chatReacts, CHAT_REACTION_EMOJI, MAX_REACT_MSGS),
+    chatEdits: chatEditsFromRecord(p.chatEdits),
+    pendingEdits: new Map(),
     memberProg: new Map(),
     progSent: new Map(),
     // Only load bindings whose id is the hash of its key — drops any stale/legacy
@@ -3379,7 +3548,7 @@ function closeStreamServers(roomId: string): void {
 }
 
 /** Broadcast a chat message to the room and record it locally (so we see our own). */
-function sendChat(roomId: string, rawText: string): void {
+function sendChat(roomId: string, rawText: string, replyToId?: string): void {
   const room = rooms.get(roomId);
   if (!room) return;
   const text = String(rawText || '').trim().slice(0, 2000);
@@ -3392,11 +3561,42 @@ function sendChat(roomId: string, rawText: string): void {
     avatarSeed: room.self.avatarSeed,
     text,
   };
-  const sig = signChat(room, msg);
+  // Reply pointer + quote snapshot — UNSIGNED (rides outside the chat canonical).
+  // Snapshot the parent's CURRENT text (edited if edited) so the quote is stable
+  // even if the parent later scrolls out of the capped window.
+  const parent = replyToId ? room.chat.find((c) => c.id === replyToId) : undefined;
+  if (parent) {
+    msg.replyTo = parent.id;
+    msg.replyName = parent.name;
+    msg.replyText = (room.chatEdits.get(parent.id)?.text ?? parent.text).slice(0, 140);
+  }
+  const sig = signChat(room, msg); // signs only {topic,id,at,memberId,text} — reply fields are outside it
   // Bind our own identity locally too, so the roster is complete on our side.
   if (!room.identities.has(room.self.memberId)) room.identities.set(room.self.memberId, room.self.pub);
   broadcast(room, { t: 'chat', ...msg, pub: room.self.pub, sig });
   addChat(room, { ...msg, pub: room.self.pub, sig }); // keep our sig so we can re-serve this as backfill
+}
+
+/** Edit one of OUR OWN chat messages: sign the new text over editCanonical, apply
+ *  the overlay locally, and gossip a 'chat-edit'. Refuses to edit others' messages
+ *  (the network enforces this too via the authorship check on receive). */
+function editChat(roomId: string, msgId: string, rawText: string): void {
+  const room = rooms.get(roomId);
+  if (!room) throw new Error('Room not active');
+  const text = String(rawText || '').trim().slice(0, 2000);
+  if (!text) throw new Error('Message cannot be empty');
+  const target = room.chat.find((c) => c.id === msgId);
+  if (!target) throw new Error('Message not found in this room');
+  if (target.memberId !== room.self.memberId) throw new Error('You can only edit your own messages');
+  // Strictly newer than the message and any prior edit, so LWW always accepts ours.
+  const at = Math.max(Date.now(), (room.chatEdits.get(msgId)?.at ?? target.at) + 1);
+  const sig = signBytes(room, editCanonical(room.topic, { msgId, memberId: room.self.memberId, at, text }));
+  const edit = { text, at, by: room.self.memberId, pub: room.self.pub, sig };
+  if (applyChatEdit(room, msgId, edit)) {
+    persistChatEdits(room);
+    broadcast(room, { t: 'chat-edit', msgId, memberId: room.self.memberId, text, at, pub: room.self.pub, sig });
+    pushState(room, true);
+  }
 }
 
 /** Delete one file: sign a tombstone, apply it locally, and gossip it. Records the
@@ -3538,7 +3738,8 @@ ipcRenderer.on('room-cmd', async (_e, msg: any) => {
       });
       data = { ok: true };
     }
-    else if (type === 'chat') { sendChat(msg.roomId, String((msg.payload || {}).text || '')); data = { ok: true }; }
+    else if (type === 'chat') { sendChat(msg.roomId, String((msg.payload || {}).text || ''), (msg.payload || {}).replyTo ? String((msg.payload || {}).replyTo) : undefined); data = { ok: true }; }
+    else if (type === 'editChat') { editChat(msg.roomId, String((msg.payload || {}).msgId || ''), String((msg.payload || {}).text || '')); data = { ok: true }; }
     else if (type === 'typing') {
       // Fire-and-forget liveness: tell peers we're composing. Rate-limited so a
       // keystroke-driven renderer can call this freely. Never persisted.

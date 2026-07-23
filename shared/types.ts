@@ -192,6 +192,13 @@ export interface RoomChatMessage {
   // as backfill to a peer that was offline still self-authenticates (verifyChat).
   pub?: string;
   sig?: string;
+  // Reply pointer + a quote snapshot of the parent (UNSIGNED — rides outside the
+  // chat canonical, like voice `deafened`). replyTo is the parent's id; the
+  // renderer resolves the live parent by id and falls back to the snapshot when
+  // the parent scrolled out of the capped window or was never received.
+  replyTo?: string;
+  replyName?: string;    // parent author name at reply time
+  replyText?: string;    // parent body snapshot (truncated)
 }
 
 /** An entry in a room's activity log (locally observed; capped + persisted). */
@@ -248,6 +255,7 @@ export interface RoomState {
   typingMemberIds?: string[]; // members composing a chat message right now (self excluded, ~4s TTL)
   fileReacts?: Record<string, Record<string, string[]>>; // fileId → emoji → reacting memberIds
   chatReacts?: Record<string, Record<string, string[]>>; // chat msgId → emoji → reacting memberIds
+  chatEdits?: Record<string, { text: string; at: number }>; // chat msgId → author's latest edit (LWW by at)
   memberProg?: Record<string, Record<string, number>>;   // memberId → fileId → coarse download % (0-100; a member's 'have' implies 100)
   voice: RoomVoiceState; // serverless mesh voice channel state (who's in the call, who's talking)
   /** Per-folder auto-fetch overrides (local pref): folderId → forced on/off;
@@ -1161,7 +1169,8 @@ export interface IpcApi {
     setLimits: (roomId: string, upKbps: number, downKbps: number) => Promise<{ ok: boolean }>;
     kick: (roomId: string, memberId: string) => Promise<{ ok: boolean }>;
     transferOwner: (roomId: string, memberId: string) => Promise<RoomState>;
-    sendChat: (roomId: string, text: string) => Promise<{ ok: boolean }>;
+    sendChat: (roomId: string, text: string, replyTo?: string) => Promise<{ ok: boolean }>;
+    editChat: (roomId: string, msgId: string, text: string) => Promise<{ ok: boolean }>;
     typing: (roomId: string) => void;
     reactFile: (roomId: string, fileId: string, emoji: string) => Promise<void>;
     reactChat: (roomId: string, msgId: string, emoji: string) => Promise<void>;

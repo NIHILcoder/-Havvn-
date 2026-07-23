@@ -548,6 +548,38 @@ mute» в Room settings (P3) + опциональный тихий звук вх
 > Сьют 410/410, тайпчек+lint(0 err) чисты. Скрипты: scratchpad/smoke-m12.js (+chat).
 > Дальше: M20 звук скриншера; и отложенные мелочи волн 2-3.
 
+### Мелочи волн 2-3 — РЕАЛИЗОВАНЫ (2026-07-23, не запушено)
+Пять отложенных пунктов, отскоуплены параллельным Explore-воркфлоу, отревьюены
+4-мерным×3-скептика адверсариалом (11 находок → 8 уникальных подтверждены и ВСЕ
+исправлены), доказаны живыми 2-инстансовыми смоуками.
+1. **Подсветка поиска чата** — `highlightRun()` оборачивает совпадения запроса в
+   `<mark class=room-chat-search-hit>`, композиция с mention+linkify (search-split
+   first, mention внутри промежутков — без вложенных марок). Фильтр чата теперь
+   матчит по ОТРЕДАКТИРОВАННОМУ телу, не по стейлу (иначе edit-in промахивается).
+2. **Сорт файлов по автору** — новый ключ `'author'` (roomFilesPrefs union +
+   SORT_NATURAL_DIR + loadRoomSort) + компаратор с members-name-map; i18n en/ru.
+3. **Reply + edit чата (ПРОТОКОЛ).** REPLY: unsigned `replyTo/replyName/replyText`
+   на 'chat' Msg ВНЕ chatCanonical (как voice `deafened`); `replyText`=снапшот тела
+   родителя → ШИФРУЕТСЯ at-rest как `text`. EDIT: новый ПОДПИСАННЫЙ `chat-edit` Msg
+   над `editCanonical(['chat-edit',topic,msgId,memberId,at,text])`; приёмник
+   enforce'ит `memberId===автор целевого` + verifyEdit; хранится в ОТДЕЛЬНОМ overlay
+   `room.chatEdits` (LWW by at + ДЕТЕРМИНИРОВАННЫЙ tiebreak по sig на равном at),
+   оригинал НЕ мутируется (backfill self-verify цел). `chat-edit` в RELAYABLE
+   (старые пиры релеят по `_g` не зная типа). Едет в HELLO + re-verified на merge
+   (+mute-чек). **КРИТИЧНЫЙ ИНВАРИАНТ (адверсариал нашёл HIGH, НЕ откатывать):**
+   late-joiner получает HELLO-edits ДО backfill-сообщения → без фикса edit терялся
+   навсегда (стейл-текст у нового участника). Решение — БУФЕР `room.pendingEdits`:
+   верифицированный edit без целевого сообщения буферизуется, `addChat` флашит его
+   когда сообщение приходит (покрывает и joiner, и relay-reorder; capped+FIFO).
+4. **Маппинг ошибок join** — `joinErrorKey()` (cleanError+substring: VPN/empty/
+   engine/generic). wrong-code/full/banned в serverless-mesh при join НЕ бросают
+   (bad code=нет пиров→serverless-hint; бан=асинхронный kicked-banner) — не маплены.
+5. **Read-only строка шифрования** — `.room-settings-status` в поповере настроек
+   (lock/globe + Encrypted/Not encrypted), read-only для всех (E2E фиксирован при
+   создании). Смоуки: reply/edit конвергенция+авторство (B не может редактировать
+   сообщение A), late-joiner конвергенция. 415 тестов + тайпчек + lint(0) чисты.
+> Дальше: M17 deep-link.
+
 ### Чем НЕ заниматься
 - QR-код в invite — уже осознанно удалён (desktop-only), не возвращать.
 - Кастомные фото-аватары — удалены в 2.24 намеренно (`avatarImg` всегда ''),

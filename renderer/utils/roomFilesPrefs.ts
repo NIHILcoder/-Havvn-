@@ -35,18 +35,18 @@ export function saveRoomFilesPrefs(p: RoomFilesPrefs): void {
   try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch { /* ignore */ }
 }
 
-export type RoomFilesSortKey = 'added' | 'name' | 'size' | 'status';
+export type RoomFilesSortKey = 'added' | 'name' | 'size' | 'status' | 'author';
 export type RoomFilesSortDir = 'asc' | 'desc';
 
 /** Each key's natural direction — what the pre-direction UI always showed. */
 export const SORT_NATURAL_DIR: Record<RoomFilesSortKey, RoomFilesSortDir> = {
-  added: 'desc', name: 'asc', size: 'desc', status: 'asc',
+  added: 'desc', name: 'asc', size: 'desc', status: 'asc', author: 'asc',
 };
 
 export function loadRoomSort(roomId: string): RoomFilesSortKey {
   const all = readJson(SORT_KEY);
   const v = all[roomId];
-  return v === 'name' || v === 'size' || v === 'status' ? v : 'added';
+  return v === 'name' || v === 'size' || v === 'status' || v === 'author' ? v : 'added';
 }
 
 export function saveRoomSort(roomId: string, sort: RoomFilesSortKey): void {

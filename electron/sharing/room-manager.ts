@@ -236,6 +236,9 @@ export class RoomManager {
     ipcMain.on('room-chat-reacts', (_e, payload: { roomId: string; reacts: Record<string, Record<string, string[]>> }) => {
       try { if (payload?.roomId && payload?.reacts) db.setRoomChatReacts(payload.roomId, payload.reacts); } catch { /* ignore */ }
     });
+    ipcMain.on('room-chat-edits', (_e, payload: { roomId: string; edits: Record<string, { text: string; at: number; by: string; pub: string; sig: string }> }) => {
+      try { if (payload?.roomId && payload?.edits) db.setRoomChatEdits(payload.roomId, payload.edits); } catch { /* ignore */ }
+    });
     // The engine TOFU-bound a member's public key — persist so the binding (and
     // thus anti-impersonation) survives restarts.
     ipcMain.on('room-identity-add', (_e, payload: { roomId: string; memberId: string; pub: string }) => {
@@ -471,6 +474,7 @@ export class RoomManager {
         chat: db.getRoomChats(roomId),
         reacts: db.getRoomReacts(roomId),
         chatReacts: db.getRoomChatReacts(roomId),
+        chatEdits: db.getRoomChatEdits(roomId),
         identities: db.getRoomIdentities(roomId),
         e2e: e2e ?? false,
         secret: secret ?? '',
@@ -593,6 +597,7 @@ export class RoomManager {
     db.clearRoomLastRead(roomId);
     db.clearRoomReacts(roomId);
     db.clearRoomChatReacts(roomId);
+    db.clearRoomChatEdits(roomId);
     db.clearRoomIdentities(roomId);
     try { fs.rmSync(this.encCacheDir(roomId), { recursive: true, force: true }); } catch { /* ignore */ }
     // The engine's 'leave' above destroys the room's WebTorrent client, so the
@@ -1067,16 +1072,23 @@ export class RoomManager {
   }
 
   /** Send a chat message to a room (broadcast to peers + recorded locally). */
-  async sendChat(roomId: string, text: string): Promise<{ ok: boolean }> {
+  async sendChat(roomId: string, text: string, replyTo?: string): Promise<{ ok: boolean }> {
     const body = String(text || '').trim();
     if (!body) return { ok: false };
     const persisted = db.getPersistedRooms().find((r) => r.roomId === roomId);
     if (!persisted) throw new Error('Room not found');
     if (!this.cache.has(roomId)) await this.reactivate(persisted);
     if (this.win && !this.win.isDestroyed() && this.ready) {
-      this.win.webContents.send('room-cmd', { type: 'chat', reqId: ++this.reqSeq, roomId, payload: { text: body } });
+      this.win.webContents.send('room-cmd', { type: 'chat', reqId: ++this.reqSeq, roomId, payload: { text: body, ...(replyTo ? { replyTo: String(replyTo) } : {}) } });
     }
     return { ok: true };
+  }
+
+  /** Edit one of OUR own chat messages (engine re-signs + gossips the edit).
+   *  Rejects editing others' messages (the engine enforces it, and every peer
+   *  re-checks authorship on receive). */
+  async editChat(roomId: string, msgId: string, text: string): Promise<{ ok: boolean }> {
+    return this.call<{ ok: boolean }>('editChat', { roomId, payload: { msgId, text } }, 8000);
   }
 
   /** Fire-and-forget: tell a room's peers we're composing a chat message.

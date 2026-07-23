@@ -692,7 +692,10 @@ export function setupIpcHandlers(window: BrowserWindow): void {
   ));
 
   ipcMain.handle('rooms:sendChat', wrapHandler('rooms:sendChat',
-    async (_event, roomId: string, text: string) => roomManager.sendChat(roomId, text)
+    async (_event, roomId: string, text: string, replyTo?: string) => roomManager.sendChat(roomId, text, replyTo ? String(replyTo) : undefined)
+  ));
+  ipcMain.handle('rooms:editChat', wrapHandler('rooms:editChat',
+    async (_event, roomId: string, msgId: string, text: string) => roomManager.editChat(roomId, String(msgId || ''), text)
   ));
 
   // Room identity backup — the keypair + profile + joined rooms as one JSON

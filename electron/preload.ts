@@ -695,8 +695,10 @@ const api: IpcApi = {
       ipcRenderer.invoke('rooms:kick', roomId, memberId),
     transferOwner: (roomId: string, memberId: string): Promise<RoomState> =>
       ipcRenderer.invoke('rooms:transferOwner', roomId, memberId),
-    sendChat: (roomId: string, text: string): Promise<{ ok: boolean }> =>
-      ipcRenderer.invoke('rooms:sendChat', roomId, text),
+    sendChat: (roomId: string, text: string, replyTo?: string): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke('rooms:sendChat', roomId, text, replyTo),
+    editChat: (roomId: string, msgId: string, text: string): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke('rooms:editChat', roomId, msgId, text),
     typing: (roomId: string): void => {
       // Fire-and-forget liveness ping — the engine rate-limits the broadcast.
       ipcRenderer.invoke('rooms:typing', roomId).catch(() => { /* ignore */ });

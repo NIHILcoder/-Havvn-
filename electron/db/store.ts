@@ -82,6 +82,7 @@ interface RoomsSchema {
   roomChats: Record<string, RoomChatMessage[]>; // roomId → chat log (capped, text encrypted at rest)
   roomReacts: Record<string, Record<string, Record<string, string[]>>>; // roomId → fileId → emoji → memberIds (capped)
   roomChatReacts: Record<string, Record<string, Record<string, string[]>>>; // roomId → chat msgId → emoji → memberIds (capped)
+  roomChatEdits: Record<string, Record<string, { text: string; at: number; by: string; pub: string; sig: string }>>; // roomId → msgId → author's signed edit (text encrypted at rest)
   roomIdentity: { pub: string; priv: string } | null; // this install's Ed25519 signing keypair (priv encrypted)
   roomIdentities: Record<string, Record<string, string>>; // roomId → (memberId → pubKey), TOFU binding
 }
@@ -273,7 +274,7 @@ const searchStore = new Store<SearchSchema>({
 
 const roomsStore = new Store<RoomsSchema>({
   name: 'rooms',
-  defaults: { rooms: {}, roomProfile: null, roomTombstones: {}, roomTombstoneProofs: {}, roomRevives: {}, roomLastRead: {}, roomManifests: {}, roomFolders: {}, roomFolderTombstones: {}, roomHistory: {}, roomMutes: {}, roomFolderFetch: {}, roomChats: {}, roomReacts: {}, roomChatReacts: {}, roomIdentity: null, roomIdentities: {} },
+  defaults: { rooms: {}, roomProfile: null, roomTombstones: {}, roomTombstoneProofs: {}, roomRevives: {}, roomLastRead: {}, roomManifests: {}, roomFolders: {}, roomFolderTombstones: {}, roomHistory: {}, roomMutes: {}, roomFolderFetch: {}, roomChats: {}, roomReacts: {}, roomChatReacts: {}, roomChatEdits: {}, roomIdentity: null, roomIdentities: {} },
 });
 
 const reputationStore = new Store<ReputationSchema>({
@@ -632,7 +633,9 @@ export function clearRoomHistory(roomId: string): void {
 
 export function getRoomChats(roomId: string): RoomChatMessage[] {
   const list = (roomsStore.get('roomChats') ?? {})[roomId] ?? [];
-  return list.map((m) => ({ ...m, text: decryptSecret(m.text) }));
+  // `replyText` is a snapshot of the PARENT message's body — content, so it's
+  // encrypted at rest like `text` (metadata id/at/sender/replyName stay clear).
+  return list.map((m) => ({ ...m, text: decryptSecret(m.text), ...(m.replyText ? { replyText: decryptSecret(m.replyText) } : {}) }));
 }
 
 /** Returns true if at least one message was new (not a re-delivery/backfill dup). */
@@ -642,7 +645,7 @@ export function appendRoomChats(roomId: string, messages: RoomChatMessage[]): bo
   const seen = new Set((all[roomId] ?? []).map((m) => m.id));
   const fresh = messages
     .filter((m) => m.id && !seen.has(m.id))
-    .map((m) => ({ ...m, text: encryptSecret(m.text) }));
+    .map((m) => ({ ...m, text: encryptSecret(m.text), ...(m.replyText ? { replyText: encryptSecret(m.replyText) } : {}) }));
   if (!fresh.length) return false;
   all[roomId] = (all[roomId] ?? []).concat(fresh).slice(-200); // cap
   roomsStore.set('roomChats', all);
@@ -713,6 +716,32 @@ export function clearRoomChatReacts(roomId: string): void {
   const all = roomsStore.get('roomChatReacts') ?? {};
   delete all[roomId];
   roomsStore.set('roomChatReacts', all);
+}
+
+// === Room chat edits (author-signed message edits, overlay on the chat log) ===
+// Edited text is encrypted at rest like the chat log itself; the signature +
+// author id stay clear so a peer's HELLO edit can re-verify against the author.
+
+export function getRoomChatEdits(roomId: string): Record<string, { text: string; at: number; by: string; pub: string; sig: string }> {
+  const rec = (roomsStore.get('roomChatEdits') ?? {})[roomId] ?? {};
+  const out: Record<string, { text: string; at: number; by: string; pub: string; sig: string }> = {};
+  for (const [msgId, e] of Object.entries(rec)) out[msgId] = { ...e, text: decryptSecret(e.text) };
+  return out;
+}
+
+/** Replace a room's chat-edit overlay (set-style, like reactions; text encrypted). */
+export function setRoomChatEdits(roomId: string, edits: Record<string, { text: string; at: number; by: string; pub: string; sig: string }>): void {
+  const all = roomsStore.get('roomChatEdits') ?? {};
+  const capped: Record<string, { text: string; at: number; by: string; pub: string; sig: string }> = {};
+  for (const [msgId, e] of Object.entries(edits ?? {}).slice(0, MAX_REACT_FILES)) capped[msgId] = { ...e, text: encryptSecret(e.text) };
+  all[roomId] = capped;
+  roomsStore.set('roomChatEdits', all);
+}
+
+export function clearRoomChatEdits(roomId: string): void {
+  const all = roomsStore.get('roomChatEdits') ?? {};
+  delete all[roomId];
+  roomsStore.set('roomChatEdits', all);
 }
 
 // === Room identity (Ed25519 signing keypair + per-room TOFU pubkey roster) ===
