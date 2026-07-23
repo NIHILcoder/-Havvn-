@@ -39,11 +39,11 @@
    (The dark theme puts near-black text on ember; the light theme overrides
    .btn-primary color to white in variables.css against the deeper ember.) */
 .btn-primary {
-  /* Flat blaze fill — stays on the app's flat system and keeps the label's
-     contrast simple across both themes and custom accents (--color-bg-primary is
-     the theme's inverse of the accent). The chamfer + display face carry the
-     HUD identity instead of a gradient. */
-  background: var(--color-accent-primary);
+  /* The brand's signal gradient (hover→base). Guarded: if a custom theme leaves
+     --color-accent-primary-hover unset, both stops collapse to the base accent
+     (flat, no two-hue clash). Per-theme hovers keep the label contrast AA either
+     way — brighter-on-dark with dark text, darker-on-light with light text. */
+  background: linear-gradient(180deg, var(--color-accent-primary-hover, var(--color-accent-primary)), var(--color-accent-primary));
   color: var(--color-bg-primary);
   border: none;
   font-family: var(--font-display);
@@ -464,10 +464,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: color-mix(in srgb, var(--color-accent-primary) 11%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-accent-primary) 34%, transparent);
+  background: color-mix(in srgb, var(--color-accent-primary) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-accent-primary) 40%, transparent);
   border-radius: 0;
   color: var(--color-accent-primary);
+  box-shadow: 0 0 28px color-mix(in srgb, var(--color-accent-primary) 20%, transparent);
   margin-bottom: var(--space-5);
   position: relative;
 }

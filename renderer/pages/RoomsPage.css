@@ -607,8 +607,8 @@
   pointer-events: none;
   z-index: 2;
 }
-.room-section::before { top: -1px; left: -1px; border-top: 1.5px solid; border-left: 1.5px solid; }
-.room-section::after { bottom: -1px; right: -1px; border-bottom: 1.5px solid; border-right: 1.5px solid; }
+.room-section::before { top: 5px; left: 5px; border-top: 1.5px solid; border-left: 1.5px solid; }
+.room-section::after { bottom: 5px; right: 5px; border-bottom: 1.5px solid; border-right: 1.5px solid; }
 
 /* Pinned header pieces (never scroll away). */
 .room-section-title-row,
@@ -1052,6 +1052,7 @@
   max-height: 320px;
   min-height: 120px;
   overflow-y: auto;
+  overflow-x: hidden; /* messages wrap; never a horizontal scrollbar */
   padding: var(--space-3);
 }
 .room-chat-log .room-files-empty { margin: auto 0; background: transparent; border: none; }

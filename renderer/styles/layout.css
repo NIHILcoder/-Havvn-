@@ -474,6 +474,7 @@ body.te-resizing .app-container { transition: none; }
 
 /* Page Header */
 .page-header {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -483,6 +484,13 @@ body.te-resizing .app-container { transition: none; }
   border-bottom: 1px solid var(--color-border-subtle);
   background-color: var(--color-bg-primary);
   flex-shrink: 0;
+}
+/* Blaze signal rail along the top — the HUD tell, echoing the title bar. */
+.page-header::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; height: 2px; width: 220px;
+  background: linear-gradient(90deg, var(--color-accent-primary), transparent);
 }
 
 .page-title {

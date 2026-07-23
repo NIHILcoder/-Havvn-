@@ -14,17 +14,17 @@
 
 :root {
   /* === Dark Theme (Default) — Graphite + Ember === */
-  /* Graphite backgrounds (cool near-black, never pure black) */
-  --color-bg-primary: #141519;
-  --color-bg-secondary: #17181d;
-  --color-bg-tertiary: #1B1D22;
-  --color-bg-elevated: #24262D;
+  /* Graphite backgrounds — deep, high-contrast so the blaze reads hot. */
+  --color-bg-primary: #0F1014;
+  --color-bg-secondary: #15161C;
+  --color-bg-tertiary: #191B21;
+  --color-bg-elevated: #23252E;
   --color-bg-hover: rgba(236, 235, 230, 0.06);
-  --color-bg-active: rgba(226, 81, 23, 0.14);
+  --color-bg-active: rgba(226, 81, 23, 0.15);
 
   /* Legacy aliases for Settings */
-  --color-bg-base: #141519;
-  --color-bg-subtle: #1B1D22;
+  --color-bg-base: #0F1014;
+  --color-bg-subtle: #191B21;
 
   /* Compatibility aliases — used by Search/RSS/Select/TorrentControlModal,
      which were authored against older token names. Mapped to real tokens so
