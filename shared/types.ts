@@ -1187,7 +1187,7 @@ export interface IpcApi {
     // onRoomScreenSignal for the renderer side of its signaling).
     screen: {
       sources: () => Promise<ScreenSourceInfo[]>;
-      shareStart: (roomId: string, sourceId: string) => Promise<{ ok: boolean }>;
+      shareStart: (roomId: string, sourceId: string, withAudio?: boolean) => Promise<{ ok: boolean }>;
       shareStop: (roomId: string) => Promise<{ ok: boolean }>;
       watchStart: (roomId: string, memberId: string) => Promise<{ ok: boolean }>;
       watchStop: (roomId: string, memberId: string) => Promise<{ ok: boolean }>;

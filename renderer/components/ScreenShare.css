@@ -60,6 +60,20 @@
 }
 .ssp-refresh:hover { color: var(--color-text-primary); border-color: var(--color-accent-primary); }
 
+/* Footer: opt-in system-audio toggle on the left, refresh on the right. */
+.ssp-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; }
+.ssp-audio {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+.ssp-audio:hover { color: var(--color-text-primary); }
+.ssp-audio input { margin: 0; cursor: pointer; accent-color: var(--color-accent-primary); }
+
 /* ── Screen view overlay (RoomPlayer-style theater) ────────────────────── */
 
 .ssv-backdrop {

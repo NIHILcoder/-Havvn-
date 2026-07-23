@@ -25,10 +25,13 @@ import './ScreenShare.css';
 
 export const ScreenSourcePicker: React.FC<{
   onClose: () => void;
-  onPick: (sourceId: string) => void;
+  onPick: (sourceId: string, withAudio: boolean) => void;
 }> = ({ onClose, onPick }) => {
   const { t } = useTranslation();
   const [sources, setSources] = useState<ScreenSourceInfo[] | null>(null);
+  // Opt-in system audio (M20): off by default — sharing system audio shares
+  // everything playing, and the call echo canceller is best-effort. Windows only.
+  const [withAudio, setWithAudio] = useState(false);
 
   const refresh = () => {
     window.api.rooms.screen.sources()
@@ -39,7 +42,7 @@ export const ScreenSourcePicker: React.FC<{
 
   const group = (display: boolean) => (sources || []).filter((s) => s.display === display);
   const tile = (s: ScreenSourceInfo) => (
-    <button key={s.id} className="ssp-tile" onClick={() => onPick(s.id)} title={s.name}>
+    <button key={s.id} className="ssp-tile" onClick={() => onPick(s.id, withAudio)} title={s.name}>
       <span className="ssp-thumb">
         {s.thumbnail ? <img src={s.thumbnail} alt="" /> : <Icon name="monitor" size={24} />}
       </span>
@@ -51,9 +54,15 @@ export const ScreenSourcePicker: React.FC<{
     <Modal
       onClose={onClose} title={t('rooms.screen.pickerTitle')} icon="screen-share" size="lg" bodyClassName="ssp-body"
       footer={
-        <button className="ssp-refresh" onClick={refresh}>
-          <Icon name="refresh-cw" size={13} /> {t('rooms.screen.refresh')}
-        </button>
+        <div className="ssp-footer">
+          <label className="ssp-audio" title={t('rooms.screen.shareAudioHint')}>
+            <input type="checkbox" checked={withAudio} onChange={(e) => setWithAudio(e.target.checked)} />
+            <Icon name="volume-2" size={13} /> {t('rooms.screen.shareAudio')}
+          </label>
+          <button className="ssp-refresh" onClick={refresh}>
+            <Icon name="refresh-cw" size={13} /> {t('rooms.screen.refresh')}
+          </button>
+        </div>
       }
     >
       {sources === null ? (

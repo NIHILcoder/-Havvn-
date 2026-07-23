@@ -662,7 +662,7 @@ const api: IpcApi = {
     },
     screen: {
       sources: (): Promise<ScreenSourceInfo[]> => ipcRenderer.invoke('rooms:screenSources'),
-      shareStart: (roomId: string, sourceId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('rooms:screenShareStart', roomId, sourceId),
+      shareStart: (roomId: string, sourceId: string, withAudio?: boolean): Promise<{ ok: boolean }> => ipcRenderer.invoke('rooms:screenShareStart', roomId, sourceId, withAudio),
       shareStop: (roomId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('rooms:screenShareStop', roomId),
       watchStart: (roomId: string, memberId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('rooms:screenWatchStart', roomId, memberId),
       watchStop: (roomId: string, memberId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('rooms:screenWatchStop', roomId, memberId),

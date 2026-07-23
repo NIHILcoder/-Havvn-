@@ -619,7 +619,7 @@ export function setupIpcHandlers(window: BrowserWindow): void {
     async () => roomManager.screenSources()
   ));
   ipcMain.handle('rooms:screenShareStart', wrapHandler('rooms:screenShareStart',
-    async (_event, roomId: string, sourceId: string) => roomManager.screenShareStart(roomId, String(sourceId || ''))
+    async (_event, roomId: string, sourceId: string, withAudio?: boolean) => roomManager.screenShareStart(roomId, String(sourceId || ''), !!withAudio)
   ));
   ipcMain.handle('rooms:screenShareStop', wrapHandler('rooms:screenShareStop',
     async (_event, roomId: string) => roomManager.screenShareStop(roomId)

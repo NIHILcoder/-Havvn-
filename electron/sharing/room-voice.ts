@@ -19,8 +19,14 @@
 import type { VoiceSettings, NoiseSuppressionMode } from '../../shared/types';
 import { RNNOISE_WASM_BASE64 } from './voice/rnnoise-wasm';
 import { RNNOISE_WORKLET_SOURCE } from './voice/rnnoise-worklet';
+import { ScreenAec } from './voice/screen-aec';
 
 export type SignalKind = 'offer' | 'answer' | 'ice';
+
+// Screen-share echo-canceller FIR length (samples @ the AEC context rate, ~48k).
+// Must cover the loopback delay (audio-element buffering + OS render + capture) —
+// tens of ms; ~64ms here. Time-domain NLMS, so heavier taps cost more CPU.
+const AEC_TAPS = 3072;
 
 /** How the mic decides when to transmit: always open, gated by voice activity
  *  (auto-mute on silence), or only while a push-to-talk key is held. */
@@ -240,8 +246,12 @@ class MediaPeer {
   private sinkId = '';  // desired output device ('' = system default); applied when audioEl exists
   private deafened = false;                        // WE are deafened (mutes every peer's output)
   private locallyMuted = false;                    // this member is locally muted on THIS install (output cut, PC kept)
-  private shareTransceiver: RTCRtpTransceiver | null = null; // OUR outgoing screen transceiver (sendonly)
+  private shareTransceiver: RTCRtpTransceiver | null = null; // OUR outgoing screen VIDEO transceiver (sendonly)
+  private shareAudioTransceiver: RTCRtpTransceiver | null = null; // OUR outgoing screen AUDIO transceiver (sendonly)
   private watching = false;                        // we want THEIR screen video (recv gating)
+  private micStreamId = '';                        // this peer's MIC audio stream id (the FIRST audio stream)
+  private shareStreamId = '';                      // this peer's screen MediaStream id (from voice-share) — routes screen audio
+  private shareAudioEl: HTMLAudioElement | null = null; // plays THEIR shared screen audio (separate from mic; deafen mutes it too)
   volume = 1;           // EFFECTIVE volume (master × per-user) — the session computes it
 
   constructor(
@@ -252,6 +262,7 @@ class MediaPeer {
     private onSpeaking: (s: boolean) => void,
     private onRemoteShare: (track: MediaStreamTrack | null, stream: MediaStream | null) => void,
     private onFailed: () => void,
+    private onMicStream: (stream: MediaStream | null) => void,
     private now: () => number,
   ) {
     this.pc = new RTCPeerConnection({ iceServers: a.iceServers });
@@ -285,6 +296,16 @@ class MediaPeer {
         this.onRemoteShare(track, stream);
         return;
       }
+      // Audio: either the peer's MIC or their SCREEN audio (M20). Both are `audio`
+      // tracks on this PC, so key on the stream (msid): the screen shares the
+      // announced share streamId; the mic is the FIRST audio stream (initial
+      // negotiation, before any share). If the share announce hasn't landed yet,
+      // any SECOND audio stream is the screen (the mic always arrives first).
+      const isScreen = this.shareStreamId
+        ? stream.id === this.shareStreamId
+        : (!!this.micStreamId && stream.id !== this.micStreamId);
+      if (isScreen) { this.playShareAudio(stream); return; }
+      if (!this.micStreamId) this.micStreamId = stream.id;
       if (!this.audioEl) { this.audioEl = new Audio(); this.audioEl.autoplay = true; }
       this.audioEl.srcObject = stream;
       this.audioEl.volume = this.volume;
@@ -294,7 +315,38 @@ class MediaPeer {
       // VAD on the REMOTE stream drives their speaking indicator (no gossip needed).
       this.vad?.stop();
       this.vad = new Vad(stream, (s) => { if (!this.closed) this.onSpeaking(s); }, this.now);
+      this.onMicStream(stream); // let the session use it as an AEC reference if WE share audio
     };
+  }
+
+  /** Play a peer's shared SCREEN audio (v1: no per-peer volume — deafen/local-mute
+   *  silence it like the mic; not gated by watch, so shared audio is heard even
+   *  without opening the screen view). */
+  private playShareAudio(stream: MediaStream): void {
+    if (this.closed) return;
+    if (!this.shareAudioEl) { this.shareAudioEl = new Audio(); this.shareAudioEl.autoplay = true; }
+    this.shareAudioEl.srcObject = stream;
+    this.shareAudioEl.muted = this.deafened || this.locallyMuted;
+    const el = this.shareAudioEl as any;
+    if (el.setSinkId) el.setSinkId(this.sinkId).catch(() => { /* device gone — default */ });
+    this.shareAudioEl.play().catch(() => { /* permissive here */ });
+  }
+
+  /** The peer's screen MediaStream id (from the signed voice-share) — lets ontrack
+   *  route their screen audio. Re-evaluated so a track that arrived BEFORE the
+   *  announce (routed as mic) moves to the screen element. */
+  setShareStreamId(id: string): void {
+    this.shareStreamId = id || '';
+    // A screen-audio track may have landed before the announce and been mis-routed
+    // onto the mic element. If the mic element now holds the share stream, move it.
+    if (id && this.audioEl && (this.audioEl.srcObject as MediaStream | null)?.id === id) {
+      const s = this.audioEl.srcObject as MediaStream;
+      try { this.audioEl.srcObject = null; } catch { /* ignore */ }
+      this.vad?.stop(); this.vad = null;
+      this.micStreamId = '';
+      this.onMicStream(null);
+      this.playShareAudio(s);
+    }
   }
 
   async onSignal(kind: SignalKind, data: any): Promise<void> {
@@ -347,7 +399,9 @@ class MediaPeer {
   }
 
   private applyOutputMute(): void {
-    if (this.audioEl) this.audioEl.muted = this.deafened || this.locallyMuted;
+    const mute = this.deafened || this.locallyMuted;
+    if (this.audioEl) this.audioEl.muted = mute;
+    if (this.shareAudioEl) this.shareAudioEl.muted = mute; // deafen/ignore silences their screen audio too
   }
 
   /** Deafen: mute output without renegotiating (keeps AEC reference alive-ish). */
@@ -391,6 +445,21 @@ class MediaPeer {
     if (!this.shareTransceiver) return;
     try { this.shareTransceiver.stop(); } catch { /* stop() may be unsupported mid-negotiation */ }
     this.shareTransceiver = null;
+  }
+
+  /** Send our (echo-cancelled) screen AUDIO on its own sendonly m-line, in the SAME
+   *  MediaStream as the video (so the receiver groups them by msid). Dedicated
+   *  transceiver for the same reason as the video one — addTrack would recycle the
+   *  m-line receiving the peer's audio. */
+  addShareAudioTrack(track: MediaStreamTrack, stream: MediaStream): void {
+    if (this.closed || this.shareAudioTransceiver) return;
+    this.shareAudioTransceiver = this.pc.addTransceiver(track, { direction: 'sendonly', streams: [stream] });
+  }
+
+  removeShareAudioTrack(): void {
+    if (!this.shareAudioTransceiver) return;
+    try { this.shareAudioTransceiver.stop(); } catch { /* mid-negotiation */ }
+    this.shareAudioTransceiver = null;
   }
 
   /** Watch-on-demand: flip THEIR video m-lines between recvonly and inactive.
@@ -456,6 +525,7 @@ class MediaPeer {
     this.vad?.stop(); this.vad = null;
     try { this.pc.close(); } catch { /* ignore */ }
     if (this.audioEl) { try { this.audioEl.srcObject = null; } catch { /* ignore */ } this.audioEl = null; }
+    if (this.shareAudioEl) { try { this.shareAudioEl.srcObject = null; } catch { /* ignore */ } this.shareAudioEl = null; }
   }
 }
 
@@ -577,6 +647,9 @@ export class VoiceSession {
   // ── Screenshare ──
   private shareStream: MediaStream | null = null;              // OUR screen capture (engine-window getUserMedia desktop)
   private shareTrack: MediaStreamTrack | null = null;
+  private shareAudioTrack: MediaStreamTrack | null = null;     // the CLEANED (echo-cancelled) screen audio we send (M20)
+  private aec: ScreenAec | null = null;                        // screen-audio echo canceller (subtracts the call mix)
+  private peerMicStreams = new Map<string, MediaStream>();     // memberId → their remote mic stream (AEC reference source)
   private remoteShares = new Map<string, { streamId: string }>();  // rostered members currently sharing
   private lastShareAt = new Map<string, number>();             // per-member voice-share anti-replay (separate from lastStateAt — sharing one map would let a reordered share stamp shadow a real mute change)
   private pendingShares = new Map<string, { streamId: string }>(); // share announce that beat its sender's voice-state (relay reorder), applied on roster (capped)
@@ -759,6 +832,9 @@ export class VoiceSession {
     // Screenshare teardown FIRST: release the capture before closing PCs, close
     // every open watch ('end' → the renderer overlay closes), drop share state.
     // No separate announceShare(false) — receivers clear sharing on inVoice:false.
+    this.aec?.close(); this.aec = null;
+    this.shareAudioTrack?.stop(); this.shareAudioTrack = null;
+    this.peerMicStreams.clear();
     this.shareStream?.getTracks().forEach((t) => t.stop());
     this.shareStream = null; this.shareTrack = null;
     for (const f of this.forwarders.values()) f.close(true);
@@ -904,6 +980,7 @@ export class VoiceSession {
     if (!this.active || this.deafened === deafened) return;
     this.deafened = deafened;
     for (const p of this.peers.values()) p.setDeafened(deafened);
+    this.updateAecRefs(); // deafened → nothing is played → the echo reference goes silent
     if (deafened) {
       // Deafening also mutes your mic (Discord convention); remember the prior mute
       // state so un-deafening restores it exactly (not force-unmute).
@@ -933,6 +1010,8 @@ export class VoiceSession {
   setVolume(memberId: string, v: number): void {
     this.volumes.set(memberId, v);
     this.peers.get(memberId)?.setVolume(this.effectiveVolume(memberId));
+    const ms = this.peerMicStreams.get(memberId);
+    if (this.aec && ms) this.aec.setReference(memberId, ms, this.refGain(memberId)); // keep the echo reference in sync
   }
 
   /** Locally mute (ignore) a member: silence their audio without tearing the media
@@ -941,6 +1020,7 @@ export class VoiceSession {
   setLocallyMuted(muted: Set<string>): void {
     this.locallyMutedIds = muted;
     for (const [id, p] of this.peers) p.setLocallyMuted(muted.has(id));
+    this.updateAecRefs(); // a muted member is no longer heard → drop them from the echo reference
   }
 
   // ── Screenshare ──
@@ -962,11 +1042,38 @@ export class VoiceSession {
     for (const p of this.peers.values()) p.addShareTrack(track, stream); // → renegotiate per peer
     this.a.announceShare(true, stream.id, this.nextAt());
     this.a.onChange();
+    // M20: if the capture also carries system audio, echo-cancel it and share the
+    // cleaned track (async — the AEC worklet loads, then the audio m-line adds).
+    if (stream.getAudioTracks().length) void this.startShareAudio(stream);
+  }
+
+  /** Echo-cancel the captured system audio (subtract the call mix we play) and fan
+   *  the CLEANED track out on a second m-line, grouped with the video by msid. On
+   *  AEC failure we share video only — sending the raw loopback would echo the call. */
+  private async startShareAudio(stream: MediaStream): Promise<void> {
+    const raw = stream.getAudioTracks()[0];
+    if (!raw) return;
+    let aec: ScreenAec | null = null;
+    try { aec = await ScreenAec.create(stream, AEC_TAPS, (m) => this.a.log(m)); }
+    catch (e) { this.a.log('screen AEC create threw: ' + String(e)); }
+    // Share stopped / replaced while the worklet loaded, or AEC unavailable → drop audio.
+    if (!this.active || this.shareStream !== stream || !aec) { aec?.close(); return; }
+    const cleaned = aec.outputTrack;
+    if (!cleaned) { aec.close(); return; }
+    this.aec = aec;
+    this.shareAudioTrack = cleaned;
+    // Seed the reference with everyone we currently hear (at their play volume).
+    for (const [id, ms] of this.peerMicStreams) aec.setReference(id, ms, this.refGain(id));
+    for (const p of this.peers.values()) p.addShareAudioTrack(cleaned, stream); // → renegotiate
+    this.a.log('screen audio: sharing echo-cancelled system audio');
+    this.a.onChange();
   }
 
   stopShare(): void {
     if (!this.shareStream) return;
-    for (const p of this.peers.values()) p.removeShareTrack(); // → renegotiate
+    for (const p of this.peers.values()) { p.removeShareTrack(); p.removeShareAudioTrack(); } // → renegotiate
+    this.aec?.close(); this.aec = null;
+    this.shareAudioTrack?.stop(); this.shareAudioTrack = null;
     this.shareStream.getTracks().forEach((t) => t.stop());
     this.shareStream = null;
     this.shareTrack = null;
@@ -996,9 +1103,11 @@ export class VoiceSession {
   private applyPeerShare(memberId: string, sharing: boolean, streamId: string): void {
     if (sharing) {
       this.remoteShares.set(memberId, { streamId });
+      this.peers.get(memberId)?.setShareStreamId(streamId); // route their screen audio (M20)
     } else {
       this.remoteShares.delete(memberId);
       this.remoteTracks.delete(memberId);
+      this.peers.get(memberId)?.setShareStreamId('');
       this.closeForwarder(memberId);              // share ended while we watched → 'end' closes the overlay
       this.peers.get(memberId)?.setWatching(false); // stop paying recv bandwidth for a dead m-line
     }
@@ -1177,6 +1286,7 @@ export class VoiceSession {
         (s) => this.setSpeaking(memberId, s),
         (track, stream) => this.setRemoteShareTrack(memberId, track, stream),
         () => this.onPeerFailed(memberId),
+        (stream) => this.onPeerMicStream(memberId, stream),
         this.now,
       );
       p.setSink(this.getSettings().outputDeviceId || '');
@@ -1186,6 +1296,10 @@ export class VoiceSession {
       // Mid-share join: attach the live screen track BEFORE the pending offer is
       // applied, so the fresh (stable) PC carries it in its very first negotiation.
       if (this.shareTrack && this.shareStream) p.addShareTrack(this.shareTrack, this.shareStream);
+      if (this.shareAudioTrack && this.shareStream) p.addShareAudioTrack(this.shareAudioTrack, this.shareStream);
+      // They already announced a share → route their screen audio by that streamId.
+      const rs = this.remoteShares.get(memberId);
+      if (rs) p.setShareStreamId(rs.streamId);
       this.peers.set(memberId, p);
       // Apply an offer that raced ahead of this member's presence announce.
       const pending = this.pendingOffers.get(memberId);
@@ -1197,6 +1311,32 @@ export class VoiceSession {
   private dropPeer(memberId: string): void {
     const p = this.peers.get(memberId);
     if (p) { p.close(); this.peers.delete(memberId); }
+    this.peerMicStreams.delete(memberId);
+    this.aec?.removeReference(memberId); // stop feeding a gone peer into the echo reference
+  }
+
+  // ── Screen-audio echo cancellation (M20) ─────────────────────────────────────
+  /** A peer's mic stream arrived/ended. While WE share system audio, that stream is
+   *  part of what the desktop loopback re-captures, so it must be in the AEC
+   *  reference (at the volume we play it) to be cancelled out of the shared audio. */
+  private onPeerMicStream(memberId: string, stream: MediaStream | null): void {
+    if (stream) this.peerMicStreams.set(memberId, stream); else this.peerMicStreams.delete(memberId);
+    if (!this.aec) return;
+    if (stream) this.aec.setReference(memberId, stream, this.refGain(memberId));
+    else this.aec.removeReference(memberId);
+  }
+
+  /** The gain a peer's voice is actually PLAYED at (so the reference matches the
+   *  loopback): zero when deafened or this member is locally muted. */
+  private refGain(memberId: string): number {
+    if (this.deafened || this.locallyMutedIds.has(memberId)) return 0;
+    return this.effectiveVolume(memberId);
+  }
+
+  /** Re-apply every reference gain (after a volume / deafen / local-mute change). */
+  private updateAecRefs(): void {
+    if (!this.aec) return;
+    for (const [id, ms] of this.peerMicStreams) this.aec.setReference(id, ms, this.refGain(id));
   }
 
   /** A peer's RTCPeerConnection reached 'failed' (e.g. it was torn down on our side

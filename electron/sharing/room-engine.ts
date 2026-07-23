@@ -1231,22 +1231,32 @@ function createVoiceSession(room: Room): VoiceSession {
  *  chromeMediaSource path — unlike getDisplayMedia it needs NO user gesture, so it
  *  works from the engine window; the permission handlers already allow 'media'.
  *  `sourceId` comes from desktopCapturer.getSources in the main process. */
-async function captureScreen(sourceId: string): Promise<MediaStream> {
+async function captureScreen(sourceId: string, withAudio = false): Promise<MediaStream> {
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new Error('Screen capture unavailable (the room engine is not a secure context).');
   }
-  return navigator.mediaDevices.getUserMedia({
-    audio: false, // v1 is video-only (system-audio loopback would echo the call back)
-    video: {
-      mandatory: {
-        chromeMediaSource: 'desktop',
-        chromeMediaSourceId: String(sourceId),
-        maxWidth: 1920,
-        maxHeight: 1080,
-        maxFrameRate: 15,
-      },
+  const video = {
+    mandatory: {
+      chromeMediaSource: 'desktop',
+      chromeMediaSourceId: String(sourceId),
+      maxWidth: 1920,
+      maxHeight: 1080,
+      maxFrameRate: 15,
     },
-  } as any);
+  };
+  // M20: system audio is OPT-IN (the picker's "share audio" checkbox). When off,
+  // share video only — the safe default, since a system-audio loopback carries
+  // everything playing and the call echo canceller is best-effort. When on, grab
+  // the desktop loopback; the share pipeline echo-cancels the voice-call playback
+  // out of it (VoiceSession.startShareAudio) before sending. Loopback is Windows-
+  // only in Chromium — elsewhere getUserMedia rejects, so fall back to video-only.
+  if (!withAudio) return await navigator.mediaDevices.getUserMedia({ audio: false, video } as any);
+  try {
+    return await navigator.mediaDevices.getUserMedia({ audio: { mandatory: { chromeMediaSource: 'desktop' } }, video } as any);
+  } catch (e) {
+    log('screen system-audio capture unavailable — sharing video only: ' + String(e));
+    return await navigator.mediaDevices.getUserMedia({ audio: false, video } as any);
+  }
 }
 
 /** Bytes an owner/deleter signs to authorize lifting an authenticated tombstone.
@@ -3627,7 +3637,7 @@ ipcRenderer.on('room-cmd', async (_e, msg: any) => {
       if (!r) throw new Error('Room not active');
       if (netSuspended) throw new Error('Rooms are paused: the VPN is down (kill-switch)');
       if (!r.voice.isActive()) throw new Error('Join the voice channel before sharing your screen.');
-      const stream = await captureScreen(String(msg.sourceId || ''));
+      const stream = await captureScreen(String(msg.sourceId || ''), !!msg.withAudio);
       // The kill-switch (or a leave/kick) may have tripped DURING capture — same
       // re-check-and-undo pattern as voiceJoin, or the capture would leak.
       if (netSuspended) { stream.getTracks().forEach((t) => t.stop()); throw new Error('Rooms are paused: the VPN is down (kill-switch)'); }

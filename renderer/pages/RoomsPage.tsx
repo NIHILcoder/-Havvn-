@@ -2084,9 +2084,9 @@ const RoomVoicePanel: React.FC<{ room: RoomState; onWatchShare: (memberId: strin
     if (v.sharing) window.api.rooms.screen.shareStop(roomId).catch(fail);
     else setPickerOpen(true);
   };
-  const pickSource = (sourceId: string) => {
+  const pickSource = (sourceId: string, withAudio: boolean) => {
     setPickerOpen(false);
-    window.api.rooms.screen.shareStart(roomId, sourceId).catch(fail);
+    window.api.rooms.screen.shareStart(roomId, sourceId, withAudio).catch(fail);
   };
 
   return (

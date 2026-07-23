@@ -301,6 +301,8 @@
   "rooms.screen.screens": "Screens",
   "rooms.screen.windows": "Windows",
   "rooms.screen.refresh": "Refresh",
+  "rooms.screen.shareAudio": "Share system audio",
+  "rooms.screen.shareAudioHint": "Also share whatever's playing on your computer. May echo faintly in the voice call; Windows only.",
   "rooms.screen.live": "LIVE",
   "rooms.screen.watch": "Watch stream",
   "rooms.screen.preview": "Preview your stream",

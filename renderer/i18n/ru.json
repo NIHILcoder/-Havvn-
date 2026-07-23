@@ -301,6 +301,8 @@
   "rooms.screen.screens": "Экраны",
   "rooms.screen.windows": "Окна",
   "rooms.screen.refresh": "Обновить",
+  "rooms.screen.shareAudio": "Звук системы",
+  "rooms.screen.shareAudioHint": "Транслировать и звук, играющий на компьютере. Может слегка фонить в звонке; только Windows.",
   "rooms.screen.live": "LIVE",
   "rooms.screen.watch": "Смотреть стрим",
   "rooms.screen.preview": "Превью вашего стрима",

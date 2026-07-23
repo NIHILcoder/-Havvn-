@@ -884,10 +884,10 @@ export class RoomManager {
     return sources.map((s) => ({ id: s.id, name: s.name, thumbnail: s.thumbnail.toDataURL(), display: s.id.startsWith('screen:') }));
   }
 
-  async screenShareStart(roomId: string, sourceId: string): Promise<{ ok: boolean }> {
+  async screenShareStart(roomId: string, sourceId: string, withAudio = false): Promise<{ ok: boolean }> {
     this.assertNotSuspended(); // a share leg leaks the real IP just like voice
     await this.ensureScreenAccess();
-    return this.call<{ ok: boolean }>('screenShareStart', { roomId, sourceId }, 15000);
+    return this.call<{ ok: boolean }>('screenShareStart', { roomId, sourceId, withAudio }, 15000);
   }
   screenShareStop(roomId: string): Promise<{ ok: boolean }> { return this.call<{ ok: boolean }>('screenShareStop', { roomId }); }
   screenWatchStart(roomId: string, memberId: string): Promise<{ ok: boolean }> { return this.call<{ ok: boolean }>('screenWatchStart', { roomId, memberId }, 8000); }
