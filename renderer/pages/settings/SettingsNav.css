@@ -83,9 +83,10 @@
   gap: 3px; /* breathing room between tabs */
 }
 .stg-nav-grp-h {
+  font-family: var(--font-display);
   font-size: 10.5px;
   font-weight: var(--font-weight-bold);
-  letter-spacing: 0.08em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--color-text-tertiary);
   padding: 4px 10px 6px;
@@ -103,12 +104,13 @@
   font-family: var(--font-family);
   font-size: 13px;
   font-weight: var(--font-weight-medium);
-  border-radius: var(--radius-md);
+  border-radius: 0;
+  clip-path: var(--clip-cut-sm);
   cursor: pointer;
   text-align: left;
 }
 .stg-nav-item:hover { background: var(--color-bg-hover); color: var(--color-text-primary); }
-.stg-nav-item.on { background: var(--color-accent-bg); color: var(--color-text-primary); }
+.stg-nav-item.on { background: var(--color-accent-bg); color: var(--color-text-primary); box-shadow: inset 2px 0 0 var(--color-accent-primary); }
 .stg-nav-item svg { flex: none; color: var(--color-text-tertiary); }
 .stg-nav-item.on svg { color: var(--color-accent-primary); }
 .stg-nav-item-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
