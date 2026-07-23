@@ -41,9 +41,7 @@
 
 .template-card:hover {
   border-color: var(--color-border-strong);
-  background: var(--color-bg-elevated);
-  transform: translateY(-3px);
-  box-shadow: var(--shadow-md);
+  background: var(--color-bg-elevated); /* flat HUD hover, no lift */
 }
 
 [data-theme="light"] .template-card:hover {
@@ -85,7 +83,6 @@
   background: var(--color-accent-primary);
   border-color: transparent;
   color: var(--color-bg-primary);
-  transform: scale(1.08);
 }
 
 [data-theme="light"] .template-card:hover .template-icon,
@@ -131,7 +128,7 @@
   width: 22px;
   height: 22px;
   background: var(--color-accent-primary);
-  border-radius: 50%;
+  border-radius: 0; /* squared HUD */
   display: flex;
   align-items: center;
   justify-content: center;

@@ -129,7 +129,7 @@
 }
 .custom-select-list::-webkit-scrollbar-thumb {
   background: var(--color-border);
-  border-radius: 3px;
+  border-radius: 0; /* squared HUD */
 }
 .custom-select-list::-webkit-scrollbar-thumb:hover {
   background: var(--color-border-hover);

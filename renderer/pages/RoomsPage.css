@@ -40,7 +40,7 @@
   padding: var(--space-1) var(--space-3) var(--space-1) var(--space-1);
   background: var(--color-bg-secondary);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-full);
+  border-radius: 0; /* squared HUD */
   color: var(--color-text-primary);
   font-size: 13px;
   font-weight: 500;
@@ -94,7 +94,7 @@
   padding: 8px 16px;
   background: var(--color-bg-secondary);
   border: 1px dashed var(--color-accent-primary);
-  border-radius: var(--radius-full);
+  border-radius: 0; /* squared HUD (dashed accent border stays) */
   box-shadow: var(--shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.35));
   color: var(--color-accent-primary);
   font-size: 13px;
@@ -266,16 +266,9 @@
 .room-settings-limits-label { display: inline-flex; align-items: center; gap: 5px; }
 .room-settings-limits { display: inline-flex; align-items: center; gap: 6px; }
 .room-settings-limits .room-limit { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--color-text-tertiary); }
-.room-settings-limits input {
-  width: 54px;
-  height: 24px;
-  padding: 0 6px;
-  font-size: 11px;
-  color: var(--color-text-primary);
-  background: var(--color-bg-primary);
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-sm);
-}
+/* Popover context only sets the compact height; the field look (recessed,
+   mono, focus ring) is the shared .room-limit input rule below. */
+.room-settings-limits input { height: 24px; }
 .room-settings-kbps { font-size: 10px; color: var(--color-text-tertiary); }
 .room-settings-sep { height: 1px; background: var(--color-border-subtle); margin: 2px 0; }
 .room-settings-item {
@@ -313,7 +306,7 @@
   gap: 6px;
   padding: 8px 14px;
   border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-full);
+  border-radius: 0; /* squared HUD */
   background: var(--color-bg-primary);
   color: var(--color-text-secondary);
   font-size: 12px;
@@ -331,7 +324,7 @@
   height: 16px;
   padding: 0 6px;
   border: none;
-  border-radius: var(--radius-full);
+  border-radius: 0; /* squared HUD */
   background: color-mix(in srgb, var(--color-accent-primary) 18%, transparent);
   color: var(--color-accent-primary);
   font-size: 10px;
@@ -485,7 +478,7 @@
   align-items: center;
   justify-content: center;
   width: 24px; height: 24px;
-  border: none; border-radius: 5px;
+  border: none; border-radius: 0; /* squared HUD */
   background: transparent;
   color: var(--color-text-tertiary);
   cursor: pointer;
@@ -526,7 +519,7 @@
   display: block;
   margin: 4px 0;
   padding: 6px 8px;
-  border-radius: 6px;
+  border-radius: 0; /* squared HUD */
   background: var(--color-bg-primary);
   border: 1px solid var(--color-border-subtle);
   color: var(--color-text-primary);
@@ -546,7 +539,7 @@
   justify-content: center;
   width: 22px; height: 22px;
   border: 1px solid var(--color-border-subtle);
-  border-radius: 5px;
+  border-radius: 0; /* squared HUD */
   background: var(--color-bg-secondary);
   color: var(--color-text-tertiary);
   cursor: pointer;
@@ -1145,7 +1138,7 @@
   color: var(--color-bg-primary);
   background: var(--color-accent-primary);
   border: none;
-  border-radius: var(--radius-full);
+  border-radius: 0; /* squared HUD */
   box-shadow: var(--shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.35));
   cursor: pointer;
 }
@@ -1200,7 +1193,7 @@
   height: 18px;
   padding: 0 6px;
   border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-full);
+  border-radius: 0; /* squared HUD */
   background: var(--color-bg-secondary);
   font-size: 11px;
   cursor: pointer;
@@ -1232,7 +1225,7 @@
   width: 20px;
   height: 20px;
   border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-full);
+  border-radius: 0; /* squared HUD */
   background: var(--color-bg-secondary);
   color: var(--color-text-tertiary);
   cursor: pointer;
@@ -1249,7 +1242,7 @@
   margin-bottom: 3px;
   padding: 2px 8px;
   border-left: 2px solid var(--color-accent-primary);
-  border-radius: 3px;
+  border-radius: 0; /* squared HUD (accent left rule stays) */
   background: color-mix(in srgb, var(--color-accent-primary) 8%, transparent);
   font-size: 11px;
   line-height: 1.3;
@@ -1268,7 +1261,7 @@
   margin-bottom: 6px;
   padding: 4px 8px;
   border-left: 2px solid var(--color-accent-primary);
-  border-radius: 4px;
+  border-radius: 0; /* squared HUD (accent left rule stays) */
   background: var(--color-bg-tertiary);
   font-size: 12px;
   color: var(--color-text-secondary);
@@ -1292,7 +1285,7 @@
   gap: 2px;
   padding: 4px;
   border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-full);
+  border-radius: 0; /* squared HUD */
   background: var(--color-bg-secondary);
   box-shadow: var(--shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.35));
 }
@@ -1381,7 +1374,7 @@
   margin-top: 2px;
   padding: 3px 10px;
   border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-full);
+  border-radius: 0; /* squared HUD */
   background: var(--color-bg-secondary);
   color: var(--color-text-secondary);
   font-size: 11px;
@@ -1474,7 +1467,7 @@
   height: 26px;
   min-height: 26px;
   padding: 0 10px;
-  border-radius: var(--radius-full);
+  border-radius: 0; /* squared HUD (match the file chip row) */
   font-size: 12px;
 }
 .room-file-select .custom-select-value { font-size: 12px; }
@@ -1589,7 +1582,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
+  border-radius: 0; /* squared HUD (inner avatar keeps its chamfer) */
   overflow: hidden;
   outline: 2px solid var(--color-bg-secondary);
 }
@@ -1629,7 +1622,7 @@
   gap: 3px;
   padding: 1px 5px;
   border: 1px solid transparent;
-  border-radius: var(--radius-full);
+  border-radius: 0; /* squared HUD */
   background: transparent;
   font-size: 12px;
   line-height: 1.4;
@@ -1717,18 +1710,25 @@
   cursor: text;
 }
 
+/* Recessed HUD field — inset shadow + mono numerals + right-aligned so it reads
+   as an editable value, not a solid button box. The ∞ placeholder sits dim. */
 .room-limit input {
-  width: 52px;
-  padding: 3px 6px;
+  width: 56px;
+  padding: 3px 7px;
   background: var(--color-bg-primary);
   border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-sm);
+  border-radius: 0;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
   color: var(--color-text-primary);
-  font: inherit;
+  font-family: var(--font-family-mono);
   font-size: 11px;
+  font-variant-numeric: tabular-nums;
   text-align: right;
   -moz-appearance: textfield;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
 }
+
+.room-limit input::placeholder { color: var(--color-text-disabled); opacity: 1; }
 
 .room-limit input::-webkit-outer-spin-button,
 .room-limit input::-webkit-inner-spin-button {
@@ -1738,7 +1738,9 @@
 
 .room-limit input:focus {
   outline: none;
-  border-color: var(--color-border-focus);
+  border-color: var(--color-accent-primary);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35),
+              0 0 0 1px color-mix(in srgb, var(--color-accent-primary) 40%, transparent);
 }
 
 /* ── Identicon ─────────────────────────────────────────────────────────── */
@@ -1822,7 +1824,7 @@
   width: 24px;
   height: 24px;
   border: 2px solid transparent;
-  border-radius: 50%;
+  border-radius: 0; /* squared HUD (matches the free-pick well) */
   cursor: pointer;
   color: #fff;
   padding: 0;
@@ -1888,7 +1890,7 @@
    component's inline width/height; the svg follows its 100%-width span. */
 .rooms-avatar-option .identicon { width: 100% !important; height: 100% !important; }
 .rooms-avatar-option .identicon svg { width: 100%; height: 100%; }
-.rooms-avatar-option:hover { border-color: var(--color-border-hover); transform: translateY(-1px); }
+.rooms-avatar-option:hover { border-color: var(--color-border-hover); } /* flat HUD state (lift removed) */
 .rooms-avatar-option.active {
   border-color: var(--color-accent);
   box-shadow: 0 0 0 1px var(--color-accent);
@@ -2023,7 +2025,7 @@
 }
 .room-player-sync {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 6px 12px; border-radius: 999px;
+  padding: 6px 12px; border-radius: 0; /* squared HUD */
   border: 1px solid var(--color-border-strong);
   background: var(--color-bg-tertiary);
   color: var(--color-text-secondary);
@@ -2239,7 +2241,7 @@
   font-size: 12px; font-weight: 600; color: var(--color-text-secondary);
 }
 .room-player-avatars { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.room-watcher { position: relative; line-height: 0; border-radius: 50%; }
+.room-watcher { position: relative; line-height: 0; border-radius: 0; } /* squared HUD (dot stays round) */
 .room-watcher .room-watcher-dot {
   position: absolute; right: -1px; bottom: -1px;
   width: 9px; height: 9px; border-radius: 50%;
@@ -2381,7 +2383,7 @@
 }
 .room-voice-ring {
   display: inline-flex;
-  border-radius: var(--radius-full);
+  border-radius: 0; /* squared HUD (speaking glow follows the square) */
   padding: 2px;
   box-shadow: 0 0 0 2px transparent;
   transition: box-shadow 120ms ease-out;
@@ -2551,7 +2553,7 @@
   font-weight: 700;
   letter-spacing: 0.04em;
   border: 1px solid var(--color-error);
-  border-radius: 999px;
+  border-radius: 0; /* squared HUD */
   background: color-mix(in srgb, var(--color-error) 16%, transparent);
   color: var(--color-error);
   cursor: pointer;

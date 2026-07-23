@@ -1,5 +1,7 @@
 /**
- * Toggle Component - Modern 2026 Style
+ * Toggle — tactical-HUD switch. STRICT SQUARE: a square channel with a square
+ * nub that slides. No rounded pill, no hover-lift. Motion is GPU-cheap
+ * (transform + opacity + border/box-shadow only) and honours reduced-motion.
  */
 
 .toggle-container {
@@ -13,136 +15,117 @@
   cursor: not-allowed;
 }
 
-/* === Toggle Switch (Modern 2026 Style) === */
+/* === Switch channel === */
 .toggle-switch {
   position: relative;
   background: var(--color-bg-tertiary);
   border: 1px solid var(--color-border-strong);
-  border-radius: 100px;
+  border-radius: 0;                       /* strict square */
   cursor: pointer;
-  transition: all 250ms cubic-bezier(0.4, 0, 0.2, 1);
   user-select: none;
   -webkit-user-select: none;
   flex-shrink: 0;
+  /* recessed channel + smooth state fade */
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+  transition: background 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
 }
 
-.toggle-switch.small {
-  width: 40px;
-  height: 22px;
-}
+.toggle-switch.small  { width: 40px; height: 22px; }
+.toggle-switch.medium { width: 52px; height: 28px; }
+.toggle-switch.large  { width: 64px; height: 34px; }
 
-.toggle-switch.medium {
-  width: 52px;
-  height: 28px;
-}
+.toggle-switch.disabled { cursor: not-allowed; opacity: 0.6; }
 
-.toggle-switch.large {
-  width: 64px;
-  height: 34px;
-}
-
-.toggle-switch.disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
+/* Hover: brighten the frame — a flat HUD response, never a lift. */
 .toggle-switch:not(.disabled):hover {
+  border-color: var(--color-accent-primary);
   background: var(--color-bg-elevated);
-  border-color: var(--color-border-strong);
-  transform: translateY(-1px);
 }
 
+/* Active (on): accent channel + a faint ember glow that fades in. */
 .toggle-switch.active {
   background: var(--color-accent-primary);
   border-color: var(--color-accent-primary);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.25),
+    0 0 0 1px color-mix(in srgb, var(--color-accent-primary) 45%, transparent),
+    0 0 12px -3px var(--color-accent-primary);
 }
-
 .toggle-switch.active:not(.disabled):hover {
-  background: var(--color-accent-primary-hover);
-  border-color: var(--color-accent-primary-hover);
-  transform: translateY(-1px);
+  background: var(--color-accent-primary-hover, var(--color-accent-primary));
+  border-color: var(--color-accent-primary-hover, var(--color-accent-primary));
 }
 
-/* Slider — vertically centered via top:50%/translateY so the knob is always
-   perfectly aligned regardless of border-box math. Horizontal position is
-   driven by the --x custom property (0 when off, computed when active). */
+/* === Nub — a square that tracks --x. Vertically centred via translateY so the
+   box-model math stays simple; horizontal position is the animated part. === */
 .toggle-slider {
   position: absolute;
   top: 50%;
   left: 2px;
   --x: 0px;
-  background: #ffffff;
-  border-radius: 50%;
-  transition: transform 250ms cubic-bezier(0.4, 0, 0.2, 1),
-              background 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  background: var(--color-text-primary);
+  border-radius: 0;                       /* square nub */
   transform: translate(var(--x), -50%);
-  box-shadow:
-    0 2px 4px rgba(0, 0, 0, 0.2),
-    0 1px 2px rgba(0, 0, 0, 0.1),
-    inset 0 -1px 1px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  transition: transform 220ms cubic-bezier(0.34, 1.3, 0.5, 1),  /* slight over-shoot = "snap" */
+              background 180ms ease;
   pointer-events: none;
   user-select: none;
 }
-
-/* Travel distance = track width - knob - 2*(border+gap). Each variant: track,
-   knob, gap(2) → x = track - knob - 8. small:40-16-8=16, medium:52-20-8=24, large:64-26-8=30 */
-.toggle-switch.small .toggle-slider {
-  width: 16px;
-  height: 16px;
+/* A hairline accent tick centred on the nub — a small tactical detail that
+   reads on both states (composited pseudo-element, no extra node). */
+.toggle-slider::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 2px;
+  height: 46%;
+  background: color-mix(in srgb, var(--color-bg-primary) 55%, transparent);
+  transition: background 180ms ease;
 }
 
-.toggle-switch.medium .toggle-slider {
-  width: 20px;
-  height: 20px;
-}
+/* Nub size per variant (square). */
+.toggle-switch.small  .toggle-slider { width: 16px; height: 16px; }
+.toggle-switch.medium .toggle-slider { width: 20px; height: 20px; }
+.toggle-switch.large  .toggle-slider { width: 26px; height: 26px; }
 
-.toggle-switch.large .toggle-slider {
-  width: 26px;
-  height: 26px;
-}
+/* Travel = track − nub − 2·(border+gap). small:40-16-8=16, med:52-20-8=24, lg:64-26-8=30 */
+.toggle-switch.small.active  .toggle-slider { --x: 16px; }
+.toggle-switch.medium.active .toggle-slider { --x: 24px; }
+.toggle-switch.large.active  .toggle-slider { --x: 30px; }
 
-.toggle-switch.small.active .toggle-slider {
-  --x: 16px;
-}
-
-.toggle-switch.medium.active .toggle-slider {
-  --x: 24px;
-}
-
-.toggle-switch.large.active .toggle-slider {
-  --x: 30px;
-}
-
+/* On: nub flips to the dark ground so it reads against the accent channel. */
 .toggle-switch.active .toggle-slider {
-  /* Knob contrasts against the monochrome accent track (white in dark, black in light) */
-  background: var(--color-bg-elevated);
-  box-shadow:
-    0 3px 6px rgba(0, 0, 0, 0.25),
-    0 2px 4px rgba(0, 0, 0, 0.15),
-    inset 0 -1px 2px rgba(0, 0, 0, 0.08);
+  background: var(--color-bg-primary);
+}
+.toggle-switch.active .toggle-slider::after {
+  background: color-mix(in srgb, var(--color-accent-primary) 70%, var(--color-text-primary));
 }
 
-/* Focus state */
+/* Focus — a square inset ring, never clipped. */
 .toggle-switch:focus-visible {
   outline: none;
   box-shadow:
-    var(--shadow-focus),
-    inset 0 2px 4px rgba(0, 0, 0, 0.1);
+    inset 0 0 0 2px var(--color-bg-primary),
+    0 0 0 2px var(--color-accent-primary);
 }
 
-/* Pressed feedback: a subtle knob shrink (keeps the centered transform intact) */
+/* Pressed: the nub recoils — snappy tactile feedback, keeps the centred transform. */
 .toggle-switch:not(.disabled):active .toggle-slider {
-  transform: translate(var(--x), -50%) scale(0.9);
+  transform: translate(var(--x), -50%) scale(0.82);
 }
 
-/* Label */
+/* === Label === */
 .toggle-label {
   font-size: 0.9375rem;
   font-weight: 500;
   color: var(--color-text-primary);
   user-select: none;
 }
+.toggle-container.disabled .toggle-label { color: var(--color-text-tertiary); }
 
-.toggle-container.disabled .toggle-label {
-  color: var(--color-text-tertiary);
+@media (prefers-reduced-motion: reduce) {
+  .toggle-switch,
+  .toggle-slider { transition: none; }
 }

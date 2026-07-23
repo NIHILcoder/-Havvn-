@@ -109,6 +109,7 @@
 
 .search-category {
   padding: 0.6rem 0.75rem;
+  padding-right: 26px; /* room for the custom chevron */
   border-radius: 0;
   clip-path: var(--clip-cut-sm);
   border: 1px solid var(--color-border);
@@ -117,6 +118,12 @@
   font-size: 0.9rem;
   cursor: pointer;
   outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+  /* kill the OS dropdown chrome, supply a flat HUD chevron */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%239aa0aa' stroke-width='1.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
 }
 
 /* Error */
@@ -382,7 +389,7 @@
   display: inline-block;
   font-size: 0.7rem;
   padding: 0.15rem 0.5rem;
-  border-radius: 999px;
+  border-radius: 0; /* squared HUD */
   margin-top: 0.3rem;
   font-weight: 600;
   text-transform: uppercase;
@@ -498,6 +505,7 @@
 
 .form-select {
   padding: 0.55rem 0.75rem;
+  padding-right: 26px; /* room for the custom chevron */
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
   background: var(--color-bg-primary);
@@ -506,6 +514,12 @@
   cursor: pointer;
   outline: none;
   flex-shrink: 0;
+  -webkit-appearance: none;
+  appearance: none;
+  /* kill the OS dropdown chrome, supply a flat HUD chevron */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%239aa0aa' stroke-width='1.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
 }
 
 .api-key-input {
@@ -576,15 +590,13 @@
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-/* Cards lift slightly on hover for a tactile feel */
+/* Cards get a flat border highlight on hover (no lift for the HUD) */
 .provider-card {
   transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
 
 .provider-card:hover {
-  border-color: var(--color-border-hover);
-  box-shadow: var(--shadow-sm);
-  transform: translateY(-1px);
+  border-color: var(--color-accent-primary); /* flat HUD state — no translateY lift */
 }
 
 /* Accent bar on the hovered result row */
@@ -599,7 +611,7 @@
 .added-badge {
   background: var(--color-success-bg);
   padding: 0.25rem 0.6rem;
-  border-radius: var(--radius-full);
+  border-radius: 0; /* squared HUD */
 }
 
 .provider-badge {

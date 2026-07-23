@@ -59,8 +59,8 @@
 /* clip-path clips an OUTER box-shadow to nothing, so hover elevation uses a
    drop-shadow FILTER (it follows the chamfer silhouette) plus a brightness lift. */
 .btn-primary:hover:not(:disabled) {
-  filter: brightness(1.08) drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35));
-  transform: translateY(-1px);
+  /* Flat HUD hover — brighten, no lift (the tactical skin stays grounded). */
+  filter: brightness(1.12);
 }
 
 .btn-primary:active:not(:disabled) {
@@ -108,8 +108,8 @@
 }
 
 .btn-danger:hover:not(:disabled) {
-  box-shadow: 0 4px 16px rgba(var(--color-error-rgb), 0.3);
-  transform: translateY(-1px);
+  /* Flat HUD hover — brighten, no lift. */
+  filter: brightness(1.12);
 }
 
 /* Button Sizes */
@@ -220,6 +220,118 @@
   font-size: var(--font-size-xs);
 }
 
+/* === Native controls — checkbox / radio / range ===
+   Forced into the strict-square HUD language app-wide so no OS-default control
+   leaks through. Component rules (higher specificity) can still resize them.
+   Motion is transform/opacity/box-shadow only, and reduced-motion-aware. */
+input[type="checkbox"],
+input[type="radio"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex-shrink: 0;
+  position: relative;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 0;               /* square checkbox */
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+/* Radios stay round — a selectable dot is the one control where roundness aids
+   the checkbox-vs-radio read, and it matches the "round indicator" idiom. */
+input[type="radio"] { border-radius: var(--radius-full); }
+
+input[type="checkbox"]:not(:disabled):hover,
+input[type="radio"]:not(:disabled):hover { border-color: var(--color-accent-primary); }
+
+input[type="checkbox"]:checked,
+input[type="checkbox"]:indeterminate,
+input[type="radio"]:checked {
+  background: var(--color-accent-primary);
+  border-color: var(--color-accent-primary);
+}
+
+/* Checkmark (composited pseudo — no reflow). */
+input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 4px; top: 1px;
+  width: 4px; height: 8px;
+  border: solid var(--color-bg-primary);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+/* Indeterminate → a centred dash. */
+input[type="checkbox"]:indeterminate::after {
+  content: "";
+  position: absolute;
+  left: 3px; top: 6px;
+  width: 8px; height: 2px;
+  background: var(--color-bg-primary);
+}
+/* Radio inner dot. */
+input[type="radio"]:checked::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: var(--radius-full);
+  background: var(--color-bg-primary);
+}
+
+input[type="checkbox"]:focus-visible,
+input[type="radio"]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-accent-primary);
+}
+input[type="checkbox"]:disabled,
+input[type="radio"]:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Range — flat HUD track + square accent nub (no OS-default slider). The input
+   keeps a comfortable hit area; the visible 4px rail is drawn by the track pseudo. */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 16px;
+  background: transparent;
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  background: var(--color-border-default);
+  border-radius: 0;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  margin-top: -4px;               /* centre the 12px nub on the 4px rail */
+  width: 12px; height: 12px;
+  border-radius: 0;               /* square nub */
+  background: var(--color-accent-primary);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+input[type="range"]:not(:disabled)::-webkit-slider-thumb:hover { transform: scale(1.18); }
+input[type="range"]:active::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent-primary) 30%, transparent);
+}
+input[type="range"]:focus-visible { outline: none; }
+input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 2px var(--color-accent-primary); }
+/* Firefox parity (harmless in Chromium/Electron). */
+input[type="range"]::-moz-range-track { height: 4px; background: var(--color-border-default); border-radius: 0; }
+input[type="range"]::-moz-range-thumb {
+  width: 12px; height: 12px;
+  border: none; border-radius: 0;
+  background: var(--color-accent-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  input[type="checkbox"],
+  input[type="radio"],
+  input[type="range"]::-webkit-slider-thumb { transition: none; }
+}
+
 /* === Progress Bar === */
 .progress-bar {
   width: 100%;
@@ -274,7 +386,7 @@
   padding: 2px 8px;
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
-  border-radius: var(--radius-full);
+  border-radius: 0;                 /* squared HUD badge, not a pill */
   line-height: 1.4;
   white-space: nowrap;
 }
@@ -320,6 +432,15 @@
 .status-badge-downloading::before {
   background: var(--color-status-downloading);
   box-shadow: 0 0 6px rgba(var(--color-accent-rgb), 0.4);
+  /* live "transfer active" pulse — opacity-only, compositor-cheap even in long lists */
+  animation: hud-live-pulse 1.6s ease-in-out infinite;
+}
+@keyframes hud-live-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .status-badge-downloading::before { animation: none; }
 }
 
 .status-badge-completed, .status-badge-seeding {
