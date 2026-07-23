@@ -47,7 +47,7 @@ export function currentAccent(): string {
       if (/^#[0-9a-f]{6}$/i.test(computed)) return computed;
     }
   } catch { /* no DOM — fall through to the default */ }
-  return '#F2913F';
+  return '#E25117';
 }
 
 /** Apply an accent hex live (no persistence). Returns false for an unparseable color. */
@@ -87,6 +87,10 @@ export function applyFont(id: string): boolean {
   const stack = fontStack(id);
   if (!stack) return false;
   rootStyle().setProperty('--font-family', stack);
+  // A chosen font must win EVERYWHERE — including headings, eyebrows and primary
+  // buttons that ride --font-display (the brand face). Overriding it here lets the
+  // user's pick take over; the default path (setFontPref) clears it back to brand.
+  rootStyle().setProperty('--font-display', stack);
   return true;
 }
 
@@ -94,6 +98,7 @@ export function applyFont(id: string): boolean {
 export function setFontPref(id: string): void {
   if (id === DEFAULT_FONT_ID) {
     rootStyle().removeProperty('--font-family');
+    rootStyle().removeProperty('--font-display'); // back to the brand display face
     writePref(FONT_KEY, null);
   } else if (applyFont(id)) {
     writePref(FONT_KEY, id);

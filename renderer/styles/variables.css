@@ -20,7 +20,7 @@
   --color-bg-tertiary: #1B1D22;
   --color-bg-elevated: #24262D;
   --color-bg-hover: rgba(236, 235, 230, 0.06);
-  --color-bg-active: rgba(242, 145, 63, 0.14);
+  --color-bg-active: rgba(226, 81, 23, 0.14);
 
   /* Legacy aliases for Settings */
   --color-bg-base: #141519;
@@ -33,7 +33,7 @@
   --color-border-hover: var(--color-border-strong);
   --color-accent: var(--color-accent-primary);
   --color-accent-hover: var(--color-accent-primary-hover);
-  --color-accent-rgb: 242, 145, 63;
+  --color-accent-rgb: 226, 81, 23;
   --color-text-muted: var(--color-text-tertiary);
   --font-primary: var(--font-family);
 
@@ -46,7 +46,7 @@
   --color-border-default: rgba(236, 235, 230, 0.10);
   --color-border-subtle: rgba(236, 235, 230, 0.05);
   --color-border-strong: rgba(236, 235, 230, 0.18);
-  --color-border-focus: rgba(242, 145, 63, 0.55);
+  --color-border-focus: rgba(226, 81, 23, 0.55);
 
   /* Text — warm off-whites on graphite */
   --color-text-primary: #ECEBE6;
@@ -55,9 +55,9 @@
   --color-text-disabled: #615E57;
 
   /* Accent — ember */
-  --color-accent-primary: #F2913F;
-  --color-accent-primary-hover: #E0673A;
-  --color-accent-bg: rgba(242, 145, 63, 0.12);
+  --color-accent-primary: #E25117;
+  --color-accent-primary-hover: #FF6A2A;
+  --color-accent-bg: rgba(226, 81, 23, 0.12);
   --color-accent-secondary: #ADB87C; /* olive — the seeding/giving-back hue */
   --color-accent-secondary-hover: #BDC78E;
 
@@ -75,7 +75,7 @@
 
   /* Status Colors — ember downloads, olive seeds */
   --color-status-queued: #615E57;
-  --color-status-downloading: #F2913F;
+  --color-status-downloading: #E25117;
   --color-status-paused: #98958D;
   --color-status-completed: #D8D5CD;
   --color-status-seeding: #ADB87C;
@@ -98,7 +98,7 @@
 
   /* Status indicator colors — ↓ ember, ↑ olive */
   --color-status-connected: #ADB87C;
-  --color-status-download: #F2913F;
+  --color-status-download: #E25117;
   --color-status-upload: #ADB87C;
 
   /* File Type Colors — muted warm family */
@@ -123,6 +123,18 @@
   /* === Typography === */
   --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
   --font-family-mono: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  /* Display face — squared "HUD" geometry echoing the wordmark; used for titles,
+     section labels and primary actions. Chakra Petch covers Latin (matches the
+     site); Exo 2 (Cyrillic subset only) covers Russian in the same HUD family;
+     then the body stack as a final safety net. */
+  --font-display: 'Chakra Petch', 'Exo 2', var(--font-family);
+  /* Russian: Chakra Petch has no Cyrillic, so a RU heading would mix its Cyrillic
+     (Exo 2) with any Latin/digits (Chakra Petch). Put Exo 2 first for RU so the
+     whole string renders in one squared face. (:root:lang(ru) rule is below.) */
+  /* Signature 8px corner chamfer (from the Blaze site) — applied sparingly to
+     primary buttons, pills and the active-nav marker, never dense tables. */
+  --clip-cut: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+  --clip-cut-sm: polygon(0 0, calc(100% - 5px) 0, 100% 5px, 100% 100%, 5px 100%, 0 calc(100% - 5px));
 
   --font-size-xs: 11px;
   --font-size-sm: 13px;
@@ -156,9 +168,9 @@
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.3);
   --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5), 0 4px 12px rgba(0, 0, 0, 0.4);
   --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.6), 0 8px 24px rgba(0, 0, 0, 0.5);
-  --shadow-glow: 0 0 0 1px rgba(242, 145, 63, 0.30);
-  --shadow-glow-sm: 0 0 0 1px rgba(242, 145, 63, 0.20);
-  --shadow-focus: 0 0 0 3px rgba(242, 145, 63, 0.35);
+  --shadow-glow: 0 0 0 1px rgba(226, 81, 23, 0.30);
+  --shadow-glow-sm: 0 0 0 1px rgba(226, 81, 23, 0.20);
+  --shadow-focus: 0 0 0 3px rgba(226, 81, 23, 0.35);
 
   /* === Transitions === */
   --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
@@ -169,6 +181,7 @@
   /* === Layout === */
   --sidebar-width: 260px;
   --sidebar-collapsed-width: 64px;
+  --titlebar-h: 34px; /* custom frameless HUD title bar */
   --header-height: 56px;
   /* Shared top-bar height: the sidebar brand header and every page header use
      this so their bottom hairlines meet at the divider (one continuous line). */
@@ -188,6 +201,13 @@
   --z-tooltip: 600;
 }
 
+/* Russian gets a single squared display face (Exo 2 covers Cyrillic AND Latin/
+   digits), avoiding the Chakra-Petch-mixed-with-Exo-2 look. Set via <html lang>
+   in i18nContext; a user-chosen custom font (inline --font-display) still wins. */
+:root:lang(ru) {
+  --font-display: 'Exo 2', var(--font-family);
+}
+
 /* ================================================
    Light Theme — Warm Paper + Deep Ember
    ================================================ */
@@ -197,13 +217,13 @@
   --color-bg-tertiary: #E3DFD7;
   --color-bg-elevated: #FFFFFF;
   --color-bg-hover: rgba(27, 24, 20, 0.05);
-  --color-bg-active: rgba(194, 83, 39, 0.12);
+  --color-bg-active: rgba(194, 65, 12, 0.12);
 
   --color-bg-base: #F6F4F0;
   --color-bg-subtle: #EEEBE5;
 
   /* Deeper ember for contrast on paper — update the RGB triplet used by rgba() shadows */
-  --color-accent-rgb: 194, 83, 39;
+  --color-accent-rgb: 194, 65, 12;
 
   --glass-bg: rgba(255, 255, 255, 0.85);
   --glass-border: rgba(27, 24, 20, 0.08);
@@ -211,16 +231,16 @@
   --color-border-default: rgba(27, 24, 20, 0.11);
   --color-border-subtle: rgba(27, 24, 20, 0.05);
   --color-border-strong: rgba(27, 24, 20, 0.20);
-  --color-border-focus: rgba(194, 83, 39, 0.55);
+  --color-border-focus: rgba(194, 65, 12, 0.55);
 
   --color-text-primary: #1B1814;
   --color-text-secondary: #3A362F;
   --color-text-tertiary: #6E6A61;
   --color-text-disabled: #9A968C;
 
-  --color-accent-primary: #C25327;
-  --color-accent-primary-hover: #A84620;
-  --color-accent-bg: rgba(194, 83, 39, 0.10);
+  --color-accent-primary: #C2410C;
+  --color-accent-primary-hover: #A63709;
+  --color-accent-bg: rgba(194, 65, 12, 0.10);
   --color-accent-secondary: #7A8A4A;
   --color-accent-secondary-hover: #67783B;
 
@@ -237,14 +257,14 @@
   --shadow-md: 0 4px 12px rgba(27, 24, 20, 0.10);
   --shadow-lg: 0 12px 28px rgba(27, 24, 20, 0.12);
   --shadow-xl: 0 20px 40px rgba(27, 24, 20, 0.15);
-  --shadow-focus: 0 0 0 3px rgba(194, 83, 39, 0.30);
-  --shadow-glow: 0 0 0 1px rgba(194, 83, 39, 0.28);
-  --shadow-glow-sm: 0 0 0 1px rgba(194, 83, 39, 0.18);
+  --shadow-focus: 0 0 0 3px rgba(194, 65, 12, 0.30);
+  --shadow-glow: 0 0 0 1px rgba(194, 65, 12, 0.28);
+  --shadow-glow-sm: 0 0 0 1px rgba(194, 65, 12, 0.18);
 
   --color-status-connected: #7A8A4A;
-  --color-status-download: #C25327;
+  --color-status-download: #C2410C;
   --color-status-upload: #7A8A4A;
-  --color-status-downloading: #C25327;
+  --color-status-downloading: #C2410C;
 
   /* Deeper semantics for paper contrast */
   --color-status-queued: #9A968C;

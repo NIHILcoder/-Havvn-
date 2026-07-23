@@ -4,7 +4,7 @@
 
 import React, { useState, useEffect, useMemo, useRef, Suspense, lazy } from 'react';
 import { Toaster } from 'react-hot-toast';
-import { Sidebar, StatusBar, PageId, FilterMode, RoomPresence, VoiceCallInfo, OnlinePerson } from './layout';
+import { TitleBar, Sidebar, StatusBar, PageId, FilterMode, RoomPresence, VoiceCallInfo, OnlinePerson } from './layout';
 import { CompletionPending, DownloadStats, Download, RoomSummary, RoomState } from '../shared/types';
 // Downloads is the default route — keep it eager. The rest are code-split into
 // their own chunks so the initial bundle is smaller and the app (and the startup
@@ -519,7 +519,9 @@ const AppContent: React.FC = () => {
           },
         }}
       />
-      <div className="app-container">
+      <div className="app-shell">
+        <TitleBar />
+        <div className="app-container">
         <Sidebar
           currentPage={currentPage}
           onNavigate={setCurrentPage}
@@ -594,6 +596,7 @@ const AppContent: React.FC = () => {
             onVoiceLeave={() => { if (voiceCall) void window.api.rooms.voice.leave(voiceCall.roomId).catch(() => { /* ignore */ }); }}
           />
         </main>
+        </div>
       </div>
 
       {/* Dock the theme editor at the shell level (outside .app-container) so its

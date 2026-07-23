@@ -94,7 +94,7 @@ const TOKEN_NAMES: readonly string[] = [
   '--space-1', '--space-2', '--space-3', '--space-4', '--space-5', '--space-6',
   '--space-8', '--space-10', '--space-12', '--space-16',
   // typography
-  '--font-family', '--font-family-mono', '--font-primary',
+  '--font-family', '--font-family-mono', '--font-primary', '--font-display',
   '--font-size-xs', '--font-size-sm', '--font-size-base', '--font-size-md',
   '--font-size-lg', '--font-size-xl', '--font-size-2xl', '--font-size-3xl',
   '--font-weight-normal', '--font-weight-medium', '--font-weight-semibold',
@@ -158,7 +158,7 @@ export function tokenCategory(name: string): ValueCategory | null {
   if (name.startsWith('--line-height-')) return 'number';
   if (name.startsWith('--font-weight-')) return 'fontWeight';
   if (name.startsWith('--font-size-')) return 'length';
-  if (name === '--font-family' || name === '--font-family-mono' || name === '--font-primary') return 'fontFamily';
+  if (name === '--font-family' || name === '--font-family-mono' || name === '--font-primary' || name === '--font-display') return 'fontFamily';
   if (name.startsWith('--z-')) return 'integer';
   if (name.startsWith('--space-') || name.startsWith('--radius-')) return 'length';
   if (name.startsWith('--color-') || name === '--glass-bg' || name === '--glass-border') return 'color';
@@ -576,7 +576,7 @@ export interface ThemeApplyTarget {
 
 /** Remove every inline token override, reverting to the stylesheet base. */
 export function clearAppliedTheme(root: ThemeApplyTarget): void {
-  for (const name of TOKEN_WHITELIST) root.style.removeProperty(name);
+  for (const name of TOKEN_WHITELIST) root.style.removeProperty(name); // --font-display is whitelisted, so it's cleared here too
 }
 
 /**
@@ -593,13 +593,21 @@ export function applyTheme(root: ThemeApplyTarget, theme: Theme, mode: ThemeMode
   clearAppliedTheme(root);
   root.setAttribute('data-theme', mode);
   const tokens = mode === 'light' ? theme.light : theme.dark;
+  let appliedFont: string | null = null;
   for (const [key, value] of Object.entries(tokens)) {
     if (!TOKEN_WHITELIST.has(key)) continue;
     const clean = sanitizeTokenValue(key, value);
-    if (clean !== null) root.style.setProperty(key, clean);
+    if (clean !== null) {
+      root.style.setProperty(key, clean);
+      if (key === '--font-family') appliedFont = clean;
+    }
   }
   if (theme.font) {
     const cleanFont = sanitizeTokenValue('--font-family', theme.font);
-    if (cleanFont !== null) root.style.setProperty('--font-family', cleanFont);
+    if (cleanFont !== null) { root.style.setProperty('--font-family', cleanFont); appliedFont = cleanFont; }
   }
+  // A custom theme font must also drive the display face (headings, eyebrows,
+  // primary buttons ride --font-display), else they'd keep the brand face while
+  // body text changed. No custom font → leave --font-display at the brand default.
+  if (appliedFont !== null) root.style.setProperty('--font-display', appliedFont);
 }

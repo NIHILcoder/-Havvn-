@@ -3,7 +3,7 @@
 /* ── Dock shell ───────────────────────────────────────────────── */
 .ted {
   position: fixed;
-  top: 0;
+  top: var(--titlebar-h, 0); /* sit below the custom HUD title bar, not over its controls */
   bottom: 0;
   width: var(--te-dock-w, 420px);
   z-index: var(--z-dock);

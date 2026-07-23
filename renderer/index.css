@@ -8,6 +8,7 @@
 @import './styles/base.css';
 @import './styles/components.css';
 @import './styles/layout.css';
+@import './styles/hud.css';
 
 /* Loading screen for i18n initialization */
 .loading-screen {

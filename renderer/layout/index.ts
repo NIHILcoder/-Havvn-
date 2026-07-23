@@ -2,6 +2,7 @@
  * Layout exports
  */
 
+export { TitleBar } from './TitleBar';
 export { Sidebar } from './Sidebar';
 export type { PageId, FilterMode, OnlinePerson } from './Sidebar';
 export { StatusBar } from './StatusBar';

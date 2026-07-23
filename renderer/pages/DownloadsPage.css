@@ -622,12 +622,45 @@
 }
 
 .trow-status .status-badge {
-  text-transform: uppercase;
   font-size: 10px;
-  letter-spacing: 0.05em;
-  border-radius: var(--radius-sm);
   padding: 3px 8px;
 }
+
+/* ── HUD skin (tactical console) ──────────────────────────────── */
+/* Left state stripe — colour reads the transfer's status before the text does. */
+.download-item { --st: var(--color-text-tertiary); }
+.download-item::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--st);
+  opacity: 0.9;
+  z-index: 1;
+}
+.download-item:hover::before { opacity: 1; }
+.download-st-downloading { --st: var(--color-accent-primary); }
+.download-st-seeding,
+.download-st-completed { --st: var(--color-status-seeding); }
+.download-st-error { --st: var(--color-error); }
+.download-st-paused,
+.download-st-queued { --st: var(--color-text-tertiary); }
+
+/* Type tile → chamfered HUD module. */
+.trow-tile {
+  border-radius: 0;
+  clip-path: var(--clip-cut-sm);
+}
+
+/* Data readouts go monospace/tabular — the "instrument" voice. The title stays
+   Inter for reading. */
+.trow-sub,
+.trow-prog-labels,
+.trow-rate {
+  font-family: var(--font-family-mono);
+  letter-spacing: -0.01em;
+}
+.trow-sub > *:not(:first-child)::before { margin: 0 5px; }
 
 /* Hover-reveal actions, overlaying the right edge (concept .rowact).
    Hidden via opacity (NOT display:none) so the buttons stay tabbable —

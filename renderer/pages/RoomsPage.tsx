@@ -1871,10 +1871,8 @@ const RoomDetail: React.FC<DetailProps> = ({ room, suspended, notifyMuted, onTog
                   <span>{room.e2e ? t('rooms.encrypted') : t('rooms.notEncrypted')}</span>
                 </div>
                 <div className="room-settings-sep" />
-                <div className="room-settings-row" title={t('rooms.autoFetchHint')}>
-                  <span>{t('rooms.autoFetch')}</span>
-                  <Toggle size="small" checked={room.autoFetch} onChange={onToggleAutoFetch} ariaLabel={t('rooms.autoFetch')} />
-                </div>
+                {/* Auto-download lives in the files panel toolbar (next to the
+                    per-folder overrides it parents) — not duplicated here. */}
                 <div className="room-settings-row">
                   <span>{t('rooms.notifyToggle')}</span>
                   <Toggle size="small" checked={!notifyMuted} onChange={(v) => onToggleNotifyMuted?.(!v)} ariaLabel={t('rooms.notifyToggle')} />
@@ -3520,7 +3518,7 @@ const RoomPlayer: React.FC<{ room: RoomState; roomId: string; file: RoomFile; se
     if (!ctx) return;
     const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
     const css = getComputedStyle(document.documentElement);
-    const accent = css.getPropertyValue('--color-accent-primary').trim() || '#f2913f';
+    const accent = css.getPropertyValue('--color-accent-primary').trim() || '#e25117';
     const olive = css.getPropertyValue('--color-accent-secondary').trim() || '#adb87c';
     let raf = 0;
     const bins = new Uint8Array(analyserRef.current?.frequencyBinCount ?? 0);

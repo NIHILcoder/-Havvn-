@@ -92,7 +92,9 @@ export const Wordmark: React.FC<WordmarkProps> = ({ height = 17, className }) =>
     xmlns="http://www.w3.org/2000/svg"
   >
     <path fill="currentColor" d={WM_MAIN} />
-    <path fill="var(--color-accent-primary)" d={WM_VV} />
+    {/* VV takes the FIXED brand blaze — same as the mark's face (#e25117), so the
+        lockup is always one colour, independent of the (recolourable) UI accent. */}
+    <path fill="#e25117" d={WM_VV} />
   </svg>
 );
 

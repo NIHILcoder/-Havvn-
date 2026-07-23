@@ -55,6 +55,9 @@ export const I18nProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       (window as unknown as { api?: { setLanguage?: (l: string) => void } }).api?.setLanguage?.(language);
     } catch { /* no preload bridge — ignore */ }
+    // Reflect the locale on <html lang> so :lang(ru) can give Russian a single
+    // display face (Exo 2), and for screen-reader pronunciation.
+    try { if (typeof document !== 'undefined') document.documentElement.lang = language; } catch { /* no DOM */ }
   }, [language]);
 
   const setLanguage = (lang: Language) => {

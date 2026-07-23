@@ -4,11 +4,60 @@
  * Premium sidebar navigation with glassmorphism and gradient accents.
  */
 
+/* === App Shell (custom title bar + the rest) === */
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+/* === Custom HUD title bar (frameless window) === */
+.titlebar {
+  flex: none;
+  height: var(--titlebar-h);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-left: 12px;
+  background: #0b0c0f;
+  border-bottom: 1px solid var(--color-border-default);
+  position: relative;
+  z-index: var(--z-sticky);
+  -webkit-app-region: drag; /* the bar drags the window */
+  user-select: none;
+}
+[data-theme="light"] .titlebar { background: var(--color-bg-secondary); }
+/* Thin blaze signal along the top edge — the HUD tell. */
+.titlebar::after {
+  content: "";
+  position: absolute; left: 0; top: 0; height: 2px; width: 180px;
+  background: linear-gradient(90deg, var(--color-accent-primary), transparent);
+}
+.titlebar--mac { padding-left: 78px; } /* clear the native traffic lights */
+.titlebar-brand { display: flex; align-items: center; gap: 8px; color: var(--color-text-primary); }
+.titlebar-brand .logo-mark { display: block; }
+.titlebar-wm { opacity: 0.92; }
+.titlebar-drag { flex: 1; align-self: stretch; }
+.titlebar-controls { display: flex; align-items: stretch; -webkit-app-region: no-drag; }
+.tb-ctrl {
+  width: 46px; height: var(--titlebar-h);
+  display: grid; place-items: center;
+  background: transparent; border: none; cursor: pointer;
+  color: var(--color-text-tertiary);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.tb-ctrl:hover { background: var(--color-bg-hover); color: var(--color-text-primary); }
+.tb-close:hover { background: var(--color-error); color: #fff; }
+.tb-ctrl:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--color-accent-primary); }
+
 /* === App Container === */
 .app-container {
   display: flex;
-  height: 100vh;
-  width: 100vw;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
   overflow: hidden;
   background: var(--color-bg-primary);
   /* Push-layout for the theme-editor dock: reserve the dock's width on the
@@ -295,10 +344,11 @@ body.te-resizing .app-container { transition: none; }
 .nav-section-title {
   padding: var(--space-2) var(--space-3);
   margin-bottom: var(--space-1);
+  font-family: var(--font-display); /* HUD eyebrow — squared, wide-tracked */
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.14em;
   color: var(--color-text-disabled);
 }
 
@@ -333,6 +383,7 @@ body.te-resizing .app-container { transition: none; }
   color: var(--color-text-primary);
   background: var(--color-accent-bg);
   font-weight: var(--font-weight-medium);
+  box-shadow: inset 2px 0 0 var(--color-accent-primary); /* blaze marker rail */
 }
 
 .nav-subitem-icon {
@@ -435,14 +486,25 @@ body.te-resizing .app-container { transition: none; }
 }
 
 .page-title {
-  font-size: var(--font-size-xl);
+  font-size: var(--font-size-2xl);
   font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
   color: var(--color-text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
-  letter-spacing: -0.02em;
+}
+
+/* Header status line — the "instrument" readout under the title. */
+.page-subtitle {
+  font-family: var(--font-family-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.05em;
+  color: var(--color-text-tertiary);
+  margin-top: 5px;
 }
 
 .page-actions {

@@ -47,11 +47,15 @@ body {
 }
 
 /* === Typography === */
+/* Headings ride the squared display face (Chakra Petch) — it echoes the wordmark.
+   Chakra Petch is a squared design, so the Inter-era negative tracking is dropped
+   (it crowds the wide glyphs); body text stays Inter. */
 h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
   font-weight: var(--font-weight-semibold);
   line-height: var(--line-height-tight);
   color: var(--color-text-primary);
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
 }
 
 h1 { font-size: var(--font-size-3xl); font-weight: var(--font-weight-bold); }

@@ -1043,6 +1043,14 @@ export interface IpcApi {
   onJoinInvite: (callback: (invite: string) => void) => () => void;
   // Renderer announces its IPC listeners are attached (flushes buffered OS opens)
   notifyReady: () => void;
+  // Frameless-window controls for the custom HUD title bar.
+  win: {
+    minimize: () => void;
+    toggleMaximize: () => void;
+    close: () => void;
+    isMaximized: () => Promise<boolean>;
+    onMaximizeChange: (callback: (max: boolean) => void) => () => void;
+  };
   // Mirror the renderer's UI language to main (localizes tray/dialogs/notifications)
   setLanguage: (lang: string) => void;
   // UI scale via webFrame zoom (scales viewport too, unlike CSS zoom)

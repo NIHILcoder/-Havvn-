@@ -419,6 +419,19 @@ const api: IpcApi = {
     ipcRenderer.send('app:rendererReady');
   },
 
+  // Frameless-window controls for the custom HUD title bar.
+  win: {
+    minimize: (): void => ipcRenderer.send('win:minimize'),
+    toggleMaximize: (): void => ipcRenderer.send('win:toggleMaximize'),
+    close: (): void => ipcRenderer.send('win:close'),
+    isMaximized: (): Promise<boolean> => ipcRenderer.invoke('win:isMaximized'),
+    onMaximizeChange: (callback: (max: boolean) => void): (() => void) => {
+      const handler = (_e: IpcRendererEvent, max: boolean) => { callback(max); };
+      ipcRenderer.on('win:maximizeChanged', handler);
+      return () => { ipcRenderer.removeListener('win:maximizeChanged', handler); };
+    },
+  },
+
   // Mirror the renderer's UI language to main so the tray, native dialogs, and
   // OS notifications localize too (renderer owns the setting via localStorage).
   setLanguage: (lang: string): void => {

@@ -114,6 +114,16 @@ ipcMain.on('app:setLanguage', (_event, lang) => {
   Menu.setApplicationMenu(buildAppMenu());
 });
 
+// Custom HUD title-bar controls (the window is frameless) — the renderer's title
+// bar drives these in place of the native caption buttons.
+ipcMain.on('win:minimize', () => mainWindow?.minimize());
+ipcMain.on('win:toggleMaximize', () => {
+  if (!mainWindow) return;
+  if (mainWindow.isMaximized()) mainWindow.unmaximize(); else mainWindow.maximize();
+});
+ipcMain.on('win:close', () => mainWindow?.close());
+ipcMain.handle('win:isMaximized', () => !!(mainWindow && !mainWindow.isDestroyed() && mainWindow.isMaximized()));
+
 // === Single Instance Lock ===
 // Isolated test copies (TH_INSTANCE) skip the lock so they run alongside the
 // primary instead of just focusing its window — see app-instance.ts.
@@ -519,6 +529,10 @@ async function createWindow(): Promise<void> {
     ...restoredBounds(),
     minWidth: 800,
     minHeight: 600,
+    // Custom HUD title bar (renderer draws it): frameless on Windows/Linux with
+    // our own window controls; hiddenInset on macOS keeps the native traffic
+    // lights but frees the bar for our chrome. Kills the OS accent-coloured frame.
+    ...(process.platform === 'darwin' ? { titleBarStyle: 'hiddenInset' as const } : { frame: false }),
     ...(appIconPath ? { icon: appIconPath } : {}),
     // Stay hidden until the renderer has painted its first frame (the splash),
     // so the user never sees an empty window. Shown via 'ready-to-show' below
@@ -556,6 +570,14 @@ async function createWindow(): Promise<void> {
     mainWindow.on('page-title-updated', (e) => { e.preventDefault(); mainWindow?.setTitle(label); });
     mainWindow.setTitle(label);
   }
+
+  // Tell the custom title bar when the window's maximize state flips, so it can
+  // swap its maximize/restore glyph (double-click + OS gestures also fire these).
+  const pushMaxState = () => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('win:maximizeChanged', mainWindow.isMaximized());
+  };
+  mainWindow.on('maximize', pushMaxState);
+  mainWindow.on('unmaximize', pushMaxState);
 
   // Setup IPC handlers
   setupIpcHandlers(mainWindow);
