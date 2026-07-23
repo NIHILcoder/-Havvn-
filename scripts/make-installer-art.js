@@ -1,13 +1,14 @@
 /**
  * Generates the NSIS installer artwork (BMP, no dependencies):
- *   build/installerSidebar.bmp    164x314 — welcome/finish page panel (ember mark on graphite)
+ *   build/installerSidebar.bmp    164x314 — welcome/finish page panel (blaze mark on graphite)
  *   build/uninstallerSidebar.bmp  164x314 — same, muted gray mark
- *   build/installerHeader.bmp     150x57  — assisted-installer header (ember mark on light,
+ *   build/installerHeader.bmp     150x57  — assisted-installer header (mark on light,
  *                                           because the NSIS header chrome is light)
  *
- * The mark is the brand Double-V (renderer/components/Logo.tsx):
- *   path M4 9 L10.5 21 L16 12 L21.5 21 L28 9  +  node circle (16, 9.4) r2.3
- * rasterized with distance-based anti-aliasing.
+ * The mark is the W-wings brand (assets/logo/mark-flat.svg, viewBox 512x295.8):
+ * two pure polygons — near-black contour + the orange body — rasterized with
+ * supersampled coverage anti-aliasing. A small VV zigzag underline echoes the
+ * cover art (assets/havvn-cover.png).
  *
  * Run: node scripts/make-installer-art.js
  */
@@ -59,24 +60,61 @@ function strokePolyline(c, pts, width, rgb) {
   }
 }
 
-function fillCircle(c, cx, cy, radius, rgb) {
-  const x0 = Math.floor(cx - radius - 2), x1 = Math.ceil(cx + radius + 2);
-  const y0 = Math.floor(cy - radius - 2), y1 = Math.ceil(cy + radius + 2);
+function pointInPolygon(pts, x, y) {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const xi = pts[i][0], yi = pts[i][1], xj = pts[j][0], yj = pts[j][1];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+/** Fill a polygon with 5x5 supersampled coverage per pixel. */
+function fillPolygon(c, pts, rgb) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const [x, y] of pts) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y); }
+  const x0 = Math.floor(minX) - 1, x1 = Math.ceil(maxX) + 1;
+  const y0 = Math.floor(minY) - 1, y1 = Math.ceil(maxY) + 1;
+  const S = 5, inv = 1 / (S * S);
   for (let y = y0; y <= y1; y++) {
     for (let x = x0; x <= x1; x++) {
-      const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy);
-      const a = Math.max(0, Math.min(1, radius - d + 0.5));
-      blend(c, x, y, rgb, a);
+      let cov = 0;
+      for (let sy = 0; sy < S; sy++) {
+        for (let sx = 0; sx < S; sx++) {
+          if (pointInPolygon(pts, x + (sx + 0.5) / S, y + (sy + 0.5) / S)) cov++;
+        }
+      }
+      if (cov) blend(c, x, y, rgb, cov * inv);
     }
   }
 }
 
-/** The Double-V at a given scale, centered at (cx, cy). Design box: 24x12 units.
-    Bare stroke only — the node dot was dropped from the brand. */
-function drawMark(c, cx, cy, scale, stroke) {
-  const P = [[4, 9], [10.5, 21], [16, 12], [21.5, 21], [28, 9]]
-    .map(([x, y]) => [cx + (x - 16) * scale, cy + (y - 15) * scale]);
-  strokePolyline(c, P, 2.3 * scale, stroke);
+// ── the W-wings mark (assets/logo/mark-flat.svg, viewBox 512x295.8) ─────────
+const WING_OUTLINE = [
+  [6.2, 6.3], [217, 147.9], [223.9, 161.8], [256, 127.7], [288.1, 161.8],
+  [295, 147.9], [505.8, 6.3], [366.7, 222.8], [369.2, 232.2], [330.5, 289.6],
+  [256, 204.6], [181.5, 289.6], [142.8, 232.2], [145.3, 222.8],
+];
+const WING_BODY = [
+  [478.1, 34.8], [358.2, 221.2], [360.4, 230.9], [329.7, 276.6], [256, 192.5],
+  [182.3, 276.6], [151.6, 230.9], [154.1, 221.8], [153.8, 221.2], [33.9, 34.8],
+  [211, 153.4], [221.7, 175.9], [256, 139.3], [290.3, 175.9], [301, 153.4],
+];
+
+/** W-wings centered at (cx, cy), `width` px wide: contour, then body on top. */
+function drawWings(c, cx, cy, width, bodyRgb, outlineRgb) {
+  const s = width / 512;
+  const map = (pts) => pts.map(([x, y]) => [cx + (x - 256) * s, cy + (y - 147.9) * s]);
+  fillPolygon(c, map(WING_OUTLINE), outlineRgb);
+  fillPolygon(c, map(WING_BODY), bodyRgb);
+}
+
+/** Small VV zigzag underline (the cover-art flourish). */
+function drawVV(c, cx, cy, half, amp, width, rgb) {
+  strokePolyline(c, [
+    [cx - half, cy + amp], [cx - half / 2, cy - amp], [cx, cy + amp],
+    [cx + half / 2, cy - amp], [cx + half, cy + amp],
+  ], width, rgb);
 }
 
 // ── BMP writer (24-bit, BITMAPINFOHEADER, bottom-up) ────────────────────────
@@ -110,17 +148,18 @@ function writeBmp(file, c) {
   console.log(`${path.basename(file)}  ${c.w}x${c.h}  ${buf.length} bytes`);
 }
 
-// ── palette (renderer/styles/variables.css, dark Ember) ─────────────────────
+// ── palette (the mark's own colors + dark Ember chrome) ─────────────────────
 const GRAPHITE = [0x14, 0x15, 0x19];  // --color-bg-primary
 const GRAPHITE2 = [0x17, 0x18, 0x1d]; // --color-bg-secondary
-const EMBER = [0xf2, 0x91, 0x3f];     // --color-accent-primary
-const EMBER2 = [0xe0, 0x67, 0x3a];    // --color-accent-primary-hover
+const BLAZE = [0xe2, 0x51, 0x17];     // logo body orange (mark-flat.svg)
+const OUTLINE = [0x16, 0x13, 0x11];   // logo contour
 const MUTED = [0x98, 0x95, 0x8d];     // --color-text-tertiary
 const LIGHT = [0xf6, 0xf4, 0xf0];     // light-theme bg (header chrome is light)
 
 const out = path.join(__dirname, '..', 'build');
 
-// Sidebar 164x314 — graphite with a soft vertical lift and the ember mark.
+// Sidebar 164x314 — graphite with a soft vertical lift, the W-wings mark,
+// a VV underline, and a blaze baseline accent.
 {
   const c = makeCanvas(164, 314, GRAPHITE);
   for (let y = 0; y < c.h; y++) {
@@ -130,22 +169,24 @@ const out = path.join(__dirname, '..', 'build');
       for (let k = 0; k < 3; k++) c.px[i + k] = GRAPHITE[k] + (GRAPHITE2[k] - GRAPHITE[k]) * t;
     }
   }
-  drawMark(c, 82, 120, 3.4, EMBER);
-  // ember baseline accent at the bottom
-  for (let y = 306; y < 309; y++) for (let x = 30; x < 134; x++) blend(c, x, y, EMBER, 0.9);
+  drawWings(c, 82, 110, 124, BLAZE, OUTLINE);
+  drawVV(c, 82, 172, 20, 5, 2.6, BLAZE);
+  // blaze baseline accent at the bottom
+  for (let y = 306; y < 309; y++) for (let x = 30; x < 134; x++) blend(c, x, y, BLAZE, 0.9);
   writeBmp(path.join(out, 'installerSidebar.bmp'), c);
 }
 
 // Uninstaller sidebar — same geometry, muted mark (leaving, not arriving).
 {
   const c = makeCanvas(164, 314, GRAPHITE);
-  drawMark(c, 82, 120, 3.4, MUTED);
+  drawWings(c, 82, 110, 124, MUTED, OUTLINE);
   writeBmp(path.join(out, 'uninstallerSidebar.bmp'), c);
 }
 
-// Header 150x57 — light chrome background, compact ember mark on the right.
+// Header 150x57 — light chrome background, compact mark on the right
+// (the near-black contour carries the shape on light).
 {
   const c = makeCanvas(150, 57, LIGHT);
-  drawMark(c, 116, 28, 1.5, EMBER);
+  drawWings(c, 116, 28, 58, BLAZE, OUTLINE);
   writeBmp(path.join(out, 'installerHeader.bmp'), c);
 }

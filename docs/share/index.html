@@ -4,95 +4,119 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Havvn — Receive a file</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 295.8'%3E%3Cpath fill='%23161311' d='M6.2 6.3L217 147.9L223.9 161.8L256 127.7L288.1 161.8L295 147.9L505.8 6.3L366.7 222.8L369.2 232.2L330.5 289.6L256 204.6L181.5 289.6L142.8 232.2L145.3 222.8Z'/%3E%3Cpath fill='%23e25117' d='M478.1 34.8L358.2 221.2L360.4 230.9L329.7 276.6L256 192.5L182.3 276.6L151.6 230.9L154.1 221.8L153.8 221.2L33.9 34.8L211 153.4L221.7 175.9L256 139.3L290.3 175.9L301 153.4Z'/%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<!-- Non-blocking web fonts — the page never waits on the font host. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" media="print" onload="this.media='all'" />
 <style>
-  /* Ember design system — values mirrored from renderer/styles/variables.css
-     (dark/graphite theme) so this standalone page matches the desktop app. */
+  /* Havvn "Blaze" — W-wings era. Mirrors the landing (docs/index.html): near-black
+     warm ground, the logo's own orange, squared HUD geometry. */
   :root {
-    --bg: #141519; --panel: #17181d; --elevated: #1B1D22; --row: #1B1D22;
-    --border: rgba(236,235,230,0.10); --border-subtle: rgba(236,235,230,0.05); --border-strong: rgba(236,235,230,0.18);
-    --text: #ECEBE6; --text-2: #B9B6AE; --muted: #98958D;
-    --accent: #F2913F; --accent-hover: #E0673A; --accent-fg: #141519; --accent-bg: rgba(242,145,63,0.12);
-    --olive: #ADB87C; --olive-bg: rgba(173,184,124,0.14); --danger: #E2664A;
-    --r-sm: 5px; --r-md: 7px; --r-lg: 10px; --r-xl: 14px;
-    --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+    --ink: #0d0c0a; --panel: #181613; --elev: #211d18; --row: #1b1815;
+    --line: rgba(242,230,220,0.10); --line0: rgba(242,230,220,0.05); --line2: rgba(242,230,220,0.20);
+    --text: #f2efe9; --text-2: #b8b0a4; --muted: #8d867b;
+    --blaze: #e25117; --blaze-hot: #ff6a2a; --amber: #e88a3c;
+    --blaze-bg: rgba(226,81,23,0.13); --blaze-ring: rgba(226,81,23,0.38);
+    --olive: #adb87c; --olive-ring: rgba(173,184,124,0.3); --danger: #e2664a;
+    --display: 'Chakra Petch', 'Inter', system-ui, sans-serif;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
+    --cut: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
   }
   * { box-sizing: border-box; }
   body {
-    margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
-    font-family: var(--font); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+    margin: 0; min-height: 100vh;
+    background:
+      radial-gradient(640px 420px at 50% -10%, rgba(226,81,23,0.10), transparent 65%),
+      repeating-linear-gradient(115deg, rgba(242,230,220,0.013) 0 1px, transparent 1px 9px),
+      var(--ink);
+    color: var(--text);
+    font-family: var(--sans); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
     display: flex; align-items: center; justify-content: center; padding: 24px;
   }
   .card {
-    width: min(560px, 100%); background: var(--panel); border: 1px solid var(--border);
-    border-radius: var(--r-xl); overflow: hidden;
-    box-shadow: 0 1px 0 rgba(236,235,230,0.03) inset, 0 24px 60px -30px rgba(0,0,0,0.7);
+    width: min(560px, 100%); background: var(--panel); border: 1px solid var(--line);
+    overflow: hidden; position: relative;
+    box-shadow: 0 24px 60px -30px rgba(0,0,0,0.8);
   }
+  /* hazard top bar + bottom-right HUD bracket */
+  .card::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 4px;
+    background: repeating-linear-gradient(-45deg, var(--blaze) 0 7px, transparent 7px 16px); opacity: .5; }
+  .card::after { content: ""; position: absolute; bottom: -1px; right: -1px; width: 22px; height: 22px;
+    border-bottom: 2px solid var(--blaze); border-right: 2px solid var(--blaze); }
 
-  /* Header — bare ember Double-V mark + wordmark, matching the app sidebar. */
-  .head { display: flex; align-items: center; gap: 13px; padding: 18px 22px; border-bottom: 1px solid var(--border-subtle); }
-  .head svg { display: block; flex: none; }
-  .head h1 { font-size: 15.5px; margin: 0; font-weight: 700; letter-spacing: -0.01em; }
-  .head h1 b { color: var(--accent); font-weight: 700; }
-  .head p { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
+  /* Header — W-wings mark + HAVVN lettermark lockup. */
+  .head { display: flex; align-items: center; gap: 13px; padding: 20px 22px 16px; border-bottom: 1px solid var(--line0); }
+  .head .mk { display: block; flex: none; }
+  .head h1 { display: flex; align-items: center; gap: 8px; font-family: var(--display); font-size: 13.5px;
+    margin: 0; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; line-height: 1; }
+  .head h1 .wmh { height: 12px; width: auto; display: block; }
+  .head h1 .hsep { font-family: var(--mono); color: var(--blaze-hot); font-weight: 400; }
+  .head p { margin: 5px 0 0; font-size: 11.5px; color: var(--muted); font-family: var(--mono); }
 
   .body { padding: 20px 22px 22px; }
 
   /* Overall status + progress */
-  .status { display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--text-2); margin-bottom: 14px; font-weight: 500; }
+  .status { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-2);
+    margin-bottom: 14px; font-weight: 500; font-family: var(--mono); letter-spacing: .04em; text-transform: uppercase; }
   .status.error { color: var(--danger); }
   .status.ok { color: var(--olive); }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
-  .dot.live { background: var(--accent); animation: pulse 1.6s infinite; }
+  .dot { width: 8px; height: 8px; background: var(--muted); flex: none; transform: rotate(45deg); }
+  .dot.live { background: var(--blaze-hot); animation: pulse 1.6s infinite; }
   .dot.done { background: var(--olive); }
-  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(242,145,63,.5)} 70%{box-shadow:0 0 0 7px rgba(242,145,63,0)} 100%{box-shadow:0 0 0 0 rgba(242,145,63,0)} }
-  .bar { height: 5px; background: var(--elevated); border-radius: 99px; overflow: hidden; margin-bottom: 7px; }
-  .bar > div { height: 100%; width: 0; background: var(--accent); border-radius: 99px; transition: width .3s ease, background .3s ease; }
+  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(226,81,23,.5)} 70%{box-shadow:0 0 0 7px rgba(226,81,23,0)} 100%{box-shadow:0 0 0 0 rgba(226,81,23,0)} }
+  .bar { height: 5px; background: var(--elev); overflow: hidden; margin-bottom: 7px; }
+  .bar > div { height: 100%; width: 0; background: linear-gradient(90deg, var(--amber), var(--blaze)); transition: width .3s ease, background .3s ease; }
   .bar.done > div { background: var(--olive); }
-  .meta { display: flex; gap: 16px; font-size: 12px; color: var(--muted); margin-bottom: 18px; font-variant-numeric: tabular-nums; }
+  .meta { display: flex; gap: 16px; font-size: 11.5px; color: var(--muted); margin-bottom: 18px;
+    font-variant-numeric: tabular-nums; font-family: var(--mono); }
 
-  /* File rows — flat, hairline, ember on hover. */
+  /* File rows — flat, hairline, blaze on hover. */
   .files { display: flex; flex-direction: column; gap: 7px; }
   .file {
     display: flex; align-items: center; gap: 12px; padding: 11px 13px;
-    background: var(--row); border: 1px solid var(--border-subtle); border-radius: var(--r-lg);
+    background: var(--row); border: 1px solid var(--line0);
     transition: border-color .15s ease, background .15s ease;
   }
-  .file:hover { border-color: var(--border); }
-  .file.complete { border-color: rgba(173,184,124,0.28); }
-  .fdot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: none; opacity: .8; }
+  .file:hover { border-color: var(--blaze-ring); }
+  .file.complete { border-color: var(--olive-ring); }
+  .fdot { width: 7px; height: 7px; background: var(--blaze); flex: none; opacity: .85; transform: rotate(45deg); }
   .file.complete .fdot { background: var(--olive); opacity: 1; }
   .file .name { flex: 1; min-width: 0; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .file .size { font-size: 12px; color: var(--muted); flex: none; font-variant-numeric: tabular-nums; }
+  .file .size { font-size: 11.5px; color: var(--muted); flex: none; font-variant-numeric: tabular-nums; font-family: var(--mono); }
   .actions { display: flex; align-items: center; gap: 8px; flex: none; }
   /* Per-file progress shown until the file finishes; then the Download button appears. */
-  .pf { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 34px; text-align: right; }
+  .pf { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 34px; text-align: right; font-family: var(--mono); }
 
   .btn {
-    border: 1px solid var(--accent); background: var(--accent); color: var(--accent-fg);
-    border-radius: var(--r-md); padding: 7px 13px; font-family: var(--font); font-size: 12.5px;
+    border: none; background: linear-gradient(180deg, var(--amber), var(--blaze) 62%); color: #140f0c;
+    clip-path: var(--cut); padding: 8px 14px; font-family: var(--display); font-size: 11.5px;
+    letter-spacing: .07em; text-transform: uppercase;
     font-weight: 600; cursor: pointer; flex: none; text-decoration: none; line-height: 1;
-    transition: background .15s ease, border-color .15s ease, opacity .15s ease;
+    transition: background .15s ease, filter .15s ease, opacity .15s ease;
   }
-  .btn:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
-  .btn.ghost { background: transparent; color: var(--text); border-color: var(--border); }
-  .btn.ghost:hover { background: var(--accent-bg); border-color: var(--border-strong); }
+  .btn:hover { background: var(--blaze-hot); filter: drop-shadow(0 4px 14px rgba(226,81,23,.4)); }
+  .btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--line2); clip-path: none; }
+  .btn.ghost:hover { background: var(--blaze-bg); border-color: var(--blaze); color: var(--blaze-hot); filter: none; }
   .btn[disabled] { opacity: .5; cursor: default; }
+  .btn:focus-visible { outline: 2px solid var(--blaze-hot); outline-offset: 2px; }
 
-  .hint { margin-top: 18px; font-size: 12px; color: var(--muted); line-height: 1.55; }
+  .hint { margin-top: 18px; font-size: 11.5px; color: var(--muted); line-height: 1.6; font-family: var(--mono); }
   .hint.error { color: var(--danger); }
   #media { margin-top: 14px; }
-  #media video, #media audio { width: 100%; border-radius: var(--r-lg); background: #000; outline: none; }
-  a { color: var(--accent); }
+  #media video, #media audio { width: 100%; border: 1px solid var(--line); background: #000; outline: none; display: block; }
+  a { color: var(--blaze-hot); }
 </style>
 </head>
 <body>
   <div class="card">
     <div class="head">
-      <svg width="40" height="23" viewBox="0 0 512 295.8" aria-hidden="true">
+      <svg class="mk" width="38" height="22" viewBox="0 0 512 295.8" aria-hidden="true">
         <path fill="#161311" d="M6.2 6.3L217 147.9L223.9 161.8L256 127.7L288.1 161.8L295 147.9L505.8 6.3L366.7 222.8L369.2 232.2L330.5 289.6L256 204.6L181.5 289.6L142.8 232.2L145.3 222.8Z"/><path fill="#e25117" d="M478.1 34.8L358.2 221.2L360.4 230.9L329.7 276.6L256 192.5L182.3 276.6L151.6 230.9L154.1 221.8L153.8 221.2L33.9 34.8L211 153.4L221.7 175.9L256 139.3L290.3 175.9L301 153.4Z"/>
       </svg>
       <div>
-        <h1>Ha<b>vv</b>n — Receive a file</h1>
+        <h1><svg class="wmh" viewBox="0 0 440 100" role="img" aria-label="Havvn"><path fill="#f2efe9" d="M11.5 18.0L40.0 0.0L26.0 100.0L0.0 100.0ZM60.0 0.0L86.0 0.0L74.5 82.0L46.0 100.0ZM28.7 38.0L60.7 38.0L57.5 61.0L25.5 61.0ZM138.0 0.0L133.8 30.0L111.0 100.0L85.0 100.0ZM138.0 0.0L163.0 100.0L137.0 100.0L133.8 30.0ZM110.3 62.0L148.3 62.0L145.2 84.0L107.2 84.0ZM364.0 0.0L390.0 0.0L376.0 100.0L350.0 100.0ZM411.5 18.0L440.0 0.0L426.0 100.0L400.0 100.0ZM364.0 0.0L390.0 0.0L426.0 100.0L400.0 100.0Z"/><path fill="#e25117" d="M190.0 0.0L218.0 0.0L218.9 72.0L215.0 100.0ZM268.0 0.0L240.0 0.0L218.9 72.0L215.0 100.0ZM273.0 0.0L301.0 0.0L301.9 72.0L298.0 100.0ZM351.0 0.0L323.0 0.0L301.9 72.0L298.0 100.0Z"/></svg><span class="hsep">//</span> Receive a file</h1>
         <p>Peer-to-peer in your browser. No install, no cloud.</p>
       </div>
     </div>

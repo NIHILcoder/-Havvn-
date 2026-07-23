@@ -1,13 +1,14 @@
 <p align="center">
-  <img src="assets/havvn-cover.png" alt="Havvn — a modern, privacy-focused BitTorrent client" width="720" />
+  <img src="assets/havvn-cover.png" alt="Havvn — a private, serverless P2P hub" width="720" />
 </p>
 
 # Havvn
 
-![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)
-![Version](https://img.shields.io/badge/Version-2.18.0-orange)
+[![Release](https://img.shields.io/github/v/release/NIHILcoder/Havvn?label=Release&color=e25117)](https://github.com/NIHILcoder/Havvn/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/NIHILcoder/Havvn/total?label=Downloads&color=orange)](https://github.com/NIHILcoder/Havvn/releases)
+![Platform](https://img.shields.io/badge/Platform-Windows%20·%20macOS%20%2F%20Linux%20planned-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
-![Built with](https://img.shields.io/badge/Electron%20%2B%20React%20%2B%20WebTorrent-informational)
+![Built with](https://img.shields.io/badge/Electron%20%2B%20React%20%2B%20Transmission%20%2B%20WebTorrent-informational)
 
 **A private, serverless P2P hub that happens to speak BitTorrent.**
 
@@ -23,12 +24,15 @@ point. Its real job is the things classic clients *can't* do, all peer-to-peer w
   auto-sync into a shared folder and you **chat, end-to-end encrypted and signed**.
   Connections even hop between members, so a room works across home networks **without
   any infrastructure of its own**.
+- 🎙️ **Hang out in voice.** Serverless room voice chat with **neural noise suppression**,
+  **screen sharing** (system audio included, echo-cancelled) and a **global push-to-talk**.
 - 🛡️ **See what the swarm sees.** A live privacy dashboard shows your exposed IP, ISP
   and VPN status, with IP-leak detection and a kill-switch.
 
 You bring your own indexers and feeds — Havvn bundles none. Everything runs on
 your machine and directly between you and your peers: **the developer runs no servers,
-and the app costs nothing to operate.** Built with Electron, React and WebTorrent.
+and the app costs nothing to operate.** Built with Electron, React, a bundled native
+Transmission engine and WebTorrent.
 
 > **Legal use only.** Havvn does not bundle indexers for copyrighted material.
 > The only pre-seeded source is a Creative Commons / open-source RSS feed (FOSS Torrents),
@@ -60,6 +64,8 @@ Compare the output against the SHA-256 published in the matching GitHub release.
 ## Features
 
 ### Downloads
+- **Bundled native Transmission engine** for fast, battle-tested transfers, with a
+  WebTorrent fallback (WebTorrent also powers rooms and share links)
 - Add torrents via **.torrent file, magnet link, or drag & drop** — local files *and*
   remote `.torrent` URLs are supported
 - Pause / resume / remove (with optional file deletion), retry failed downloads
@@ -101,29 +107,63 @@ Compare the output against the SHA-256 published in the matching GitHub release.
   everyone's files auto-distribute peer-to-peer into a shared folder. No cloud: members
   find each other over WebRTC and converge a file manifest, live presence, and
   **end-to-end encrypted chat** over **AES-256-GCM** channels keyed from the code
+- **A real app-grade room layout** — three regions (People + Voice | Stage | Chat) with
+  draggable splitters that remember their widths; **pop the chat or voice settings out**
+  into their own window and drag them to a second monitor
 - **End-to-end encrypted rooms** — opt in at creation and the swarm carries **ciphertext
   only**: files are encrypted on your disk before seeding and decrypted after download,
   never plaintext on the wire. The room's content key is **distributed in an
   owner-signed config (Ed25519)** so a member who merely holds the invite code can't
   plant or forge one, and the invite code itself marks the room encrypted so a joiner
   never seeds plaintext by mistake
+- **Organize the shared folder** — top-level **sections** with folders inside, drag & drop
+  onto either level, and **per-folder auto-download** that inherits section → room
+  settings (or pull files manually, per file)
+- **A files zone that works like a file manager** — context menus, hover actions, filter
+  chips, view options, per-room sort & collapse memory, search highlighting,
+  **image thumbnails with a lightbox**, Show-in-folder, and a total-size readout — and
+  huge rooms stay smooth thanks to **virtualized lists**
 - **Watch & listen together** — open a shared file in the in-app theater and flip on
   **"together"**: playback stays in sync across the room (play/pause/seek follow, and
   late joiners catch up to the current position). Music files get a dedicated mode — an
   album-art disc from the track's **ID3 tags**, a live **WebAudio spectrum**, a shared
   queue that auto-advances, and floating emoji reactions
+- **Watch while it downloads** — start a shared video in the room theater *before* the
+  download finishes (non-E2E rooms, browser-native formats)
+- **Member profiles** — signed profiles with name colors, status lines and a pick of
+  deterministic avatar styles, generated on your device and never uploaded; open a
+  **profile card** from any member or message
+- **Invite previews** — the invite dialog shows who's inside, file count and total size,
+  and whether voice is live, with a prominent copy button
+- **Ownership transfer** — hand a room to another member with a **signed transfer chain**,
+  so clients can verify the new owner instead of trusting a claim
 - **Per-room controls** — auto-download every shared file or pull them **manually** per
   file, and set per-room **upload / download speed limits**
 - **Tamper-proof chat** — every message is **signed (Ed25519)** and bound to a member
   identity, so even someone who has the invite code can't post under another member's
-  name; the local chat history is **encrypted at rest**
-- **Pick your avatar** — choose from several deterministic avatar styles for your room
-  profile, generated on your device and never uploaded
+  name; the local chat history is **encrypted at rest**. The composer is built for
+  sharing scripts: multiline input, Tab indents, and triple-backtick **code blocks**
+  with copy
 - **Connects across networks, zero infrastructure** — direct/IPv6/STUN cover the common
   cases, and members who still can't reach each other are relayed **through another
   member** automatically (relayed traffic stays end-to-end encrypted). For the rare
   strict-NAT pair you can add **your own TURN relay** in settings — one side is enough.
   Each member shows whether they're connected **directly or via a relay**
+
+### Voice & screen share
+- **Room voice chat with zero infrastructure** — a serverless WebRTC mesh between
+  members, end-to-end like everything else in a room
+- **Neural noise suppression** — RNNoise (Off / Standard / Enhanced) running in a
+  WASM AudioWorklet, so keyboards and fans don't make the trip
+- **Screen sharing, watched on demand** — share a screen or window into the room;
+  optionally capture **system audio**, echo-cancelled so your speakers don't loop back
+- **Global push-to-talk** — a system-wide hotkey that works while the app is in the
+  background
+- **Real device controls** — mic & output pickers, input gain, output volume,
+  voice-activity sensitivity, and a **live mic test you can actually hear** through your
+  chosen output device
+- **Connection quality at a glance** — each tile shows good / fair / poor and
+  reconnecting states
 
 ### Automation & networking
 - **Scheduler** for time-based bandwidth rules (supports windows that cross midnight)
@@ -139,8 +179,9 @@ Compare the output against the SHA-256 published in the matching GitHub release.
 - **Two-pillar layout** — a **Transfers | Rooms** switch keeps downloading and
   shared-listening as distinct spaces, bridged by a persistent status strip that surfaces
   live speed/peers and who's listening right now
-- **Themes** (dark / light / system) with a clean **Ember** design (warm accents on a
-  graphite ground) and a Double-V logomark
+- **Custom themes** — dark / light / system on the warm **Ember** palette (and the
+  W-wings logomark), plus a **live theme editor**: two-mode token editing, JSON
+  import/export, and a sanitizer so a shared theme can't break the app
 - **Customizable hotkeys**
 - **Localization** — English & Russian
 - Settings export / import
@@ -152,6 +193,7 @@ Compare the output against the SHA-256 published in the matching GitHub release.
   rather than a VPN, so you catch a leak before downloading (lookups run only on open /
   refresh, no background traffic)
 - **VPN kill-switch** — auto-pauses all torrents if your VPN drops, plus a startup check
+  (and it covers rooms, too)
 - **One-click recommended privacy preset**, ephemeral peer ID, log sanitization, clear
   data on exit, and open/clear-logs controls
 - **Secrets encrypted at rest** via OS-level encryption (DPAPI / Keychain / libsecret)
@@ -172,6 +214,7 @@ Compare the output against the SHA-256 published in the matching GitHub release.
 | State        | Zustand                                      |
 | Desktop      | Electron 42, Node.js                          |
 | Torrents     | Transmission (bundled native engine) with a WebTorrent fallback; WebTorrent + WebRTC for rooms & share links |
+| Voice        | WebRTC mesh, RNNoise noise suppression (WASM AudioWorklet), global hotkeys via uiohook |
 | Persistence  | electron-store (local JSON)                   |
 | Build        | webpack (renderer), tsc (main), electron-builder |
 
@@ -213,7 +256,7 @@ Packaged output is written to `release/`.
 
 ```
 electron/            Main process (TypeScript)
-  torrent/           WebTorrent manager, creator, watch folder, LAN cast/HLS server
+  torrent/           Torrent engines, creator, watch folder, LAN cast/HLS server
   services/          RSS, search, IP blocklist
   sharing/           Share Links + Rooms (WebRTC seeder/engine in a hidden window)
   scheduler/         Time-based scheduler engine
@@ -224,6 +267,7 @@ electron/            Main process (TypeScript)
   preload.ts         contextBridge IPC API
 renderer/            React UI (pages, components, stores, i18n)
 shared/              Types and the download state machine
+vendor/              Bundled native engine (Transmission)
 build/               App icons & installer resources
 ```
 
@@ -263,15 +307,16 @@ multiple severity levels, and automatic cleanup of old files.
 
 ## Known Limitations
 
-- **Speed limits** are applied best-effort via WebTorrent's throttling API and may vary by
-  version. For strict control, use OS-level network management.
-- **Peer statistics**: WebTorrent reports aggregate peers and does not cleanly separate
-  seeds from leechers, so those numbers are approximate.
+- **Speed limits** are enforced by the native engine for regular torrents; for rooms and
+  share links (WebTorrent) they're applied best-effort via throttling. For strict
+  control, use OS-level network management.
+- **Peer statistics** for rooms and share links are approximate — WebTorrent reports
+  aggregate peers and does not cleanly separate seeds from leechers.
 - **VPN / IP-leak detection** is heuristic (network interfaces, IP/ISP lookup) — it's a
   strong safety net, not a guarantee. A VPN with its own kill-switch remains the real
   protection.
-- **Proxy**: there is no SOCKS/HTTP proxy option — WebTorrent can't route peer traffic
-  through one, so use a VPN for network privacy.
+- **Proxy**: there is no SOCKS/HTTP proxy option for peer traffic — use a VPN for
+  network privacy.
 - **Watch anywhere (remote WebRTC streaming)** is experimental and depends on NAT
   traversal; it may not connect on every network.
 - **Room connectivity across strict NAT**: rooms connect for the large majority of
@@ -279,6 +324,8 @@ multiple severity levels, and automatic cleanup of old files.
   that can't connect with zero infrastructure is a room where *every* member is behind a
   strict (symmetric) NAT and none is reachable — add **your own TURN relay** in settings
   (one member is enough) for that.
+- **Watch-while-downloading in rooms** covers non-E2E rooms and browser-native formats;
+  everything else plays the moment the download completes.
 
 ---
 

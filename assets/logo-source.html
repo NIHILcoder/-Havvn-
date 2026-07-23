@@ -1,89 +1,190 @@
-<!doctype html><html><head><meta charset="utf-8"><style>body{background:#333;margin:0;padding:20px;display:flex;flex-wrap:wrap;gap:20px}canvas{border:1px solid #666;max-width:45%;height:auto;background:
-repeating-conic-gradient(#444 0 25%,#3a3a3a 0 50%) 0 0/20px 20px}</style></head><body>
+<!doctype html><html><head><meta charset="utf-8"><title>Havvn brand asset generator</title><style>
+body{background:#222;color:#ddd;font:14px/1.6 Consolas,monospace;margin:0;padding:20px}
+canvas{border:1px solid #555;max-width:45%;height:auto;margin:6px;background:repeating-conic-gradient(#3d3d3d 0 25%,#333 0 50%) 0 0/20px 20px}
+#log{white-space:pre-wrap;margin-bottom:14px}
+</style></head><body>
+<!--
+  Brand asset generator — W-wings era (masters: LogoNew/*.png, vectorized twins in assets/logo/*.svg).
+
+  Regenerates from LogoNew/1.png (glossy mark) + assets/logo/wordmark.svg:
+    assets/havvn-cover.png        1280x640  README card / social preview
+    assets/havvn-mark.png         1024x1024 glossy mark, transparent
+    assets/havvn-lockup.png       1600x512  mark + lettermark, transparent
+    docs/assets/mark-gloss-768.png 768w     site hero, transparent
+
+  How to run: serve the repo root over HTTP with a POST /save endpoint that
+  writes {path, dataUrl} (see the session scratchpad gen-server.js recipe),
+  then open /assets/logo-source.html — it renders and uploads automatically.
+-->
+<div id="log">loading…</div>
+<canvas id="cover" width="1280" height="640"></canvas>
 <canvas id="mark" width="1024" height="1024"></canvas>
 <canvas id="lockup" width="1600" height="512"></canvas>
-<canvas id="cover" width="1280" height="640"></canvas>
+<canvas id="hero"></canvas>
 <script>
-const EMBER='#F2913F', EMBER2='#E0673A', TEXT='#ECEBE6', BG='#141519', BG2='#17181d', MUTED='#98958D';
+const BLAZE = '#e25117', TEXT = '#f2efe9', MUTED = '#b3a89c';
 
-// The brand Double-V: path M4 9 L10.5 21 L16 12 L21.5 21 L28 9 (bare stroke — node dot dropped from the brand)
-// Design box 32x32 (mark spans x4..28, y9..21).
-function drawMark(ctx, cx, cy, scale, stroke = EMBER) {
-  const P = [[4,9],[10.5,21],[16,12],[21.5,21],[28,9]].map(([x,y]) => [cx+(x-16)*scale, cy+(y-15)*scale]);
-  ctx.lineWidth = 2.3*scale;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  ctx.strokeStyle = stroke;
+const log = (m) => { document.getElementById('log').textContent += '\n' + m; };
+const load = (src) => new Promise((res, rej) => {
+  const i = new Image();
+  i.onload = () => res(i);
+  i.onerror = () => rej(new Error('failed to load ' + src));
+  i.src = src;
+});
+
+// Alpha bounding box, scanned on a downsampled copy to keep memory sane.
+function alphaBox(img) {
+  const S = 4;
+  const w = Math.ceil(img.naturalWidth / S), h = Math.ceil(img.naturalHeight / S);
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const x = c.getContext('2d', { willReadFrequently: true });
+  x.drawImage(img, 0, 0, w, h);
+  const d = x.getImageData(0, 0, w, h).data;
+  let x0 = w, y0 = h, x1 = 0, y1 = 0;
+  for (let py = 0; py < h; py++) for (let px = 0; px < w; px++) {
+    if (d[(py * w + px) * 4 + 3] > 8) {
+      if (px < x0) x0 = px; if (px > x1) x1 = px;
+      if (py < y0) y0 = py; if (py > y1) y1 = py;
+    }
+  }
+  return { sx: Math.max(0, x0 * S - S), sy: Math.max(0, y0 * S - S),
+           sw: Math.min(img.naturalWidth, (x1 - x0 + 2) * S + S),
+           sh: Math.min(img.naturalHeight, (y1 - y0 + 2) * S + S) };
+}
+
+// Crop + stepped halving downscale (crisper than one giant drawImage jump).
+function cropScaled(img, box, targetW) {
+  let cw = box.sw, ch = box.sh;
+  let cur = document.createElement('canvas'); cur.width = cw; cur.height = ch;
+  cur.getContext('2d').drawImage(img, box.sx, box.sy, box.sw, box.sh, 0, 0, cw, ch);
+  while (cw / 2 > targetW) {
+    cw = Math.round(cw / 2); ch = Math.round(ch / 2);
+    const n = document.createElement('canvas'); n.width = cw; n.height = ch;
+    const nx = n.getContext('2d'); nx.imageSmoothingQuality = 'high';
+    nx.drawImage(cur, 0, 0, cw, ch);
+    cur = n;
+  }
+  return cur;
+}
+
+function drawTracked(ctx, text, cx, y, font, spacing, color) {
+  ctx.font = font; ctx.fillStyle = color; ctx.textBaseline = 'alphabetic';
+  let total = 0;
+  for (const ch of text) total += ctx.measureText(ch).width + spacing;
+  total -= spacing;
+  let x = cx - total / 2;
+  for (const ch of text) { ctx.fillText(ch, x, y); x += ctx.measureText(ch).width + spacing; }
+}
+
+// Wing-echo slashes: n parallel slanted bars fading out.
+function slashes(ctx, x, y, angle, dir) {
+  ctx.save();
+  ctx.translate(x, y); ctx.rotate(angle);
+  [1, 0.55, 0.3].forEach((a, i) => {
+    ctx.fillStyle = BLAZE; ctx.globalAlpha = a;
+    ctx.fillRect(dir * i * 26, i * 13, 92 - i * 18, 7);
+  });
+  ctx.restore();
+}
+
+function vvUnderline(ctx, cx, y, half, amp) {
+  ctx.strokeStyle = BLAZE; ctx.lineWidth = 3.4; ctx.lineJoin = 'miter'; ctx.lineCap = 'butt';
   ctx.beginPath();
-  ctx.moveTo(P[0][0], P[0][1]);
-  for (let i=1;i<P.length;i++) ctx.lineTo(P[i][0], P[i][1]);
+  ctx.moveTo(cx - half, y + amp);
+  ctx.lineTo(cx - half / 2, y - amp);
+  ctx.lineTo(cx, y + amp);
+  ctx.lineTo(cx + half / 2, y - amp);
+  ctx.lineTo(cx + half, y + amp);
   ctx.stroke();
 }
 
-function drawWordmark(ctx, x, y, px) {
-  // "Havvn" with the double-v picked out in ember; baseline at y, left edge x.
-  ctx.font = `700 ${px}px Inter, "Segoe UI", system-ui, sans-serif`;
-  ctx.textBaseline = 'alphabetic';
-  const parts = [['Ha', TEXT], ['vv', EMBER], ['n', TEXT]];
-  let cur = x;
-  for (const [s, c] of parts) {
-    ctx.fillStyle = c;
-    ctx.fillText(s, cur, y);
-    cur += ctx.measureText(s).width;
+async function save(path, canvas) {
+  const r = await fetch('/save', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ path, dataUrl: canvas.toDataURL('image/png') }),
+  });
+  if (!r.ok) throw new Error(path + ': ' + await r.text());
+  log('saved ' + path);
+}
+
+(async () => {
+  try {
+    const gloss = await load('/LogoNew/1.png');
+    const wordmark = await load('/assets/logo/wordmark.svg');
+    const box = alphaBox(gloss);
+    const aspect = box.sw / box.sh;
+    log('gloss bbox ' + box.sw + 'x' + box.sh + ' aspect ' + aspect.toFixed(3));
+
+    // 1) Cover 1280x640 — near-black ember ground, glossy mark, lettermark, tagline.
+    {
+      const c = document.getElementById('cover'), ctx = c.getContext('2d');
+      ctx.imageSmoothingQuality = 'high';
+      const g = ctx.createLinearGradient(0, 0, 0, 640);
+      g.addColorStop(0, '#17130f'); g.addColorStop(1, '#0c0a08');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, 1280, 640);
+
+      // faint diagonal grain
+      ctx.save(); ctx.translate(640, 320); ctx.rotate(-25 * Math.PI / 180);
+      ctx.strokeStyle = 'rgba(242,230,220,0.016)'; ctx.lineWidth = 1;
+      for (let y = -700; y < 700; y += 7) { ctx.beginPath(); ctx.moveTo(-900, y); ctx.lineTo(900, y); ctx.stroke(); }
+      ctx.restore();
+
+      // ember glow behind the mark
+      let r = ctx.createRadialGradient(640, 250, 40, 640, 250, 430);
+      r.addColorStop(0, 'rgba(226,81,23,0.22)'); r.addColorStop(1, 'rgba(226,81,23,0)');
+      ctx.fillStyle = r; ctx.fillRect(0, 0, 1280, 640);
+
+      slashes(ctx, 46, 44, -0.56, 1);
+      ctx.save(); ctx.translate(1280, 640); ctx.rotate(Math.PI); slashes(ctx, 46, 44, -0.56, 1); ctx.restore();
+
+      const mw = 470, mh = mw / aspect;
+      const scaled = cropScaled(gloss, box, mw);
+      ctx.drawImage(scaled, (1280 - mw) / 2, 92, mw, mh);
+
+      const ww = 330, wh = ww * 100 / 440;
+      ctx.drawImage(wordmark, (1280 - ww) / 2, 408, ww, wh);
+
+      drawTracked(ctx, 'A PRIVATE, SERVERLESS P2P HUB', 640, 552, '500 21px Consolas, monospace', 6, MUTED);
+      vvUnderline(ctx, 640, 592, 30, 7);
+      await save('assets/havvn-cover.png', c);
+    }
+
+    // 2) Mark 1024x1024 transparent
+    {
+      const c = document.getElementById('mark'), ctx = c.getContext('2d');
+      ctx.imageSmoothingQuality = 'high';
+      const mw = 940, mh = mw / aspect;
+      ctx.drawImage(cropScaled(gloss, box, mw), (1024 - mw) / 2, (1024 - mh) / 2, mw, mh);
+      await save('assets/havvn-mark.png', c);
+    }
+
+    // 3) Lockup 1600x512 transparent — mark left, lettermark right
+    {
+      const c = document.getElementById('lockup'), ctx = c.getContext('2d');
+      ctx.imageSmoothingQuality = 'high';
+      const mw = 540, mh = mw / aspect;
+      ctx.drawImage(cropScaled(gloss, box, mw), 44, (512 - mh) / 2, mw, mh);
+      const ww = 900, wh = ww * 100 / 440;
+      ctx.drawImage(wordmark, 640, (512 - wh) / 2, ww, wh);
+      await save('assets/havvn-lockup.png', c);
+    }
+
+    // 4) Site hero 768w transparent
+    {
+      const c = document.getElementById('hero');
+      c.width = 768; c.height = Math.round(768 / aspect);
+      const ctx = c.getContext('2d');
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(cropScaled(gloss, box, 768), 0, 0, 768, c.height);
+      await save('docs/assets/mark-gloss-768.png', c);
+    }
+
+    log('ALL DONE');
+    document.title = 'GEN DONE';
+  } catch (e) {
+    log('ERROR: ' + e.message);
+    document.title = 'GEN ERROR';
   }
-  return cur - x; // total width
-}
-
-// 1) Mark only, transparent, 1024x1024
-{
-  const ctx = document.getElementById('mark').getContext('2d');
-  drawMark(ctx, 512, 512, 30);
-}
-
-// 2) Horizontal lockup (mark + wordmark), transparent, 1600x512
-{
-  const ctx = document.getElementById('lockup').getContext('2d');
-  const S = 13;
-  drawMark(ctx, 230, 256, S);
-  // measure to position: wordmark to the right of the mark
-  ctx.font = '700 240px Inter, "Segoe UI", system-ui, sans-serif';
-  drawWordmark(ctx, 440, 256 + 88, 240);
-}
-
-// 3) Repo cover / social preview 1280x640 — graphite, centered lockup + tagline
-{
-  const c = document.getElementById('cover');
-  const ctx = c.getContext('2d');
-  // graphite ground with a faint vertical lift (matches the installer sidebar)
-  const g = ctx.createLinearGradient(0, 0, 0, 640);
-  g.addColorStop(0, BG2); g.addColorStop(1, BG);
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, 1280, 640);
-
-  // centered composition: mark above, wordmark, tagline, ember baseline
-  drawMark(ctx, 640, 210, 7.4);
-  ctx.font = '700 118px Inter, "Segoe UI", system-ui, sans-serif';
-  const w = (() => { // measure full wordmark to center it
-    let tw = 0;
-    for (const s of ['Ha','vv','n']) tw += ctx.measureText(s).width;
-    return tw;
-  })();
-  drawWordmark(ctx, (1280 - w) / 2, 395, 118);
-
-  ctx.font = '400 30px Inter, "Segoe UI", system-ui, sans-serif';
-  ctx.fillStyle = MUTED;
-  ctx.textAlign = 'center';
-  ctx.fillText('A modern, privacy-focused BitTorrent client', 640, 465);
-  ctx.textAlign = 'left';
-
-  // ember baseline accent
-  ctx.fillStyle = EMBER;
-  ctx.fillRect(560, 520, 160, 4);
-}
-
-window.__pngs = () => ({
-  mark: document.getElementById('mark').toDataURL('image/png'),
-  lockup: document.getElementById('lockup').toDataURL('image/png'),
-  cover: document.getElementById('cover').toDataURL('image/png'),
-});
+})();
 </script></body></html>
